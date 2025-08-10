@@ -26,9 +26,11 @@ import {
   VisibilityOff,
   Security as SecurityIcon,
   History as HistoryIcon,
-  Warning as WarningIcon
+  Warning as WarningIcon,
+  ArrowBack as ArrowBackIcon,
+  Check as CheckIcon
 } from '@mui/icons-material';
-import { getPasswordStrength, validatePasswordStrength } from '../../shared/passwordValidation';
+import { getPasswordStrength, validatePasswordStrength } from '../utils/passwordValidation';
 
 const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
   const [settings, setSettings] = useState({

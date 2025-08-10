@@ -1,5 +1,11 @@
-// Password validation utilities for consistent validation across the app
+// Shared password validation utilities for both Electron and React
+// This module can be used by both the main process and renderer process
 
+/**
+ * Calculate password strength based on various criteria
+ * @param {string} password - The password to evaluate
+ * @returns {Object} - Object containing strength info (strength, color, width)
+ */
 export const getPasswordStrength = (password) => {
   let score = 0;
   if (password.length >= 8) score++;
@@ -15,6 +21,11 @@ export const getPasswordStrength = (password) => {
   return { strength: 'strong', color: '#4caf50', width: '100%' };
 };
 
+/**
+ * Validate password strength and return array of error messages
+ * @param {string} password - The password to validate
+ * @returns {Array} - Array of error messages (empty if valid)
+ */
 export const validatePasswordStrength = (password) => {
   const errors = [];
   
@@ -35,6 +46,10 @@ export const validatePasswordStrength = (password) => {
   return errors;
 };
 
+/**
+ * Get password requirements for display to users
+ * @returns {Array} - Array of requirement strings
+ */
 export const getPasswordRequirements = () => {
   return [
     'At least 8 characters long',
@@ -44,3 +59,12 @@ export const getPasswordRequirements = () => {
     'Avoid common passwords'
   ];
 };
+
+// Export for CommonJS (Electron) compatibility
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    getPasswordStrength,
+    validatePasswordStrength,
+    getPasswordRequirements
+  };
+}
