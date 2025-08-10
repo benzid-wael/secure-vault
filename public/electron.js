@@ -95,7 +95,7 @@ fs.ensureDirSync(vaultDir);
 // Encryption/Decryption helper functions
 function encryptData(data, key) {
   const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipherGCM('aes-256-gcm', key, iv);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   let encrypted = cipher.update(JSON.stringify(data), 'utf8', 'hex');
   encrypted += cipher.final('hex');
   const authTag = cipher.getAuthTag();
@@ -109,7 +109,7 @@ function encryptData(data, key) {
 
 function decryptData(encryptedData, key) {
   const iv = Buffer.from(encryptedData.iv, 'hex');
-  const decipher = crypto.createDecipherGCM('aes-256-gcm', key, iv);
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
   decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
   
   let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
