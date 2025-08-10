@@ -1,0 +1,20 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+// Expose protected methods that allow the renderer process to use
+// the ipcRenderer without exposing the entire object
+contextBridge.exposeInMainWorld('electronAPI', {
+  // Vault operations
+  getVaults: () => ipcRenderer.invoke('get-vaults'),
+  createVault: (vaultName, masterPassword) => ipcRenderer.invoke('create-vault', vaultName, masterPassword),
+  verifyVaultPassword: (vaultName, password) => ipcRenderer.invoke('verify-vault-password', vaultName, password),
+  loadVault: (vaultName, password) => ipcRenderer.invoke('load-vault', vaultName, password),
+  saveVault: (vaultName, password, data) => ipcRenderer.invoke('save-vault', vaultName, password, data),
+  
+  // Menu event listeners
+  onMenuNewVault: (callback) => ipcRenderer.on('menu-new-vault', callback),
+  onMenuOpenVault: (callback) => ipcRenderer.on('menu-open-vault', callback),
+  onMenuLockVault: (callback) => ipcRenderer.on('menu-lock-vault', callback),
+  
+  // Remove listeners
+  removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel)
+});
