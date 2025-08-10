@@ -1,32 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import {
   Typography,
-  Button,
-  Box,
   Card,
   CardContent,
+  Button,
+  Switch,
+  FormControlLabel,
+  TextField,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
-  TextField,
-  Switch,
-  FormControlLabel,
+  Box,
   Alert,
   Snackbar,
+  IconButton,
+  InputAdornment,
   Divider,
   Chip,
-  IconButton,
-  Tooltip
+  LinearProgress
 } from '@mui/material';
 import {
+  Edit as EditIcon,
+  Visibility,
+  VisibilityOff,
   Security as SecurityIcon,
   History as HistoryIcon,
-  Warning as WarningIcon,
-  Check as CheckIcon,
-  ArrowBack as ArrowBackIcon,
-  Edit as EditIcon
+  Warning as WarningIcon
 } from '@mui/icons-material';
+import { getPasswordStrength, validatePasswordStrength } from '../../shared/passwordValidation';
 
 const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
   const [settings, setSettings] = useState({
@@ -45,9 +47,11 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
   const [validationErrors, setValidationErrors] = useState({});
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [loading, setLoading] = useState(true);
+  const [hasBackup, setHasBackup] = useState(false);
 
   useEffect(() => {
     loadVaultInfo();
+    checkBackupStatus();
   }, []);
 
   const loadVaultInfo = async () => {
@@ -75,6 +79,36 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
     setSnackbar({ open: true, message, severity });
   };
 
+  const checkBackupStatus = async () => {
+    if (window.electronAPI && vaultName) {
+      try {
+        const result = await window.electronAPI.hasVaultBackup(vaultName);
+        if (result.success) {
+          setHasBackup(result.hasBackup);
+        }
+      } catch (error) {
+        console.error('Error checking backup status:', error);
+      }
+    }
+  };
+
+  const handleRestoreBackup = async () => {
+    if (window.electronAPI && vaultName) {
+      try {
+        const result = await window.electronAPI.restoreVaultBackup(vaultName);
+        if (result.success) {
+          showSnackbar('Vault restored from backup successfully');
+          setHasBackup(false);
+          loadVaultInfo(); // Reload vault info after restore
+        } else {
+          showSnackbar(result.error || 'Failed to restore backup', 'error');
+        }
+      } catch (error) {
+        showSnackbar('Error restoring backup', 'error');
+      }
+    }
+  };
+
   const getDaysSinceLastPasswordChange = () => {
     if (!vaultInfo?.lastPasswordChange) {
       return Math.floor((new Date() - new Date(vaultInfo?.created || new Date())) / (1000 * 60 * 60 * 24));
@@ -93,8 +127,12 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
     
     if (!passwordForm.newPassword) {
       errors.newPassword = 'New password is required';
-    } else if (passwordForm.newPassword.length < 8) {
-      errors.newPassword = 'Password must be at least 8 characters long';
+    } else {
+      // Use the shared password strength validation
+      const strengthErrors = validatePasswordStrength(passwordForm.newPassword);
+      if (strengthErrors.length > 0) {
+        errors.newPassword = strengthErrors[0];
+      }
     }
     
     if (!passwordForm.confirmPassword) {
@@ -102,18 +140,12 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
     } else if (passwordForm.newPassword !== passwordForm.confirmPassword) {
       errors.confirmPassword = 'Passwords do not match';
     }
-
-    // Check for password reuse if enabled
-    if (settings.preventPasswordReuse) {
-      // Check if new password is same as current password
-      if (passwordForm.newPassword === passwordForm.currentPassword) {
-        errors.newPassword = 'New password must be different from current password.';
-      }
-      
-      // Note: Additional password history check will be done in backend
-      // since we need to hash the password securely there
+    
+    // Check if new password is different from current (basic client-side check)
+    if (settings.preventPasswordReuse && passwordForm.newPassword === passwordForm.currentPassword) {
+      errors.newPassword = 'New password must be different from current password.';
     }
-
+    
     return errors;
   };
 
@@ -245,6 +277,23 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
           >
             Change Master Password
           </Button>
+
+          {hasBackup && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              <Typography variant="body2" sx={{ mb: 1 }}>
+                A backup of your vault is available. If you're experiencing issues accessing your vault,
+                you can restore from the backup.
+              </Typography>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={handleRestoreBackup}
+                sx={{ color: '#2196f3', borderColor: '#2196f3' }}
+              >
+                Restore from Backup
+              </Button>
+            </Alert>
+          )}
         </CardContent>
       </Card>
 
@@ -376,6 +425,27 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
               helperText={validationErrors.newPassword}
               required
             />
+            
+            {passwordForm.newPassword && (
+              <Box sx={{ mt: 1, mb: 2 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                  Password Strength: {getPasswordStrengthInfo().strength}
+                </Typography>
+                <LinearProgress
+                  variant="determinate"
+                  value={parseInt(getPasswordStrengthInfo().width)}
+                  sx={{
+                    height: 8,
+                    borderRadius: 4,
+                    backgroundColor: '#e0e0e0',
+                    '& .MuiLinearProgress-bar': {
+                      backgroundColor: getPasswordStrengthInfo().color,
+                      borderRadius: 4,
+                    },
+                  }}
+                />
+              </Box>
+            )}
             <TextField
               label="Confirm New Password"
               type="password"

@@ -1,8 +1,8 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('path');
-const isDev = require('electron-is-dev');
 const fs = require('fs-extra');
 const crypto = require('crypto');
+const { validatePasswordStrength } = require('../shared/passwordValidation');
 
 // Keep a global reference of the window object
 let mainWindow;
@@ -233,24 +233,32 @@ ipcMain.handle('save-vault', async (event, vaultName, password, data) => {
 ipcMain.handle('change-master-password', async (event, vaultName, currentPassword, newPassword) => {
   try {
     const vaultPath = path.join(vaultDir, `${vaultName}.vault`);
+    const backupPath = path.join(vaultDir, `${vaultName}.vault.backup`);
+    const tempPath = path.join(vaultDir, `${vaultName}.vault.tmp`);
     
     if (!(await fs.pathExists(vaultPath))) {
       return { success: false, error: 'Vault not found' };
     }
+    
+    // Validate new password strength
+    const passwordErrors = validatePasswordStrength(newPassword);
+    if (passwordErrors.length > 0) {
+      return { success: false, error: passwordErrors[0] };
+    }
 
-    // Load and decrypt vault with current password
-    const encryptedData = await fs.readJson(vaultPath);
-    const currentSalt = Buffer.from(encryptedData.salt, 'hex');
+    // Step 1: Load and verify current password
+    const originalEncryptedData = await fs.readJson(vaultPath);
+    const currentSalt = Buffer.from(originalEncryptedData.salt, 'hex');
     const currentKey = crypto.pbkdf2Sync(currentPassword, currentSalt, 100000, 32, 'sha512');
     
     let vaultData;
     try {
-      vaultData = decryptData(encryptedData, currentKey);
+      vaultData = decryptData(originalEncryptedData, currentKey);
     } catch (error) {
       return { success: false, error: 'Invalid current password' };
     }
 
-    // Check for password reuse if enabled
+    // Step 2: Validate new password against reuse policy
     if (vaultData.settings?.preventPasswordReuse) {
       // Check if new password is same as current password
       if (newPassword === currentPassword) {
@@ -259,7 +267,6 @@ ipcMain.handle('change-master-password', async (event, vaultName, currentPasswor
       
       // Check against password history
       const newPasswordHash = crypto.createHash('sha256').update(newPassword).digest('hex');
-      const currentPasswordHash = crypto.createHash('sha256').update(currentPassword).digest('hex');
       
       if (vaultData.passwordHistory && vaultData.passwordHistory.length > 0) {
         const isReused = vaultData.passwordHistory.some(entry => 
@@ -271,11 +278,14 @@ ipcMain.handle('change-master-password', async (event, vaultName, currentPasswor
       }
     }
 
-    // Generate new salt and key for new password
+    // Step 3: Create backup before making any changes
+    await fs.copy(vaultPath, backupPath);
+
+    // Step 4: Generate new salt and key for new password
     const newSalt = crypto.randomBytes(32);
     const newKey = crypto.pbkdf2Sync(newPassword, newSalt, 100000, 32, 'sha512');
     
-    // Update vault data with password change info
+    // Step 5: Update vault data with password change info
     const currentPasswordHash = crypto.createHash('sha256').update(currentPassword).digest('hex');
     
     if (!vaultData.passwordHistory) {
@@ -295,17 +305,60 @@ ipcMain.handle('change-master-password', async (event, vaultName, currentPasswor
     // Update last password change date
     vaultData.lastPasswordChange = new Date().toISOString();
     
-    // Re-encrypt with new password
+    // Step 6: Re-encrypt with new password
     const newEncryptedData = encryptData(vaultData, newKey);
     const finalData = {
       ...newEncryptedData,
       salt: newSalt.toString('hex')
     };
 
-    await fs.writeJson(vaultPath, finalData);
+    // Step 7: Test that we can decrypt with new password before saving
+    try {
+      const testKey = crypto.pbkdf2Sync(newPassword, newSalt, 100000, 32, 'sha512');
+      decryptData(finalData, testKey);
+    } catch (error) {
+      // If we can't decrypt with new password, restore backup and fail
+      await fs.copy(backupPath, vaultPath);
+      await fs.remove(backupPath);
+      return { success: false, error: 'Failed to encrypt vault with new password' };
+    }
+
+    // Step 8: Atomically write the new vault file
+    await fs.writeJson(tempPath, finalData);
+    
+    // Verify the temp file can be read and decrypted
+    try {
+      const testData = await fs.readJson(tempPath);
+      const testKey = crypto.pbkdf2Sync(newPassword, newSalt, 100000, 32, 'sha512');
+      decryptData(testData, testKey);
+    } catch (error) {
+      // Clean up temp file and restore backup
+      await fs.remove(tempPath);
+      await fs.copy(backupPath, vaultPath);
+      await fs.remove(backupPath);
+      return { success: false, error: 'Failed to verify new vault file' };
+    }
+    
+    // Move temp file to final location (atomic operation on most filesystems)
+    await fs.move(tempPath, vaultPath, { overwrite: true });
+    
+    // Clean up backup file
+    await fs.remove(backupPath);
+    
     return { success: true };
   } catch (error) {
     console.error('Error changing master password:', error);
+    
+    // Attempt to restore from backup if it exists
+    try {
+      if (await fs.pathExists(backupPath)) {
+        await fs.copy(backupPath, vaultPath);
+        await fs.remove(backupPath);
+      }
+    } catch (restoreError) {
+      console.error('Failed to restore backup:', restoreError);
+    }
+    
     return { success: false, error: 'Failed to change master password' };
   }
 });
@@ -354,6 +407,46 @@ ipcMain.handle('update-vault-settings', async (event, vaultName, vaultPassword, 
   } catch (error) {
     console.error('Error updating vault settings:', error);
     return { success: false, error: 'Failed to update settings' };
+  }
+});
+
+// Restore vault from backup
+ipcMain.handle('restore-vault-backup', async (event, vaultName) => {
+  try {
+    const vaultPath = path.join(vaultDir, `${vaultName}.vault`);
+    const backupPath = path.join(vaultDir, `${vaultName}.vault.backup`);
+    
+    if (!(await fs.pathExists(backupPath))) {
+      return { success: false, error: 'No backup found for this vault' };
+    }
+    
+    // Verify backup can be read
+    try {
+      await fs.readJson(backupPath);
+    } catch (error) {
+      return { success: false, error: 'Backup file is corrupted' };
+    }
+    
+    // Restore backup
+    await fs.copy(backupPath, vaultPath);
+    await fs.remove(backupPath);
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error restoring vault backup:', error);
+    return { success: false, error: 'Failed to restore vault backup' };
+  }
+});
+
+// Check if vault has backup
+ipcMain.handle('has-vault-backup', async (event, vaultName) => {
+  try {
+    const backupPath = path.join(vaultDir, `${vaultName}.vault.backup`);
+    const hasBackup = await fs.pathExists(backupPath);
+    return { success: true, hasBackup };
+  } catch (error) {
+    console.error('Error checking vault backup:', error);
+    return { success: false, hasBackup: false };
   }
 });
 
