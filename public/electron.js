@@ -229,6 +229,134 @@ ipcMain.handle('save-vault', async (event, vaultName, password, data) => {
   }
 });
 
+// Change master password
+ipcMain.handle('change-master-password', async (event, vaultName, currentPassword, newPassword) => {
+  try {
+    const vaultPath = path.join(vaultDir, `${vaultName}.vault`);
+    
+    if (!(await fs.pathExists(vaultPath))) {
+      return { success: false, error: 'Vault not found' };
+    }
+
+    // Load and decrypt vault with current password
+    const encryptedData = await fs.readJson(vaultPath);
+    const currentSalt = Buffer.from(encryptedData.salt, 'hex');
+    const currentKey = crypto.pbkdf2Sync(currentPassword, currentSalt, 100000, 32, 'sha512');
+    
+    let vaultData;
+    try {
+      vaultData = decryptData(encryptedData, currentKey);
+    } catch (error) {
+      return { success: false, error: 'Invalid current password' };
+    }
+
+    // Check for password reuse if enabled
+    if (vaultData.settings?.preventPasswordReuse) {
+      // Check if new password is same as current password
+      if (newPassword === currentPassword) {
+        return { success: false, error: 'New password must be different from current password' };
+      }
+      
+      // Check against password history
+      const newPasswordHash = crypto.createHash('sha256').update(newPassword).digest('hex');
+      const currentPasswordHash = crypto.createHash('sha256').update(currentPassword).digest('hex');
+      
+      if (vaultData.passwordHistory && vaultData.passwordHistory.length > 0) {
+        const isReused = vaultData.passwordHistory.some(entry => 
+          entry.passwordHash === newPasswordHash
+        );
+        if (isReused) {
+          return { success: false, error: 'This password has been used before. Please choose a different password.' };
+        }
+      }
+    }
+
+    // Generate new salt and key for new password
+    const newSalt = crypto.randomBytes(32);
+    const newKey = crypto.pbkdf2Sync(newPassword, newSalt, 100000, 32, 'sha512');
+    
+    // Update vault data with password change info
+    const currentPasswordHash = crypto.createHash('sha256').update(currentPassword).digest('hex');
+    
+    if (!vaultData.passwordHistory) {
+      vaultData.passwordHistory = [];
+    }
+    
+    // Add current password to history
+    vaultData.passwordHistory.unshift({
+      changedAt: vaultData.lastPasswordChange || vaultData.created,
+      passwordHash: currentPasswordHash
+    });
+    
+    // Keep only the specified number of password history entries
+    const maxHistory = Math.max(1, vaultData.settings?.maxPasswordHistory || 1);
+    vaultData.passwordHistory = vaultData.passwordHistory.slice(0, maxHistory);
+    
+    // Update last password change date
+    vaultData.lastPasswordChange = new Date().toISOString();
+    
+    // Re-encrypt with new password
+    const newEncryptedData = encryptData(vaultData, newKey);
+    const finalData = {
+      ...newEncryptedData,
+      salt: newSalt.toString('hex')
+    };
+
+    await fs.writeJson(vaultPath, finalData);
+    return { success: true };
+  } catch (error) {
+    console.error('Error changing master password:', error);
+    return { success: false, error: 'Failed to change master password' };
+  }
+});
+
+// Update vault settings
+ipcMain.handle('update-vault-settings', async (event, vaultName, vaultPassword, newSettings) => {
+  try {
+    const vaultPath = path.join(vaultDir, `${vaultName}.vault`);
+    
+    if (!(await fs.pathExists(vaultPath))) {
+      return { success: false, error: 'Vault not found' };
+    }
+
+    // Load and decrypt vault
+    const encryptedData = await fs.readJson(vaultPath);
+    const salt = Buffer.from(encryptedData.salt, 'hex');
+    const key = crypto.pbkdf2Sync(vaultPassword, salt, 100000, 32, 'sha512');
+    
+    let vaultData;
+    try {
+      vaultData = decryptData(encryptedData, key);
+    } catch (error) {
+      return { success: false, error: 'Invalid password' };
+    }
+
+    // Update settings with validation
+    const validatedSettings = { ...newSettings };
+    if (validatedSettings.maxPasswordHistory !== undefined) {
+      validatedSettings.maxPasswordHistory = Math.max(1, validatedSettings.maxPasswordHistory);
+    }
+    if (validatedSettings.passwordChangeWarningDays !== undefined) {
+      validatedSettings.passwordChangeWarningDays = Math.max(1, validatedSettings.passwordChangeWarningDays);
+    }
+    
+    vaultData.settings = { ...vaultData.settings, ...validatedSettings };
+    
+    // Re-encrypt and save
+    const newEncryptedData = encryptData(vaultData, key);
+    const finalData = {
+      ...newEncryptedData,
+      salt: salt.toString('hex')
+    };
+
+    await fs.writeJson(vaultPath, finalData);
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating vault settings:', error);
+    return { success: false, error: 'Failed to update settings' };
+  }
+});
+
 async function createDefaultVault() {
   const defaultVaultPath = path.join(vaultDir, 'default.vault');
   
@@ -240,9 +368,17 @@ async function createDefaultVault() {
     const vaultData = {
       version: '1.0',
       created: new Date().toISOString(),
+      lastPasswordChange: new Date().toISOString(),
       salt: salt.toString('hex'),
       entries: [],
-      isDefault: true
+      isDefault: true,
+      passwordHistory: [],
+      settings: {
+        enforcePasswordChange: false,
+        passwordChangeWarningDays: 90,
+        preventPasswordReuse: true,
+        maxPasswordHistory: 1
+      }
     };
 
     const encryptedData = encryptData(vaultData, key);

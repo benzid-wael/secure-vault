@@ -10,6 +10,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadVault: (vaultName, password) => ipcRenderer.invoke('load-vault', vaultName, password),
   saveVault: (vaultName, password, data) => ipcRenderer.invoke('save-vault', vaultName, password, data),
   
+  // Master password management
+  changeMasterPassword: (vaultName, currentPassword, newPassword) => ipcRenderer.invoke('change-master-password', vaultName, currentPassword, newPassword),
+  updateVaultSettings: (vaultName, vaultPassword, settings) => ipcRenderer.invoke('update-vault-settings', vaultName, vaultPassword, settings),
+  
   // Menu event listeners
   onMenuNewVault: (callback) => ipcRenderer.on('menu-new-vault', callback),
   onMenuOpenVault: (callback) => ipcRenderer.on('menu-open-vault', callback),

@@ -44,8 +44,11 @@ import {
   CreditCard as CreditCardIcon,
   Games as GamesIcon,
   Cloud as CloudIcon,
-  Smartphone as SmartphoneIcon
+  Smartphone as SmartphoneIcon,
+  Settings as SettingsIcon
 } from '@mui/icons-material';
+
+import Settings from './Settings';
 
 const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
   const [entries, setEntries] = useState([]);
@@ -58,6 +61,9 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [validationErrors, setValidationErrors] = useState({});
+  const [showSettings, setShowSettings] = useState(false);
+  const [currentVaultPassword, setCurrentVaultPassword] = useState(vaultPassword);
 
   // Predefined categories
   const categories = [
@@ -143,8 +149,25 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
     return password;
   };
 
+  const validateEntry = (entry) => {
+    const errors = {};
+    if (!entry.title?.trim()) {
+      errors.title = 'Title is required';
+    }
+    if (!entry.username?.trim()) {
+      errors.username = 'Username/Email is required';
+    }
+    if (!entry.password?.trim()) {
+      errors.password = 'Password is required';
+    }
+    return errors;
+  };
+
   const handleAddEntry = async () => {
-    if (!newEntry.title || !newEntry.username || !newEntry.password) {
+    const errors = validateEntry(newEntry);
+    setValidationErrors(errors);
+    
+    if (Object.keys(errors).length > 0) {
       showSnackbar('Please fill in all required fields', 'error');
       return;
     }
@@ -162,12 +185,16 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
     if (success) {
       setShowAddDialog(false);
       setNewEntry({ title: '', username: '', password: '', url: '', notes: '', category: 'general' });
+      setValidationErrors({});
       showSnackbar('Password entry added successfully');
     }
   };
 
   const handleEditEntry = async () => {
-    if (!editingEntry.title || !editingEntry.username || !editingEntry.password) {
+    const errors = validateEntry(editingEntry);
+    setValidationErrors(errors);
+    
+    if (Object.keys(errors).length > 0) {
       showSnackbar('Please fill in all required fields', 'error');
       return;
     }
@@ -182,6 +209,7 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
     
     if (success) {
       setEditingEntry(null);
+      setValidationErrors({});
       showSnackbar('Password entry updated successfully');
     }
   };
@@ -236,6 +264,10 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
     return matchesSearch && matchesCategory;
   });
 
+  const handlePasswordChanged = (newPassword) => {
+    setCurrentVaultPassword(newPassword);
+  };
+
   if (loading) {
     return (
       <div className="manager-container">
@@ -243,6 +275,17 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
           <Typography variant="h6" sx={{ color: 'white' }}>Loading vault...</Typography>
         </Box>
       </div>
+    );
+  }
+
+  if (showSettings) {
+    return (
+      <Settings
+        vaultName={vaultName}
+        vaultPassword={currentVaultPassword}
+        onBack={() => setShowSettings(false)}
+        onPasswordChanged={handlePasswordChanged}
+      />
     );
   }
 
@@ -261,14 +304,24 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
             </Typography>
           </Box>
         </Box>
-        <Button
-          variant="outlined"
-          startIcon={<LockIcon />}
-          onClick={onLock}
-          sx={{ color: 'white', borderColor: 'rgba(255, 255, 255, 0.3)' }}
-        >
-          Lock Vault
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button
+            variant="outlined"
+            startIcon={<SettingsIcon />}
+            onClick={() => setShowSettings(true)}
+            sx={{ color: 'white', borderColor: 'white' }}
+          >
+            Settings
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<LockIcon />}
+            onClick={onLock}
+            sx={{ color: 'white', borderColor: 'white' }}
+          >
+            Lock Vault
+          </Button>
+        </Box>
       </Box>
 
       {/* Search Bar */}
@@ -481,6 +534,7 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
         onClose={() => {
           setShowAddDialog(false);
           setEditingEntry(null);
+          setValidationErrors({});
         }}
         maxWidth="sm"
         fullWidth
@@ -505,8 +559,15 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
                 } else {
                   setNewEntry({ ...newEntry, title: e.target.value });
                 }
+                // Clear validation error when user starts typing
+                if (validationErrors.title) {
+                  setValidationErrors({ ...validationErrors, title: undefined });
+                }
               }}
               fullWidth
+              error={!!validationErrors.title}
+              helperText={validationErrors.title}
+              required
             />
             <TextField
               label="Username/Email"
@@ -517,8 +578,15 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
                 } else {
                   setNewEntry({ ...newEntry, username: e.target.value });
                 }
+                // Clear validation error when user starts typing
+                if (validationErrors.username) {
+                  setValidationErrors({ ...validationErrors, username: undefined });
+                }
               }}
               fullWidth
+              error={!!validationErrors.username}
+              helperText={validationErrors.username}
+              required
             />
             <TextField
               label="Password"
@@ -529,8 +597,15 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
                 } else {
                   setNewEntry({ ...newEntry, password: e.target.value });
                 }
+                // Clear validation error when user starts typing
+                if (validationErrors.password) {
+                  setValidationErrors({ ...validationErrors, password: undefined });
+                }
               }}
               fullWidth
+              error={!!validationErrors.password}
+              helperText={validationErrors.password}
+              required
               InputProps={{
                 endAdornment: (
                   <InputAdornment position="end">
@@ -542,6 +617,10 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
                             setEditingEntry({ ...editingEntry, password });
                           } else {
                             setNewEntry({ ...newEntry, password });
+                          }
+                          // Clear validation error when password is generated
+                          if (validationErrors.password) {
+                            setValidationErrors({ ...validationErrors, password: undefined });
                           }
                         }}
                       >
