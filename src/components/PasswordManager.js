@@ -18,7 +18,11 @@ import {
   Snackbar,
   Menu,
   MenuItem,
-  Tooltip
+  Tooltip,
+  Select,
+  FormControl,
+  InputLabel,
+  FormHelperText
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -34,7 +38,13 @@ import {
   Business as BusinessIcon,
   MoreVert as MoreVertIcon,
   Security as SecurityIcon,
-  Refresh as RefreshIcon
+  Refresh as RefreshIcon,
+  Work as WorkIcon,
+  School as SchoolIcon,
+  CreditCard as CreditCardIcon,
+  Games as GamesIcon,
+  Cloud as CloudIcon,
+  Smartphone as SmartphoneIcon
 } from '@mui/icons-material';
 
 const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
@@ -47,6 +57,21 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState('all');
+
+  // Predefined categories
+  const categories = [
+    { value: 'general', label: 'General', icon: <SecurityIcon />, color: '#9c27b0' },
+    { value: 'website', label: 'Website', icon: <WebIcon />, color: '#2196f3' },
+    { value: 'email', label: 'Email', icon: <EmailIcon />, color: '#4caf50' },
+    { value: 'business', label: 'Business', icon: <BusinessIcon />, color: '#ff9800' },
+    { value: 'work', label: 'Work', icon: <WorkIcon />, color: '#795548' },
+    { value: 'school', label: 'School', icon: <SchoolIcon />, color: '#607d8b' },
+    { value: 'finance', label: 'Finance', icon: <CreditCardIcon />, color: '#e91e63' },
+    { value: 'gaming', label: 'Gaming', icon: <GamesIcon />, color: '#673ab7' },
+    { value: 'cloud', label: 'Cloud Service', icon: <CloudIcon />, color: '#00bcd4' },
+    { value: 'mobile', label: 'Mobile App', icon: <SmartphoneIcon />, color: '#8bc34a' }
+  ];
 
   // New entry form state
   const [newEntry, setNewEntry] = useState({
@@ -187,28 +212,29 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
   };
 
   const getCategoryIcon = (category) => {
-    switch (category) {
-      case 'website': return <WebIcon />;
-      case 'email': return <EmailIcon />;
-      case 'business': return <BusinessIcon />;
-      default: return <SecurityIcon />;
-    }
+    const categoryData = categories.find(cat => cat.value === category);
+    return categoryData ? categoryData.icon : <SecurityIcon />;
   };
 
   const getCategoryColor = (category) => {
-    switch (category) {
-      case 'website': return '#2196f3';
-      case 'email': return '#4caf50';
-      case 'business': return '#ff9800';
-      default: return '#9c27b0';
-    }
+    const categoryData = categories.find(cat => cat.value === category);
+    return categoryData ? categoryData.color : '#9c27b0';
   };
 
-  const filteredEntries = entries.filter(entry =>
-    entry.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    entry.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    entry.url.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const getCategoryLabel = (category) => {
+    const categoryData = categories.find(cat => cat.value === category);
+    return categoryData ? categoryData.label : 'General';
+  };
+
+  const filteredEntries = entries.filter(entry => {
+    const matchesSearch = entry.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      entry.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      entry.url.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesCategory = selectedCategory === 'all' || entry.category === selectedCategory;
+    
+    return matchesSearch && matchesCategory;
+  });
 
   if (loading) {
     return (
@@ -246,25 +272,53 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
       </Box>
 
       {/* Search Bar */}
-      <TextField
-        fullWidth
-        placeholder="Search passwords..."
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-        InputProps={{
-          startAdornment: (
-            <InputAdornment position="start">
-              <SearchIcon sx={{ color: 'rgba(255, 255, 255, 0.5)' }} />
-            </InputAdornment>
-          ),
-        }}
-        sx={{
-          mb: 3,
-          '& .MuiOutlinedInput-root': {
-            backgroundColor: 'rgba(255, 255, 255, 0.05)',
-          }
-        }}
-      />
+      <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+        <TextField
+          fullWidth
+          placeholder="Search passwords..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon sx={{ color: 'rgba(255, 255, 255, 0.5)' }} />
+              </InputAdornment>
+            ),
+          }}
+          sx={{
+            '& .MuiOutlinedInput-root': {
+              backgroundColor: 'rgba(255, 255, 255, 0.05)',
+            }
+          }}
+        />
+        <FormControl sx={{ minWidth: 200 }}>
+          <InputLabel sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>Category</InputLabel>
+          <Select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            label="Category"
+            sx={{
+              '& .MuiOutlinedInput-notchedOutline': {
+                borderColor: 'rgba(255, 255, 255, 0.23)',
+              },
+              '& .MuiSelect-select': {
+                color: 'white',
+              },
+              backgroundColor: 'rgba(255, 255, 255, 0.05)',
+            }}
+          >
+            <MenuItem value="all">All Categories</MenuItem>
+            {categories.map((category) => (
+              <MenuItem key={category.value} value={category.value}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  {category.icon}
+                  {category.label}
+                </Box>
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      </Box>
 
       {/* Password Entries */}
       <Box sx={{ flexGrow: 1, overflow: 'auto', mb: 2 }}>
@@ -298,7 +352,7 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
                       <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                         <Chip
                           icon={getCategoryIcon(entry.category)}
-                          label={entry.category}
+                          label={getCategoryLabel(entry.category)}
                           size="small"
                           sx={{
                             backgroundColor: getCategoryColor(entry.category),
@@ -524,6 +578,30 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
               multiline
               rows={3}
             />
+            <FormControl fullWidth>
+              <InputLabel>Category</InputLabel>
+              <Select
+                value={editingEntry ? editingEntry.category || 'general' : newEntry.category}
+                onChange={(e) => {
+                  if (editingEntry) {
+                    setEditingEntry({ ...editingEntry, category: e.target.value });
+                  } else {
+                    setNewEntry({ ...newEntry, category: e.target.value });
+                  }
+                }}
+                label="Category"
+              >
+                {categories.map((category) => (
+                  <MenuItem key={category.value} value={category.value}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      {category.icon}
+                      {category.label}
+                    </Box>
+                  </MenuItem>
+                ))}
+              </Select>
+              <FormHelperText>Choose a category to organize your passwords</FormHelperText>
+            </FormControl>
           </Box>
         </DialogContent>
         <DialogActions>
