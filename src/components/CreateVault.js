@@ -17,7 +17,7 @@ import {
   Add as AddIcon,
   Security as SecurityIcon
 } from '@mui/icons-material';
-import { getPasswordStrength, validatePasswordStrength } from '../../shared/passwordValidation';
+import { getPasswordStrength, validatePasswordStrength } from '../utils/passwordValidation';
 
 const CreateVault = ({ onCreateVault, onBack, existingVaults }) => {
   const [vaultName, setVaultName] = useState('');

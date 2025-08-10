@@ -2,7 +2,8 @@ const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs-extra');
 const crypto = require('crypto');
-const { validatePasswordStrength } = require('../shared/passwordValidation');
+const isDev = require('electron-is-dev');
+const { validatePasswordStrength } = require('../src/utils/passwordValidation');
 
 // Keep a global reference of the window object
 let mainWindow;
