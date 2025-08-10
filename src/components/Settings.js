@@ -56,10 +56,11 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
     checkBackupStatus();
   }, []);
 
-  const loadVaultInfo = async () => {
-    if (window.electronAPI && vaultName && vaultPassword) {
+  const loadVaultInfo = async (passwordOverride = null) => {
+    const passwordToUse = passwordOverride || vaultPassword;
+    if (window.electronAPI && vaultName && passwordToUse) {
       try {
-        const result = await window.electronAPI.loadVault(vaultName, vaultPassword);
+        const result = await window.electronAPI.loadVault(vaultName, passwordToUse);
         if (result.success) {
           setVaultInfo(result.data);
           // Load settings from vault data if they exist
@@ -151,6 +152,13 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
     return errors;
   };
 
+  const getPasswordStrengthInfo = () => {
+    if (!passwordForm.newPassword) {
+      return { strength: 'weak', color: '#f44336', width: '0%' };
+    }
+    return getPasswordStrength(passwordForm.newPassword);
+  };
+
   const handleChangePassword = async () => {
     const errors = validatePasswordForm();
     setValidationErrors(errors);
@@ -178,8 +186,8 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
           onPasswordChanged(passwordForm.newPassword);
         }
         
-        // Reload vault info to get updated data
-        loadVaultInfo();
+        // Reload vault info using the new password directly
+        loadVaultInfo(passwordForm.newPassword);
       } else {
         showSnackbar(result.error || 'Failed to change master password', 'error');
       }
