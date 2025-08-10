@@ -17,6 +17,7 @@ import {
   Add as AddIcon,
   Security as SecurityIcon
 } from '@mui/icons-material';
+import { getPasswordStrength, validatePasswordStrength } from '../../shared/passwordValidation';
 
 const CreateVault = ({ onCreateVault, onBack, existingVaults }) => {
   const [vaultName, setVaultName] = useState('');
@@ -26,21 +27,6 @@ const CreateVault = ({ onCreateVault, onBack, existingVaults }) => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-
-  const getPasswordStrength = (password) => {
-    let score = 0;
-    if (password.length >= 8) score++;
-    if (password.length >= 12) score++;
-    if (/[a-z]/.test(password)) score++;
-    if (/[A-Z]/.test(password)) score++;
-    if (/[0-9]/.test(password)) score++;
-    if (/[^A-Za-z0-9]/.test(password)) score++;
-    
-    if (score < 3) return { strength: 'weak', color: '#f44336', width: '25%' };
-    if (score < 4) return { strength: 'fair', color: '#ff9800', width: '50%' };
-    if (score < 5) return { strength: 'good', color: '#2196f3', width: '75%' };
-    return { strength: 'strong', color: '#4caf50', width: '100%' };
-  };
 
   const passwordStrength = getPasswordStrength(masterPassword);
 
@@ -65,18 +51,15 @@ const CreateVault = ({ onCreateVault, onBack, existingVaults }) => {
       return false;
     }
 
-    if (masterPassword.length < 8) {
-      setError('Master password must be at least 8 characters long');
+    // Use shared password strength validation
+    const passwordErrors = validatePasswordStrength(masterPassword);
+    if (passwordErrors.length > 0) {
+      setError(passwordErrors[0]);
       return false;
     }
 
     if (masterPassword !== confirmPassword) {
       setError('Passwords do not match');
-      return false;
-    }
-
-    if (passwordStrength.strength === 'weak') {
-      setError('Please choose a stronger password');
       return false;
     }
 
