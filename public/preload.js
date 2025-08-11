@@ -47,6 +47,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onMenuNewVault: (callback) => ipcRenderer.on('menu-new-vault', callback),
   onMenuOpenVault: (callback) => ipcRenderer.on('menu-open-vault', callback),
   onMenuLockVault: (callback) => ipcRenderer.on('menu-lock-vault', callback),
+  onMenuConfiguration: (callback) =>
+    ipcRenderer.on('menu-configuration', callback),
 
   // Remove listeners
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),

@@ -20,3 +20,5 @@ sketch
 
 # coverage
 coverage
+
+*.md
