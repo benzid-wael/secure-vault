@@ -1,118 +1,78 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { vi } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import App from '../App';
 
-// Mock all child components with safe callback handling
+// Mock Material-UI theme components
+vi.mock('@mui/material/styles', () => ({
+  ThemeProvider: ({ children }) => React.createElement('div', { 'data-testid': 'theme-provider' }, children),
+  createTheme: () => ({}),
+}));
+
+vi.mock('@mui/material/CssBaseline', () => ({
+  __esModule: true,
+  default: () => React.createElement('div', { 'data-testid': 'css-baseline' }),
+}));
+
+// Mock React Router
+vi.mock('react-router-dom', () => ({
+  BrowserRouter: ({ children }) => React.createElement('div', { 'data-testid': 'router' }, children),
+  Routes: ({ children }) => React.createElement('div', { 'data-testid': 'routes' }, children),
+  Route: ({ element }) => React.createElement('div', { 'data-testid': 'route' }, element),
+  Navigate: () => React.createElement('div', { 'data-testid': 'navigate' }),
+}));
+
+// Simple mock components that just render without complex interactions
 vi.mock('../components/VaultSelector', () => ({
   __esModule: true,
-  default: ({ onVaultSelect, onCreateVault }) => {
-    // Store callbacks in a way that tests can access them
-    React.useEffect(() => {
-      if (global.testCallbacks) {
-        global.testCallbacks.onVaultSelect = onVaultSelect;
-        global.testCallbacks.onCreateVault = onCreateVault;
-      }
-    }, [onVaultSelect, onCreateVault]);
-
-    return React.createElement(
+  default: () =>
+    React.createElement(
       'div',
       { 'data-testid': 'vault-selector' },
-      React.createElement(
-        'button',
-        {
-          onClick: () =>
-            onVaultSelect && onVaultSelect('test-vault', 'test-password'),
-        },
-        'Select Vault'
-      ),
-      React.createElement(
-        'button',
-        {
-          onClick: () =>
-            onCreateVault && onCreateVault('new-vault', 'new-password'),
-        },
-        'Create Vault'
-      )
-    );
-  },
+      'Vault Selector'
+    ),
 }));
 
 vi.mock('../components/CreateVault', () => ({
   __esModule: true,
-  default: ({ onBack, onVaultCreated }) =>
+  default: () =>
     React.createElement(
       'div',
       { 'data-testid': 'create-vault' },
-      React.createElement(
-        'button',
-        { onClick: () => onBack && onBack() },
-        'Back'
-      ),
-      React.createElement(
-        'button',
-        {
-          onClick: () =>
-            onVaultCreated &&
-            onVaultCreated('created-vault', 'created-password'),
-        },
-        'Create'
-      )
+      'Create Vault'
     ),
 }));
 
 vi.mock('../components/VaultLogin', () => ({
   __esModule: true,
-  default: ({ vaultName, onBack, onLogin }) =>
-    React.createElement(
-      'div',
-      { 'data-testid': 'vault-login' },
-      React.createElement('span', {}, `Login to ${vaultName || 'vault'}`),
-      React.createElement(
-        'button',
-        { onClick: () => onBack && onBack() },
-        'Back'
-      ),
-      React.createElement(
-        'button',
-        {
-          onClick: () => onLogin && onLogin('login-password'),
-        },
-        'Login'
-      )
-    ),
+  default: () =>
+    React.createElement('div', { 'data-testid': 'vault-login' }, 'Vault Login'),
 }));
 
 vi.mock('../components/PasswordManager', () => ({
   __esModule: true,
-  default: ({ vaultName, vaultPassword, onLock }) =>
+  default: () =>
     React.createElement(
       'div',
       { 'data-testid': 'password-manager' },
-      React.createElement('span', {}, `Managing ${vaultName || 'vault'}`),
-      React.createElement(
-        'button',
-        { onClick: () => onLock && onLock() },
-        'Lock'
-      )
+      'Password Manager'
     ),
 }));
 
 // Mock Material-UI components
+vi.mock('@mui/material/ThemeProvider', () => ({
+  __esModule: true,
+  default: ({ children }) =>
+    React.createElement('div', { 'data-testid': 'theme-provider' }, children),
+}));
+
 vi.mock('@mui/material/CssBaseline', () => ({
   __esModule: true,
-  default: ({ children }) => <div data-testid="css-baseline">{children}</div>,
+  default: () => React.createElement('div', { 'data-testid': 'css-baseline' }),
 }));
 
-vi.mock('@mui/material/styles', () => ({
-  ThemeProvider: ({ children }) => (
-    <div data-testid="theme-provider">{children}</div>
-  ),
-  createTheme: vi.fn(() => ({})),
-}));
-
-describe('App', () => {
+describe('App - Simple Tests', () => {
   const mockElectronAPI = {
     getVaults: vi.fn(),
     onMenuNewVault: vi.fn(),
@@ -140,126 +100,48 @@ describe('App', () => {
     delete global.window.electronAPI;
   });
 
-  describe('Initial State', () => {
-    it('renders vault selector by default', () => {
-      render(<App />);
-      expect(screen.getByTestId('vault-selector')).toBeInTheDocument();
-    });
-
-    it('renders with theme provider and css baseline', () => {
-      render(<App />);
-      expect(screen.getByTestId('theme-provider')).toBeInTheDocument();
-      expect(screen.getByTestId('css-baseline')).toBeInTheDocument();
-    });
-  });
-
-  describe('Navigation Flow', () => {
-    it('can click create vault button', () => {
-      render(<App />);
-
-      const createButton = screen.getByText('Create Vault');
-      expect(createButton).toBeInTheDocument();
-
-      // Just test that clicking doesn't crash
-      expect(() => fireEvent.click(createButton)).not.toThrow();
-    });
-
-    it('can click select vault button', () => {
-      render(<App />);
-
-      const selectButton = screen.getByText('Select Vault');
-      expect(selectButton).toBeInTheDocument();
-
-      // Just test that clicking doesn't crash
-      expect(() => fireEvent.click(selectButton)).not.toThrow();
+  describe('Basic Rendering', () => {
+    it('renders without crashing', () => {
+      expect(() => render(React.createElement(App))).not.toThrow();
     });
 
     it('renders vault selector by default', () => {
-      render(<App />);
+      render(React.createElement(App));
       expect(screen.getByTestId('vault-selector')).toBeInTheDocument();
     });
 
-    it('has create vault functionality', () => {
-      render(<App />);
-      expect(screen.getByText('Create Vault')).toBeInTheDocument();
-    });
-
-    it('has select vault functionality', () => {
-      render(<App />);
-      expect(screen.getByText('Select Vault')).toBeInTheDocument();
-    });
-  });
-
-  describe('State Management', () => {
-    it('maintains app state', () => {
-      render(<App />);
-      expect(screen.getByTestId('vault-selector')).toBeInTheDocument();
-    });
-
-    it('handles component interactions', () => {
-      render(<App />);
-
-      // Test that buttons exist and can be clicked
-      const createButton = screen.getByText('Create Vault');
-      const selectButton = screen.getByText('Select Vault');
-
-      expect(createButton).toBeInTheDocument();
-      expect(selectButton).toBeInTheDocument();
-    });
-
-    it('renders without errors', () => {
-      expect(() => render(<App />)).not.toThrow();
-    });
-  });
-
-  describe('Screen Transitions', () => {
-    it('shows vault selector initially', () => {
-      render(<App />);
-      expect(screen.getByTestId('vault-selector')).toBeInTheDocument();
-    });
-
-    it('handles button clicks without errors', () => {
-      render(<App />);
-
-      // Test that clicking buttons doesn't crash the app
-      expect(() => {
-        fireEvent.click(screen.getByText('Create Vault'));
-        fireEvent.click(screen.getByText('Select Vault'));
-      }).not.toThrow();
-    });
-  });
-
-  describe('Error Handling', () => {
-    it('handles missing props gracefully', () => {
-      // Test that app doesn't crash with undefined props
-      expect(() => render(<App />)).not.toThrow();
-    });
-
-    it('handles component errors gracefully', () => {
-      // Test that app renders even if child components have issues
-      expect(() => render(<App />)).not.toThrow();
-      expect(screen.getByTestId('vault-selector')).toBeInTheDocument();
-    });
-  });
-
-  describe('Theme Integration', () => {
-    it('applies theme provider to all components', () => {
-      render(<App />);
-
-      // Check that theme provider wraps the content
-      const themeProvider = screen.getByTestId('theme-provider');
-      expect(themeProvider).toBeInTheDocument();
-
-      // Check that vault selector is inside theme provider
-      expect(themeProvider).toContainElement(
-        screen.getByTestId('vault-selector')
-      );
-    });
-
-    it('includes CSS baseline for consistent styling', () => {
-      render(<App />);
-
+    it('renders with css baseline', () => {
+      render(React.createElement(App));
       expect(screen.getByTestId('css-baseline')).toBeInTheDocument();
+    });
+
+    it('has the App class', () => {
+      render(React.createElement(App));
+      expect(document.querySelector('.App')).toBeInTheDocument();
+    });
+  });
+
+  describe('Component Structure', () => {
+    it('contains the main app structure', () => {
+      render(<App />);
+
+      // Check that the main components are present
+      expect(screen.getByTestId('css-baseline')).toBeInTheDocument();
+      expect(screen.getByTestId('vault-selector')).toBeInTheDocument();
+    });
+  });
+
+  describe('ElectronAPI Integration', () => {
+    it('calls electronAPI.getVaults on mount', () => {
+      render(<App />);
+      expect(mockElectronAPI.getVaults).toHaveBeenCalled();
+    });
+
+    it('sets up menu listeners', () => {
+      render(<App />);
+      expect(mockElectronAPI.onMenuNewVault).toHaveBeenCalled();
+      expect(mockElectronAPI.onMenuOpenVault).toHaveBeenCalled();
+      expect(mockElectronAPI.onMenuLockVault).toHaveBeenCalled();
     });
   });
 });

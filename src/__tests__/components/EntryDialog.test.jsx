@@ -1,24 +1,29 @@
 import React from 'react';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { vi } from 'vitest';
 
-// Simplified mocks for MUI components
+// Mock MUI components used in EntryDialog
 vi.mock('@mui/material/MenuItem', () => ({
   __esModule: true,
-  default: ({ children, value }) =>
-    React.createElement('option', { value }, children),
+  default: ({ children, ...props }) =>
+    React.createElement(
+      'option',
+      { 'data-testid': 'menu-item', ...props },
+      children
+    ),
 }));
 
 vi.mock('@mui/material/Select', () => ({
   __esModule: true,
-  default: ({ children, value, onChange }) =>
+  default: ({ children, value, onChange, ...props }) =>
     React.createElement(
       'select',
       {
         'data-testid': 'select',
         value,
         onChange: (e) => onChange({ target: { value: e.target.value } }),
+        ...props,
       },
       children
     ),
@@ -26,95 +31,65 @@ vi.mock('@mui/material/Select', () => ({
 
 vi.mock('@mui/material/FormControl', () => ({
   __esModule: true,
-  default: ({ children }) => React.createElement('div', {}, children),
+  default: ({ children, ...props }) =>
+    React.createElement('div', { 'data-testid': 'form-control', ...props }, children),
 }));
 
 vi.mock('@mui/material/InputLabel', () => ({
   __esModule: true,
-  default: ({ children }) => React.createElement('label', {}, children),
+  default: (props) => React.createElement('label', { 'data-testid': 'input-label', ...props }),
 }));
 
 vi.mock('@mui/material/Box', () => ({
   __esModule: true,
-  default: ({ children }) => React.createElement('div', {}, children),
+  default: (props) => React.createElement('div', { 'data-testid': 'box', ...props }),
 }));
 
 vi.mock('@mui/material/TextField', () => ({
   __esModule: true,
-  default: ({ label, type, value, onChange, InputProps, ...props }) => {
-    const testId =
-      label === 'Title'
-        ? 'input-title'
-        : label === 'Username/Email'
-          ? 'input-username/email'
-          : label === 'Password'
-            ? 'input-password'
-            : label === 'URL'
-              ? 'input-url'
-              : label === 'Notes'
-                ? 'input-notes'
-                : `input-${label.toLowerCase().replace(/\s+/g, '-')}`;
-
-    return React.createElement(
-      'div',
-      {},
-      React.createElement(
-        'label',
-        {},
+  default: ({ label, type, value, onChange, InputProps, ...props }) =>
+    React.createElement('div', {},
+      React.createElement('label', {
+        'data-testid': `text-field-${label.toLowerCase().replace(/\s+/g, '-')}`
+      },
         label,
         React.createElement('input', {
           type: type || 'text',
-          value: value,
-          onChange: onChange,
-          'data-testid': testId,
-          ...props,
+          value: value || '',
+          onChange,
+          'data-testid': `input-${label.toLowerCase().replace(/\s+/g, '-')}`,
+          ...props
         }),
         InputProps?.endAdornment
       )
-    );
-  },
+    ),
 }));
 
 vi.mock('@mui/material/IconButton', () => ({
   __esModule: true,
-  default: ({ children, onClick }) =>
-    React.createElement(
-      'button',
-      { onClick, 'data-testid': 'icon-button' },
-      children
-    ),
-}));
-
-vi.mock('@mui/material/Button', () => ({
-  __esModule: true,
-  default: ({ children, onClick, type }) =>
-    React.createElement('button', { onClick, type }, children),
+  default: ({ children, onClick, ...props }) =>
+    React.createElement('button', { onClick, 'data-testid': 'icon-button', ...props }, children),
 }));
 
 vi.mock('@mui/material/Dialog', () => ({
   __esModule: true,
   default: ({ children, open }) =>
-    open
-      ? React.createElement('div', { 'data-testid': 'dialog' }, children)
-      : null,
+    open ? React.createElement('div', { 'data-testid': 'dialog' }, children) : null,
 }));
 
 vi.mock('@mui/material/DialogTitle', () => ({
   __esModule: true,
-  default: ({ children }) =>
-    React.createElement('h2', { 'data-testid': 'dialog-title' }, children),
+  default: ({ children }) => React.createElement('h2', { 'data-testid': 'dialog-title' }, children),
 }));
 
 vi.mock('@mui/material/DialogContent', () => ({
   __esModule: true,
-  default: ({ children }) =>
-    React.createElement('div', { 'data-testid': 'dialog-content' }, children),
+  default: ({ children }) => React.createElement('div', { 'data-testid': 'dialog-content' }, children),
 }));
 
 vi.mock('@mui/material/DialogActions', () => ({
   __esModule: true,
-  default: ({ children }) =>
-    React.createElement('div', { 'data-testid': 'dialog-actions' }, children),
+  default: ({ children }) => React.createElement('div', { 'data-testid': 'dialog-actions' }, children),
 }));
 
 // Mock password generator to deterministic value
@@ -131,12 +106,7 @@ vi.mock('../../utils/categoryManager', () => ({
       icon: () => React.createElement('span', {}, 'Icon'),
       color: '#000',
     },
-    {
-      id: 'work',
-      name: 'Work',
-      icon: () => React.createElement('span', {}, 'Icon'),
-      color: '#000',
-    },
+    { id: 'work', name: 'Work', icon: () => React.createElement('span', {}, 'Icon'), color: '#000' },
   ],
   getCategoryById: (id) => ({
     id,
@@ -162,7 +132,7 @@ describe('EntryDialog', () => {
       validationErrors: {},
       ...props,
     };
-    return render(<EntryDialog {...defaultProps} />);
+    return render(React.createElement(EntryDialog, defaultProps));
   };
 
   beforeEach(() => {
@@ -170,30 +140,80 @@ describe('EntryDialog', () => {
   });
 
   it('renders dialog with form fields', () => {
-    // Just test that the component renders without errors
-    expect(() => renderDialog()).not.toThrow();
+    renderDialog();
 
-    // Basic check that something rendered
-    expect(document.body).toContainHTML('div');
+    expect(screen.getByTestId('dialog')).toBeInTheDocument();
+    expect(screen.getByTestId('dialog-title')).toHaveTextContent(
+      'Add New Password Entry'
+    );
+
+    // Check all form fields are rendered
+    expect(screen.getByTestId('input-title')).toBeInTheDocument();
+    expect(screen.getByTestId('input-username')).toBeInTheDocument();
+    expect(screen.getByTestId('input-password')).toBeInTheDocument();
+    expect(screen.getByTestId('input-url')).toBeInTheDocument();
+    expect(screen.getByTestId('input-notes')).toBeInTheDocument();
+
+    // Check buttons
+    expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /add entry/i })
+    ).toBeInTheDocument();
   });
 
   it('initializes empty form for create and saves with input data', () => {
     renderDialog();
 
-    // Check that save button exists and can be clicked
-    const saveButton = screen.getByRole('button', { name: /add entry/i });
-    expect(saveButton).toBeInTheDocument();
+    // Fill in the form
+    fireEvent.change(screen.getByTestId('input-title'), {
+      target: { value: 'My Title' },
+    });
+    fireEvent.change(screen.getByTestId('input-username'), {
+      target: { value: 'user' },
+    });
+    fireEvent.change(screen.getByTestId('input-password'), {
+      target: { value: 'Secret123!' },
+    });
+    fireEvent.change(screen.getByTestId('input-url'), {
+      target: { value: 'https://example.com' },
+    });
+    fireEvent.change(screen.getByTestId('input-notes'), {
+      target: { value: 'note' },
+    });
 
-    // Click save button
-    fireEvent.click(saveButton);
+    // Change category
+    fireEvent.change(screen.getByTestId('select'), {
+      target: { value: 'work' },
+    });
 
-    // Should call onSave function
-    expect(onSave).toHaveBeenCalled();
+    // Submit the form
+    fireEvent.click(screen.getByRole('button', { name: /add entry/i }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'My Title',
+        username: 'user',
+        password: 'Secret123!',
+        url: 'https://example.com',
+        notes: 'note',
+        category: 'work',
+      })
+    );
   });
 
   it('toggles password visibility and generates password', () => {
-    // Just test that the component renders without errors
-    expect(() => renderDialog()).not.toThrow();
+    renderDialog();
+
+    // Get all icon buttons (toggle and generate)
+    const iconButtons = screen.getAllByTestId('icon-button');
+    // The generate button is the second one
+    const generateButton = iconButtons[1];
+
+    // Click generate password
+    fireEvent.click(generateButton);
+
+    // Check if password was generated
+    expect(screen.getByTestId('input-password')).toHaveValue('GenPass!2345');
   });
 
   it('populates fields when editing', () => {
@@ -207,16 +227,28 @@ describe('EntryDialog', () => {
       category: 'work',
     };
 
-    // Just test that the component renders without errors when given an entry
-    expect(() => renderDialog({ entry })).not.toThrow();
+    renderDialog({ entry, editMode: true });
 
-    // Basic check that something rendered
-    expect(document.body).toContainHTML('div');
+    // Check if fields are populated with entry data
+    expect(screen.getByTestId('input-title')).toHaveValue('Test Entry');
+    expect(screen.getByTestId('input-username')).toHaveValue('testuser');
+    expect(screen.getByTestId('input-password')).toHaveValue('testpass');
+    expect(screen.getByTestId('input-url')).toHaveValue('http://test.com');
+    expect(screen.getByTestId('input-notes')).toHaveValue('test note');
+    expect(screen.getByTestId('select')).toHaveValue('work');
+
+    // Check if title changed to Edit Password Entry
+    expect(screen.getByTestId('dialog-title')).toHaveTextContent('Edit Password Entry');
+    // Check if button text changed to Update Entry
+    expect(
+      screen.getByRole('button', { name: /update entry/i })
+    ).toBeInTheDocument();
   });
 
   it('resets and calls onClose when cancel', () => {
-    // Just test that the component renders without errors
-    expect(() => renderDialog()).not.toThrow();
+    renderDialog();
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(onClose).toHaveBeenCalled();
   });
 
   it('shows validation errors', () => {
@@ -225,7 +257,10 @@ describe('EntryDialog', () => {
       password: 'Password is required',
     };
 
-    // Just test that the component renders without errors with validation errors
-    expect(() => renderDialog({ validationErrors })).not.toThrow();
+    renderDialog({ validationErrors });
+
+    // Check if validation errors are displayed
+    expect(screen.getByText('Title is required')).toBeInTheDocument();
+    expect(screen.getByText('Password is required')).toBeInTheDocument();
   });
 });

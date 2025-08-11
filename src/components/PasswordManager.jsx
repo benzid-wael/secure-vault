@@ -7,22 +7,16 @@ import {
   CardContent,
   IconButton,
   TextField,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  InputAdornment,
   Chip,
   Fab,
   Alert,
   Snackbar,
   Menu,
   MenuItem,
-  Tooltip,
-  Select,
+  InputAdornment,
   FormControl,
   InputLabel,
-  FormHelperText,
+  Select,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -38,7 +32,6 @@ import {
   Business as BusinessIcon,
   MoreVert as MoreVertIcon,
   Security as SecurityIcon,
-  Refresh as RefreshIcon,
   Work as WorkIcon,
   School as SchoolIcon,
   CreditCard as CreditCardIcon,
@@ -49,6 +42,7 @@ import {
 } from '@mui/icons-material';
 
 import Settings from './Settings';
+import EntryDialog from './EntryDialog';
 
 const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
   const [entries, setEntries] = useState([]);
@@ -114,16 +108,6 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
     },
   ];
 
-  // New entry form state
-  const [newEntry, setNewEntry] = useState({
-    title: '',
-    username: '',
-    password: '',
-    url: '',
-    notes: '',
-    category: 'general',
-  });
-
   useEffect(() => {
     loadVaultData();
   }, []);
@@ -181,17 +165,6 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
     setSnackbar({ open: true, message, severity });
   };
 
-  const generatePassword = () => {
-    const length = 16;
-    const charset =
-      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=[]{}|;:,.<>?';
-    let password = '';
-    for (let i = 0; i < length; i++) {
-      password += charset.charAt(Math.floor(Math.random() * charset.length));
-    }
-    return password;
-  };
-
   const validateEntry = (entry) => {
     const errors = {};
     if (!entry.title?.trim()) {
@@ -206,8 +179,8 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
     return errors;
   };
 
-  const handleAddEntry = async () => {
-    const errors = validateEntry(newEntry);
+  const handleAddEntry = async (formData) => {
+    const errors = validateEntry(formData);
     setValidationErrors(errors);
 
     if (Object.keys(errors).length > 0) {
@@ -217,7 +190,7 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
 
     const entry = {
       id: Date.now().toString(),
-      ...newEntry,
+      ...formData,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -227,21 +200,13 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
 
     if (success) {
       setShowAddDialog(false);
-      setNewEntry({
-        title: '',
-        username: '',
-        password: '',
-        url: '',
-        notes: '',
-        category: 'general',
-      });
       setValidationErrors({});
       showSnackbar('Password entry added successfully');
     }
   };
 
-  const handleEditEntry = async () => {
-    const errors = validateEntry(editingEntry);
+  const handleEditEntry = async (formData) => {
+    const errors = validateEntry(formData);
     setValidationErrors(errors);
 
     if (Object.keys(errors).length > 0) {
@@ -251,7 +216,11 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
 
     const updatedEntries = entries.map((entry) =>
       entry.id === editingEntry.id
-        ? { ...editingEntry, updatedAt: new Date().toISOString() }
+        ? {
+            ...formData,
+            id: editingEntry.id,
+            updatedAt: new Date().toISOString(),
+          }
         : entry
     );
 
@@ -629,6 +598,7 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
       <Fab
         color="primary"
         onClick={() => setShowAddDialog(true)}
+        data-testid="fab-button"
         sx={{
           position: 'fixed',
           bottom: 32,
@@ -664,204 +634,18 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
       </Menu>
 
       {/* Add/Edit Dialog */}
-      <Dialog
+      <EntryDialog
         open={showAddDialog || editingEntry !== null}
         onClose={() => {
           setShowAddDialog(false);
           setEditingEntry(null);
           setValidationErrors({});
         }}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{
-          sx: {
-            backgroundColor: '#1e1e1e',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-          },
-        }}
-      >
-        <DialogTitle sx={{ color: 'white' }}>
-          {editingEntry ? 'Edit Password Entry' : 'Add New Password Entry'}
-        </DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'grid', gap: 2, mt: 1 }}>
-            <TextField
-              label="Title"
-              value={editingEntry ? editingEntry.title : newEntry.title}
-              onChange={(e) => {
-                if (editingEntry) {
-                  setEditingEntry({ ...editingEntry, title: e.target.value });
-                } else {
-                  setNewEntry({ ...newEntry, title: e.target.value });
-                }
-                // Clear validation error when user starts typing
-                if (validationErrors.title) {
-                  setValidationErrors({
-                    ...validationErrors,
-                    title: undefined,
-                  });
-                }
-              }}
-              fullWidth
-              error={!!validationErrors.title}
-              helperText={validationErrors.title}
-              required
-            />
-            <TextField
-              label="Username/Email"
-              value={editingEntry ? editingEntry.username : newEntry.username}
-              onChange={(e) => {
-                if (editingEntry) {
-                  setEditingEntry({
-                    ...editingEntry,
-                    username: e.target.value,
-                  });
-                } else {
-                  setNewEntry({ ...newEntry, username: e.target.value });
-                }
-                // Clear validation error when user starts typing
-                if (validationErrors.username) {
-                  setValidationErrors({
-                    ...validationErrors,
-                    username: undefined,
-                  });
-                }
-              }}
-              fullWidth
-              error={!!validationErrors.username}
-              helperText={validationErrors.username}
-              required
-            />
-            <TextField
-              label="Password"
-              value={editingEntry ? editingEntry.password : newEntry.password}
-              onChange={(e) => {
-                if (editingEntry) {
-                  setEditingEntry({
-                    ...editingEntry,
-                    password: e.target.value,
-                  });
-                } else {
-                  setNewEntry({ ...newEntry, password: e.target.value });
-                }
-                // Clear validation error when user starts typing
-                if (validationErrors.password) {
-                  setValidationErrors({
-                    ...validationErrors,
-                    password: undefined,
-                  });
-                }
-              }}
-              fullWidth
-              error={!!validationErrors.password}
-              helperText={validationErrors.password}
-              required
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <Tooltip title="Generate Password">
-                      <IconButton
-                        onClick={() => {
-                          const password = generatePassword();
-                          if (editingEntry) {
-                            setEditingEntry({ ...editingEntry, password });
-                          } else {
-                            setNewEntry({ ...newEntry, password });
-                          }
-                          // Clear validation error when password is generated
-                          if (validationErrors.password) {
-                            setValidationErrors({
-                              ...validationErrors,
-                              password: undefined,
-                            });
-                          }
-                        }}
-                      >
-                        <RefreshIcon />
-                      </IconButton>
-                    </Tooltip>
-                  </InputAdornment>
-                ),
-              }}
-            />
-            <TextField
-              label="URL (optional)"
-              value={editingEntry ? editingEntry.url : newEntry.url}
-              onChange={(e) => {
-                if (editingEntry) {
-                  setEditingEntry({ ...editingEntry, url: e.target.value });
-                } else {
-                  setNewEntry({ ...newEntry, url: e.target.value });
-                }
-              }}
-              fullWidth
-            />
-            <TextField
-              label="Notes (optional)"
-              value={editingEntry ? editingEntry.notes : newEntry.notes}
-              onChange={(e) => {
-                if (editingEntry) {
-                  setEditingEntry({ ...editingEntry, notes: e.target.value });
-                } else {
-                  setNewEntry({ ...newEntry, notes: e.target.value });
-                }
-              }}
-              fullWidth
-              multiline
-              rows={3}
-            />
-            <FormControl fullWidth>
-              <InputLabel>Category</InputLabel>
-              <Select
-                value={
-                  editingEntry
-                    ? editingEntry.category || 'general'
-                    : newEntry.category
-                }
-                onChange={(e) => {
-                  if (editingEntry) {
-                    setEditingEntry({
-                      ...editingEntry,
-                      category: e.target.value,
-                    });
-                  } else {
-                    setNewEntry({ ...newEntry, category: e.target.value });
-                  }
-                }}
-                label="Category"
-              >
-                {categories.map((category) => (
-                  <MenuItem key={category.value} value={category.value}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      {category.icon}
-                      {category.label}
-                    </Box>
-                  </MenuItem>
-                ))}
-              </Select>
-              <FormHelperText>
-                Choose a category to organize your passwords
-              </FormHelperText>
-            </FormControl>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button
-            onClick={() => {
-              setShowAddDialog(false);
-              setEditingEntry(null);
-            }}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={editingEntry ? handleEditEntry : handleAddEntry}
-            variant="contained"
-          >
-            {editingEntry ? 'Update' : 'Add'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onSave={editingEntry ? handleEditEntry : handleAddEntry}
+        entry={editingEntry}
+        validationErrors={validationErrors}
+        onValidationErrorsChange={setValidationErrors}
+      />
 
       {/* Snackbar */}
       <Snackbar
