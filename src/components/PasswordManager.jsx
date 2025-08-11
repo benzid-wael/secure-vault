@@ -39,6 +39,7 @@ import {
   Cloud as CloudIcon,
   Smartphone as SmartphoneIcon,
   Settings as SettingsIcon,
+  ImportExport as ImportExportIcon,
 } from '@mui/icons-material';
 
 import Settings from './Settings';
@@ -196,6 +197,11 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
   const handleAddEntryType = (entryType) => {
     setSelectedEntryType(entryType);
     setShowAddDialog(true);
+  };
+
+  const handleImportSuccess = (importedVaultName) => {
+    showSnackbar(`Vault "${importedVaultName}" imported successfully!`);
+    loadAvailableVaults(); // Refresh the available vaults list
   };
 
   const handleAddEntry = async (formData) => {
@@ -388,6 +394,14 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
           </Box>
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button
+            variant="outlined"
+            startIcon={<ImportExportIcon />}
+            onClick={() => setShowImportExport(true)}
+            sx={{ color: 'white', borderColor: 'white' }}
+          >
+            Import/Export
+          </Button>
           <Button
             variant="outlined"
             startIcon={<SettingsIcon />}
@@ -636,6 +650,16 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
         entryType={selectedEntryType}
         validationErrors={validationErrors}
         onValidationErrorsChange={setValidationErrors}
+      />
+
+      {/* Import/Export Dialog */}
+      <ImportExportDialog
+        open={showImportExport}
+        onClose={() => setShowImportExport(false)}
+        vaultName={vaultName}
+        vaultPassword={vaultPassword}
+        availableVaults={availableVaults}
+        onImportSuccess={handleImportSuccess}
       />
 
       {/* Snackbar */}
