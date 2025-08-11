@@ -1,19 +1,19 @@
 #!/bin/sh
 set -e
 
+echo "🔍 Running pre-commit checks..."
+echo ""
+
 # Format staged files
+echo "📝 Formatting staged files..."
 npx lint-staged
+echo "✅ Code formatting completed!"
+echo ""
 
-# Run all tests
-echo "Running all tests..."
-npm run test -- --run
+# Run tests with coverage and check thresholds
+echo "🧪 Running tests with coverage check..."
+npm run test:coverage:check
 
-# Generate coverage (informational)
-echo "Checking test coverage..."
-npm run test -- --coverage --run
-
-echo "✅ Pre-commit checks completed!"
-echo "📊 Current coverage: ~20%. Goal: 70% (will enforce once we reach it)"
-  echo "Test coverage is below threshold (70%)"
-  exit 0
-fi
+echo ""
+echo "✅ All pre-commit checks completed successfully!"
+echo ""
