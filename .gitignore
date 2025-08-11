@@ -20,3 +20,6 @@ sketch
 
 # coverage
 coverage
+
+*.md
+config.bat

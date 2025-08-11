@@ -21,6 +21,7 @@ import {
   getPasswordStrength,
   validatePasswordStrength,
 } from '../utils/passwordValidation';
+import RecoveryKeyDisplay from './RecoveryKeyDisplay';
 
 const CreateVault = ({ onCreateVault, onBack, existingVaults }) => {
   const [vaultName, setVaultName] = useState('');
@@ -31,6 +32,8 @@ const CreateVault = ({ onCreateVault, onBack, existingVaults }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [showRecoveryKey, setShowRecoveryKey] = useState(false);
+  const [recoveryKey, setRecoveryKey] = useState('');
 
   const passwordStrength = getPasswordStrength(masterPassword);
 
@@ -88,6 +91,11 @@ const CreateVault = ({ onCreateVault, onBack, existingVaults }) => {
         setError(result.error || 'Failed to create vault');
       } else {
         setIsSuccess(true);
+        // Show recovery key if provided
+        if (result.recoveryKey) {
+          setRecoveryKey(result.recoveryKey);
+          setShowRecoveryKey(true);
+        }
       }
     } catch (error) {
       setError('Failed to create vault. Please try again.');
@@ -293,6 +301,14 @@ const CreateVault = ({ onCreateVault, onBack, existingVaults }) => {
           derivation
         </Typography>
       </div>
+
+      <RecoveryKeyDisplay
+        open={showRecoveryKey}
+        onClose={() => setShowRecoveryKey(false)}
+        recoveryKey={recoveryKey}
+        vaultName={vaultName}
+        isNewVault={true}
+      />
     </div>
   );
 };

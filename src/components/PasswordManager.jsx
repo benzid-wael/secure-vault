@@ -462,9 +462,11 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
           </Box>
         ) : (
           <Box sx={{ display: 'grid', gap: 2 }}>
-            {filteredEntries.map((entry) => (
+            {filteredEntries.map((entry, index) => (
               <Card
                 key={entry.id}
+                data-testid={`entry-${entry.id}`}
+                data-entry-type={entry.entryType || 'password'}
                 sx={{
                   backgroundColor: 'rgba(255, 255, 255, 0.05)',
                   border: '1px solid rgba(255, 255, 255, 0.1)',

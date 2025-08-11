@@ -112,11 +112,58 @@ function decryptData(encryptedData, key) {
   const iv = Buffer.from(encryptedData.iv, 'hex');
   const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
   decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
-  
+
   let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
-  
+
   return JSON.parse(decrypted);
+}
+
+// Recovery key generation and validation functions
+function generateRecoveryKey() {
+  // Generate a 256-bit (32 byte) recovery key
+  const recoveryKeyBytes = crypto.randomBytes(32);
+
+  // Convert to base32 for human readability (similar to Google Authenticator)
+  // Using a custom base32 alphabet without confusing characters
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let result = '';
+  let bits = 0;
+  let value = 0;
+
+  for (let i = 0; i < recoveryKeyBytes.length; i++) {
+    value = (value << 8) | recoveryKeyBytes[i];
+    bits += 8;
+
+    while (bits >= 5) {
+      result += alphabet[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+
+  if (bits > 0) {
+    result += alphabet[(value << (5 - bits)) & 31];
+  }
+
+  // Format as groups of 4 characters for readability
+  return result.match(/.{1,4}/g).join('-');
+}
+
+function validateRecoveryKeyFormat(recoveryKey) {
+  // Remove dashes and convert to uppercase
+  const cleanKey = recoveryKey.replace(/-/g, '').toUpperCase();
+
+  // Check if it matches expected format (base32, specific length)
+  const base32Regex = /^[ABCDEFGHIJKLMNOPQRSTUVWXYZ234567]+$/;
+  return base32Regex.test(cleanKey) && cleanKey.length >= 50; // Minimum length for security
+}
+
+function deriveKeyFromRecoveryKey(recoveryKey, salt) {
+  // Remove dashes and convert to uppercase
+  const cleanKey = recoveryKey.replace(/-/g, '').toUpperCase();
+
+  // Use PBKDF2 to derive encryption key from recovery key
+  return crypto.pbkdf2Sync(cleanKey, salt, 100000, 32, 'sha512');
 }
 
 // Get available vaults
@@ -126,13 +173,13 @@ ipcMain.handle('get-vaults', async () => {
     const vaults = files
       .filter(file => file.endsWith('.vault'))
       .map(file => file.replace('.vault', ''));
-    
+
     // Ensure default vault exists
     if (!vaults.includes('default')) {
       await createDefaultVault();
       vaults.unshift('default');
     }
-    
+
     return vaults;
   } catch (error) {
     console.error('Error getting vaults:', error);
@@ -140,11 +187,76 @@ ipcMain.handle('get-vaults', async () => {
   }
 });
 
+// Delete vault
+ipcMain.handle('delete-vault', async (event, vaultName, confirmationPassword) => {
+  try {
+    const vaultPath = path.join(vaultDir, `${vaultName}.vault`);
+
+    if (!(await fs.pathExists(vaultPath))) {
+      return { success: false, error: 'Vault not found' };
+    }
+
+    // Prevent deletion of default vault without explicit confirmation
+    if (vaultName === 'default' && !confirmationPassword) {
+      return { success: false, error: 'Cannot delete default vault without password confirmation' };
+    }
+
+    // Verify password before deletion for security
+    if (confirmationPassword) {
+      const vaultFileData = await fs.readJson(vaultPath);
+      const salt = Buffer.from(vaultFileData.salt, 'hex');
+      const key = crypto.pbkdf2Sync(confirmationPassword, salt, 100000, 32, 'sha512');
+
+      try {
+        // Extract only the encrypted part for decryption
+        const encryptedData = {
+          encrypted: vaultFileData.encrypted,
+          authTag: vaultFileData.authTag,
+          iv: vaultFileData.iv
+        };
+        decryptData(encryptedData, key);
+      } catch (error) {
+        return { success: false, error: 'Invalid password. Vault not deleted.' };
+      }
+    }
+
+    // Create a backup before deletion (just in case)
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupPath = path.join(vaultDir, `${vaultName}.vault.deleted.${timestamp}`);
+    await fs.copy(vaultPath, backupPath);
+
+    // Delete the main vault file
+    await fs.remove(vaultPath);
+
+    // Also clean up any related files
+    const relatedFiles = [
+      path.join(vaultDir, `${vaultName}.vault.backup`),
+      path.join(vaultDir, `${vaultName}.vault.tmp`),
+      path.join(vaultDir, `${vaultName}.recovery`) // Legacy recovery files
+    ];
+
+    for (const filePath of relatedFiles) {
+      if (await fs.pathExists(filePath)) {
+        await fs.remove(filePath);
+      }
+    }
+
+    return {
+      success: true,
+      message: `Vault "${vaultName}" has been deleted. A backup was created.`,
+      backupFile: path.basename(backupPath)
+    };
+  } catch (error) {
+    console.error('Error deleting vault:', error);
+    return { success: false, error: 'Failed to delete vault' };
+  }
+});
+
 // Create new vault
 ipcMain.handle('create-vault', async (event, vaultName, masterPassword) => {
   try {
     const vaultPath = path.join(vaultDir, `${vaultName}.vault`);
-    
+
     // Check if vault already exists
     if (await fs.pathExists(vaultPath)) {
       throw new Error('Vault already exists');
@@ -153,22 +265,51 @@ ipcMain.handle('create-vault', async (event, vaultName, masterPassword) => {
     // Create encrypted vault structure
     const salt = crypto.randomBytes(32);
     const key = crypto.pbkdf2Sync(masterPassword, salt, 100000, 32, 'sha512');
-    
+
+    // Generate initial recovery key
+    const recoveryKey = generateRecoveryKey();
+
     const vaultData = {
       version: '1.0',
       created: new Date().toISOString(),
-      salt: salt.toString('hex'),
-      entries: []
+      lastPasswordChange: new Date().toISOString(),
+      entries: [],
+      passwordHistory: [], // Initialize empty password history
+      settings: {
+        enforcePasswordChange: false,
+        passwordChangeWarningDays: 90,
+        preventPasswordReuse: true,
+        maxPasswordHistory: 3,  // We store last 3 passwords by default
+      }
     };
+
+    // Generate initial recovery key and create bidirectional encryption
+    const recoveryKeyDerived = deriveKeyFromRecoveryKey(recoveryKey, salt);
+    const encryptedRecoveryKey = encryptData({ recoveryKey }, key);
+    const encryptedMasterPassword = encryptData({ masterPassword }, recoveryKeyDerived);
 
     const encryptedData = encryptData(vaultData, key);
     const finalData = {
       ...encryptedData,
-      salt: salt.toString('hex')
+      salt: salt.toString('hex'),
+      // Recovery metadata stored unencrypted in vault file
+      recoveryMetadata: {
+        recoveryKey: {
+          encryptedRecoveryKey: encryptedRecoveryKey,
+          encryptedMasterPassword: encryptedMasterPassword,
+          createdAt: new Date().toISOString(),
+          version: 1
+        }
+        // previousPassword will be added when password is first changed
+      }
     };
 
     await fs.writeJson(vaultPath, finalData);
-    return { success: true };
+    return {
+      success: true,
+      recoveryKey: recoveryKey,
+      recoveryKeyCreatedAt: vaultData.recoveryKey.createdAt
+    };
   } catch (error) {
     console.error('Error creating vault:', error);
     return { success: false, error: error.message };
@@ -179,12 +320,19 @@ ipcMain.handle('create-vault', async (event, vaultName, masterPassword) => {
 ipcMain.handle('verify-vault-password', async (event, vaultName, password) => {
   try {
     const vaultPath = path.join(vaultDir, `${vaultName}.vault`);
-    const vaultData = await fs.readJson(vaultPath);
-    
-    const salt = Buffer.from(vaultData.salt, 'hex');
+    const vaultFileData = await fs.readJson(vaultPath);
+
+    const salt = Buffer.from(vaultFileData.salt, 'hex');
     const key = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha512');
-    
-    decryptData(vaultData, key); // This will throw if password is wrong
+
+    // Extract only the encrypted part for decryption
+    const encryptedData = {
+      encrypted: vaultFileData.encrypted,
+      authTag: vaultFileData.authTag,
+      iv: vaultFileData.iv
+    };
+
+    decryptData(encryptedData, key); // This will throw if password is wrong
     return { success: true };
   } catch (error) {
     return { success: false, error: 'Invalid password' };
@@ -195,12 +343,19 @@ ipcMain.handle('verify-vault-password', async (event, vaultName, password) => {
 ipcMain.handle('load-vault', async (event, vaultName, password) => {
   try {
     const vaultPath = path.join(vaultDir, `${vaultName}.vault`);
-    const vaultData = await fs.readJson(vaultPath);
-    
-    const salt = Buffer.from(vaultData.salt, 'hex');
+    const vaultFileData = await fs.readJson(vaultPath);
+
+    const salt = Buffer.from(vaultFileData.salt, 'hex');
     const key = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha512');
-    
-    const parsedData = decryptData(vaultData, key);
+
+    // Extract only the encrypted part for decryption
+    const encryptedData = {
+      encrypted: vaultFileData.encrypted,
+      authTag: vaultFileData.authTag,
+      iv: vaultFileData.iv
+    };
+
+    const parsedData = decryptData(encryptedData, key);
     return { success: true, data: parsedData };
   } catch (error) {
     console.error('Error loading vault:', error);
@@ -212,14 +367,26 @@ ipcMain.handle('load-vault', async (event, vaultName, password) => {
 ipcMain.handle('save-vault', async (event, vaultName, password, data) => {
   try {
     const vaultPath = path.join(vaultDir, `${vaultName}.vault`);
-    
+
+    // Load existing vault file to preserve recovery metadata
+    let existingRecoveryMetadata = {};
+    if (await fs.pathExists(vaultPath)) {
+      try {
+        const existingVaultFile = await fs.readJson(vaultPath);
+        existingRecoveryMetadata = existingVaultFile.recoveryMetadata || {};
+      } catch (error) {
+        console.warn('Could not load existing recovery metadata, starting fresh');
+      }
+    }
+
     const salt = crypto.randomBytes(32);
     const key = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha512');
-    
+
     const encryptedData = encryptData(data, key);
     const finalData = {
       ...encryptedData,
-      salt: salt.toString('hex')
+      salt: salt.toString('hex'),
+      recoveryMetadata: existingRecoveryMetadata
     };
 
     await fs.writeJson(vaultPath, finalData);
@@ -236,11 +403,11 @@ ipcMain.handle('change-master-password', async (event, vaultName, currentPasswor
     const vaultPath = path.join(vaultDir, `${vaultName}.vault`);
     const backupPath = path.join(vaultDir, `${vaultName}.vault.backup`);
     const tempPath = path.join(vaultDir, `${vaultName}.vault.tmp`);
-    
+
     if (!(await fs.pathExists(vaultPath))) {
       return { success: false, error: 'Vault not found' };
     }
-    
+
     // Validate new password strength
     const passwordErrors = validatePasswordStrength(newPassword);
     if (passwordErrors.length > 0) {
@@ -251,72 +418,144 @@ ipcMain.handle('change-master-password', async (event, vaultName, currentPasswor
     const originalEncryptedData = await fs.readJson(vaultPath);
     const currentSalt = Buffer.from(originalEncryptedData.salt, 'hex');
     const currentKey = crypto.pbkdf2Sync(currentPassword, currentSalt, 100000, 32, 'sha512');
-    
+
     let vaultData;
     try {
-      vaultData = decryptData(originalEncryptedData, currentKey);
+      // Extract only the encrypted part for decryption
+      const encryptedData = {
+        encrypted: originalEncryptedData.encrypted,
+        authTag: originalEncryptedData.authTag,
+        iv: originalEncryptedData.iv
+      };
+      vaultData = decryptData(encryptedData, currentKey);
     } catch (error) {
       return { success: false, error: 'Invalid current password' };
     }
 
-    // Step 2: Validate new password against reuse policy
+    // Step 2: Get existing recovery metadata from vault file
+    const existingRecoveryMetadata = originalEncryptedData.recoveryMetadata || {};
+
+    // Step 3: Validate new password against reuse policy
     if (vaultData.settings?.preventPasswordReuse) {
       // Check if new password is same as current password
       if (newPassword === currentPassword) {
         return { success: false, error: 'New password must be different from current password' };
       }
-      
+
       // Check against password history
       const newPasswordHash = crypto.createHash('sha256').update(newPassword).digest('hex');
-      
+
+      // Check against stored password history in vault data
       if (vaultData.passwordHistory && vaultData.passwordHistory.length > 0) {
-        const isReused = vaultData.passwordHistory.some(entry => 
+        const isReused = vaultData.passwordHistory.some(entry =>
           entry.passwordHash === newPasswordHash
         );
         if (isReused) {
           return { success: false, error: 'This password has been used before. Please choose a different password.' };
         }
       }
+
+      // Also check against the single previous password in recovery metadata (for backward compatibility)
+      if (existingRecoveryMetadata.previousPassword) {
+        const previousPasswordHash = existingRecoveryMetadata.previousPassword.passwordHash;
+        if (previousPasswordHash === newPasswordHash) {
+          return { success: false, error: 'This password has been used before. Please choose a different password.' };
+        }
+      }
     }
 
-    // Step 3: Create backup before making any changes
+    // Step 4: Create backup before making any changes
     await fs.copy(vaultPath, backupPath);
 
-    // Step 4: Generate new salt and key for new password
+    // Step 5: Update recovery metadata
+    const currentPasswordHash = crypto.createHash('sha256').update(currentPassword).digest('hex');
+
+    // Encrypt the new password using the old password (using same salt)
+    const oldKey = crypto.pbkdf2Sync(currentPassword, currentSalt, 100000, 32, 'sha512');
+    const encryptedNewPassword = encryptData({ newPassword }, oldKey);
+
+    // Update recovery metadata
+    const updatedRecoveryMetadata = { ...existingRecoveryMetadata };
+
+    // Update previous password data
+    updatedRecoveryMetadata.previousPassword = {
+      passwordHash: currentPasswordHash,
+      encryptedNewPassword: encryptedNewPassword,
+      salt: currentSalt.toString('hex'), // Store the salt used for encryption
+      changedAt: new Date().toISOString()
+    };
+
+    // Update recovery key data if it exists
+    if (existingRecoveryMetadata.recoveryKey) {
+      try {
+        // Decrypt recovery key with old password
+        console.log('Attempting to decrypt existing recovery key data...');
+        const decryptedRecoveryKeyData = decryptData(existingRecoveryMetadata.recoveryKey.encryptedRecoveryKey, currentKey);
+        const recoveryKey = decryptedRecoveryKeyData.recoveryKey;
+
+        // Re-encrypt recovery key with new password
+        const newKey = crypto.pbkdf2Sync(newPassword, newSalt, 100000, 32, 'sha512');
+        const newEncryptedRecoveryKey = encryptData({ recoveryKey }, newKey);
+
+        // Re-encrypt new password with recovery key
+        const recoveryKeyDerived = deriveKeyFromRecoveryKey(recoveryKey, newSalt);
+        const newEncryptedMasterPassword = encryptData({ newPassword }, recoveryKeyDerived);
+
+        updatedRecoveryMetadata.recoveryKey = {
+          ...existingRecoveryMetadata.recoveryKey,
+          encryptedRecoveryKey: newEncryptedRecoveryKey,
+          encryptedMasterPassword: newEncryptedMasterPassword
+        };
+      } catch (error) {
+        console.warn('Could not update recovery key data during password change:', error);
+        console.warn('This may be due to corrupted recovery data or format changes. Recovery key will need to be regenerated.');
+        // Remove the corrupted recovery key data instead of keeping it
+        delete updatedRecoveryMetadata.recoveryKey;
+      }
+    }
+
+    // Step 6: Generate new salt and key for new password
     const newSalt = crypto.randomBytes(32);
     const newKey = crypto.pbkdf2Sync(newPassword, newSalt, 100000, 32, 'sha512');
-    
-    // Step 5: Update vault data with password change info
-    const currentPasswordHash = crypto.createHash('sha256').update(currentPassword).digest('hex');
-    
+
+    // Step 7: Update vault data with password change info
+    // Note: currentPasswordHash already calculated above for recovery metadata
+
+    // Initialize password history if it doesn't exist
     if (!vaultData.passwordHistory) {
       vaultData.passwordHistory = [];
     }
-    
+
     // Add current password to history
     vaultData.passwordHistory.unshift({
       changedAt: vaultData.lastPasswordChange || vaultData.created,
       passwordHash: currentPasswordHash
     });
-    
+
     // Keep only the specified number of password history entries
-    const maxHistory = Math.max(1, vaultData.settings?.maxPasswordHistory || 1);
+    const maxHistory = Math.max(1, vaultData.settings?.maxPasswordHistory || 3);
     vaultData.passwordHistory = vaultData.passwordHistory.slice(0, maxHistory);
-    
+
     // Update last password change date
     vaultData.lastPasswordChange = new Date().toISOString();
-    
-    // Step 6: Re-encrypt with new password
+
+    // Step 8: Re-encrypt with new password
     const newEncryptedData = encryptData(vaultData, newKey);
     const finalData = {
       ...newEncryptedData,
-      salt: newSalt.toString('hex')
+      salt: newSalt.toString('hex'),
+      recoveryMetadata: updatedRecoveryMetadata
     };
 
-    // Step 7: Test that we can decrypt with new password before saving
+    // Step 9: Test that we can decrypt with new password before saving
     try {
       const testKey = crypto.pbkdf2Sync(newPassword, newSalt, 100000, 32, 'sha512');
-      decryptData(finalData, testKey);
+      const testEncryptedData = {
+        encrypted: finalData.encrypted,
+        authTag: finalData.authTag,
+        iv: finalData.iv
+      };
+      decryptData(testEncryptedData, testKey);
     } catch (error) {
       // If we can't decrypt with new password, restore backup and fail
       await fs.copy(backupPath, vaultPath);
@@ -324,14 +563,19 @@ ipcMain.handle('change-master-password', async (event, vaultName, currentPasswor
       return { success: false, error: 'Failed to encrypt vault with new password' };
     }
 
-    // Step 8: Atomically write the new vault file
+    // Step 11: Atomically write the new vault file
     await fs.writeJson(tempPath, finalData);
-    
+
     // Verify the temp file can be read and decrypted
     try {
       const testData = await fs.readJson(tempPath);
       const testKey = crypto.pbkdf2Sync(newPassword, newSalt, 100000, 32, 'sha512');
-      decryptData(testData, testKey);
+      const testEncryptedData = {
+        encrypted: testData.encrypted,
+        authTag: testData.authTag,
+        iv: testData.iv
+      };
+      decryptData(testEncryptedData, testKey);
     } catch (error) {
       // Clean up temp file and restore backup
       await fs.remove(tempPath);
@@ -339,17 +583,17 @@ ipcMain.handle('change-master-password', async (event, vaultName, currentPasswor
       await fs.remove(backupPath);
       return { success: false, error: 'Failed to verify new vault file' };
     }
-    
+
     // Move temp file to final location (atomic operation on most filesystems)
     await fs.move(tempPath, vaultPath, { overwrite: true });
-    
+
     // Clean up backup file
     await fs.remove(backupPath);
-    
+
     return { success: true };
   } catch (error) {
     console.error('Error changing master password:', error);
-    
+
     // Attempt to restore from backup if it exists
     try {
       if (await fs.pathExists(backupPath)) {
@@ -359,7 +603,7 @@ ipcMain.handle('change-master-password', async (event, vaultName, currentPasswor
     } catch (restoreError) {
       console.error('Failed to restore backup:', restoreError);
     }
-    
+
     return { success: false, error: 'Failed to change master password' };
   }
 });
@@ -374,12 +618,18 @@ ipcMain.handle('update-vault-settings', async (event, vaultName, vaultPassword, 
     }
 
     // Load and decrypt vault
-    const encryptedData = await fs.readJson(vaultPath);
-    const salt = Buffer.from(encryptedData.salt, 'hex');
+    const vaultFileData = await fs.readJson(vaultPath);
+    const salt = Buffer.from(vaultFileData.salt, 'hex');
     const key = crypto.pbkdf2Sync(vaultPassword, salt, 100000, 32, 'sha512');
-    
+
     let vaultData;
     try {
+      // Extract only the encrypted part for decryption
+      const encryptedData = {
+        encrypted: vaultFileData.encrypted,
+        authTag: vaultFileData.authTag,
+        iv: vaultFileData.iv
+      };
       vaultData = decryptData(encryptedData, key);
     } catch (error) {
       return { success: false, error: 'Invalid password' };
@@ -388,7 +638,7 @@ ipcMain.handle('update-vault-settings', async (event, vaultName, vaultPassword, 
     // Update settings with validation
     const validatedSettings = { ...newSettings };
     if (validatedSettings.maxPasswordHistory !== undefined) {
-      validatedSettings.maxPasswordHistory = Math.max(1, validatedSettings.maxPasswordHistory);
+      validatedSettings.maxPasswordHistory = Math.max(1, validatedSettings.passwordChangeWarningDays);
     }
     if (validatedSettings.passwordChangeWarningDays !== undefined) {
       validatedSettings.passwordChangeWarningDays = Math.max(1, validatedSettings.passwordChangeWarningDays);
@@ -416,26 +666,253 @@ ipcMain.handle('restore-vault-backup', async (event, vaultName) => {
   try {
     const vaultPath = path.join(vaultDir, `${vaultName}.vault`);
     const backupPath = path.join(vaultDir, `${vaultName}.vault.backup`);
-    
+
     if (!(await fs.pathExists(backupPath))) {
       return { success: false, error: 'No backup found for this vault' };
     }
-    
+
     // Verify backup can be read
     try {
       await fs.readJson(backupPath);
     } catch (error) {
       return { success: false, error: 'Backup file is corrupted' };
     }
-    
+
     // Restore backup
     await fs.copy(backupPath, vaultPath);
     await fs.remove(backupPath);
-    
+
     return { success: true };
   } catch (error) {
     console.error('Error restoring vault backup:', error);
     return { success: false, error: 'Failed to restore vault backup' };
+  }
+});
+
+// Generate recovery key for vault
+ipcMain.handle('generate-recovery-key', async (event, vaultName, masterPassword) => {
+  try {
+    const vaultPath = path.join(vaultDir, `${vaultName}.vault`);
+
+    if (!(await fs.pathExists(vaultPath))) {
+      return { success: false, error: 'Vault not found' };
+    }
+
+    // Load and verify master password
+    const vaultFileData = await fs.readJson(vaultPath);
+    const salt = Buffer.from(vaultFileData.salt, 'hex');
+    const key = crypto.pbkdf2Sync(masterPassword, salt, 100000, 32, 'sha512');
+
+    try {
+      // Extract only the encrypted part for decryption
+      const encryptedData = {
+        encrypted: vaultFileData.encrypted,
+        authTag: vaultFileData.authTag,
+        iv: vaultFileData.iv
+      };
+      decryptData(encryptedData, key);
+    } catch (error) {
+      return { success: false, error: 'Invalid master password' };
+    }
+
+    // Generate new recovery key
+    const recoveryKey = generateRecoveryKey();
+
+    // Create bidirectional encryption
+    const recoveryKeyDerived = deriveKeyFromRecoveryKey(recoveryKey, salt);
+    const encryptedRecoveryKey = encryptData({ recoveryKey }, key);
+    const encryptedMasterPassword = encryptData({ masterPassword }, recoveryKeyDerived);
+
+    // Update recovery metadata in vault file (start fresh to avoid corruption)
+    const updatedRecoveryMetadata = {
+      // Preserve previous password data if it exists and is valid
+      ...(vaultFileData.recoveryMetadata?.previousPassword ? { previousPassword: vaultFileData.recoveryMetadata.previousPassword } : {}),
+      recoveryKey: {
+        encryptedRecoveryKey: encryptedRecoveryKey,
+        encryptedMasterPassword: encryptedMasterPassword,
+        createdAt: new Date().toISOString(),
+        version: 1
+      }
+    };
+
+    // Save updated vault file with new recovery metadata
+    const updatedVaultFile = {
+      ...vaultFileData,
+      recoveryMetadata: updatedRecoveryMetadata
+    };
+
+    await fs.writeJson(vaultPath, updatedVaultFile);
+
+    console.log('Recovery key generated successfully for vault:', vaultName);
+    return {
+      success: true,
+      recoveryKey: recoveryKey,
+      createdAt: updatedRecoveryMetadata.recoveryKey.createdAt
+    };
+  } catch (error) {
+    console.error('Error generating recovery key:', error);
+    return { success: false, error: 'Failed to generate recovery key' };
+  }
+});
+
+// Verify vault with recovery key
+ipcMain.handle('verify-vault-recovery-key', async (event, vaultName, recoveryKey) => {
+  try {
+    const vaultPath = path.join(vaultDir, `${vaultName}.vault`);
+
+    if (!(await fs.pathExists(vaultPath))) {
+      return { success: false, error: 'Vault not found' };
+    }
+
+    if (!validateRecoveryKeyFormat(recoveryKey)) {
+      return { success: false, error: 'Invalid recovery key format' };
+    }
+
+    // Load vault file and check for recovery metadata
+    const vaultFileData = await fs.readJson(vaultPath);
+
+    if (!vaultFileData.recoveryMetadata?.recoveryKey) {
+      return { success: false, error: 'No recovery key found for this vault' };
+    }
+
+    // Try to decrypt master password with recovery key
+    try {
+      const salt = Buffer.from(vaultFileData.salt, 'hex');
+      const recoveryKeyDerived = deriveKeyFromRecoveryKey(recoveryKey, salt);
+      console.log('Attempting to verify recovery key...');
+      const decryptedData = decryptData(vaultFileData.recoveryMetadata.recoveryKey.encryptedMasterPassword, recoveryKeyDerived);
+
+      // If we can decrypt it, the recovery key is valid
+      console.log('Recovery key verification successful');
+      return { success: true };
+    } catch (error) {
+      console.error('Recovery key verification failed:', error.message);
+      return { success: false, error: 'Invalid recovery key' };
+    }
+  } catch (error) {
+    console.error('Error verifying recovery key:', error);
+    return { success: false, error: 'Failed to verify recovery key' };
+  }
+});
+
+// Recover vault with older password
+ipcMain.handle('recover-vault-with-old-password', async (event, vaultName, oldPassword) => {
+  try {
+    const vaultPath = path.join(vaultDir, `${vaultName}.vault`);
+
+    if (!(await fs.pathExists(vaultPath))) {
+      return { success: false, error: 'Vault not found' };
+    }
+
+    // Load vault file
+    const vaultFileData = await fs.readJson(vaultPath);
+    const currentSalt = Buffer.from(vaultFileData.salt, 'hex');
+    const currentKey = crypto.pbkdf2Sync(oldPassword, currentSalt, 100000, 32, 'sha512');
+
+    // First, try if the old password is actually the current password
+    try {
+      // Extract only the encrypted part for decryption
+      const encryptedData = {
+        encrypted: vaultFileData.encrypted,
+        authTag: vaultFileData.authTag,
+        iv: vaultFileData.iv
+      };
+      decryptData(encryptedData, currentKey);
+      return { success: true, message: 'This is actually the current password' };
+    } catch (error) {
+      // Not the current password, try recovery
+    }
+
+    // Check if we have previous password recovery data
+    if (!vaultFileData.recoveryMetadata?.previousPassword) {
+      return { success: false, error: 'No recovery data available for this vault. You need to change your password at least once to enable previous password recovery.' };
+    }
+
+    const previousPasswordData = vaultFileData.recoveryMetadata.previousPassword;
+
+    // Verify the old password matches the stored hash
+    const oldPasswordHash = crypto.createHash('sha256').update(oldPassword).digest('hex');
+    if (previousPasswordData.passwordHash !== oldPasswordHash) {
+      return { success: false, error: 'This password is not in the recovery history. Only the previous password can be used for recovery.' };
+    }
+
+    // Decrypt the current password using the old password
+    try {
+      // Use the salt that was stored when the recovery data was encrypted
+      const recoverySalt = previousPasswordData.salt ?
+        Buffer.from(previousPasswordData.salt, 'hex') :
+        currentSalt; // Fallback for older vaults without stored salt
+
+      const oldKey = crypto.pbkdf2Sync(oldPassword, recoverySalt, 100000, 32, 'sha512');
+      const decryptedData = decryptData(previousPasswordData.encryptedNewPassword, oldKey);
+      const currentPassword = decryptedData.newPassword;
+
+      // Verify the recovered password works with the current vault
+      const currentVaultKey = crypto.pbkdf2Sync(currentPassword, currentSalt, 100000, 32, 'sha512');
+      const verifyEncryptedData = {
+        encrypted: vaultFileData.encrypted,
+        authTag: vaultFileData.authTag,
+        iv: vaultFileData.iv
+      };
+      decryptData(verifyEncryptedData, currentVaultKey);
+
+      return {
+        success: true,
+        message: 'Vault recovered with previous password',
+        currentPassword: currentPassword
+      };
+    } catch (error) {
+      return { success: false, error: 'Failed to recover current password from old password' };
+    }
+  } catch (error) {
+    console.error('Error recovering vault with old password:', error);
+    return { success: false, error: 'Failed to recover vault' };
+  }
+});
+
+// Load vault with recovery key
+ipcMain.handle('load-vault-with-recovery-key', async (event, vaultName, recoveryKey) => {
+  try {
+    const vaultPath = path.join(vaultDir, `${vaultName}.vault`);
+
+    if (!(await fs.pathExists(vaultPath))) {
+      return { success: false, error: 'Vault not found' };
+    }
+
+    if (!validateRecoveryKeyFormat(recoveryKey)) {
+      return { success: false, error: 'Invalid recovery key format' };
+    }
+
+    // Load vault file
+    const vaultFileData = await fs.readJson(vaultPath);
+
+    if (!vaultFileData.recoveryMetadata?.recoveryKey) {
+      return { success: false, error: 'No recovery key found for this vault' };
+    }
+
+    // Decrypt master password using recovery key
+    try {
+      const salt = Buffer.from(vaultFileData.salt, 'hex');
+      const recoveryKeyDerived = deriveKeyFromRecoveryKey(recoveryKey, salt);
+      const decryptedPasswordData = decryptData(vaultFileData.recoveryMetadata.recoveryKey.encryptedMasterPassword, recoveryKeyDerived);
+      const masterPassword = decryptedPasswordData.masterPassword;
+
+      // Use recovered master password to decrypt vault
+      const masterKey = crypto.pbkdf2Sync(masterPassword, salt, 100000, 32, 'sha512');
+      const encryptedData = {
+        encrypted: vaultFileData.encrypted,
+        authTag: vaultFileData.authTag,
+        iv: vaultFileData.iv
+      };
+      const vaultData = decryptData(encryptedData, masterKey);
+
+      return { success: true, data: vaultData, password : masterPassword };
+    } catch (error) {
+      return { success: false, error: 'Invalid recovery key' };
+    }
+  } catch (error) {
+    console.error('Error loading vault with recovery key:', error);
+    return { success: false, error: 'Failed to load vault with recovery key' };
   }
 });
 
@@ -461,19 +938,25 @@ ipcMain.handle('export-vault', async (event, vaultName, password, exportPath) =>
       return { success: false, error: 'Vault not found' };
     }
 
-    const vaultData = await fs.readJson(vaultPath);
-    const salt = Buffer.from(vaultData.salt, 'hex');
+    const vaultFileData = await fs.readJson(vaultPath);
+    const salt = Buffer.from(vaultFileData.salt, 'hex');
     const key = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha512');
 
     try {
-      const decryptedData = decryptData(vaultData, key);
+      // Extract only the encrypted part for decryption
+      const encryptedData = {
+        encrypted: vaultFileData.encrypted,
+        authTag: vaultFileData.authTag,
+        iv: vaultFileData.iv
+      };
+      const decryptedData = decryptData(encryptedData, key);
 
       // Create export data with metadata
       const exportData = {
         exportVersion: '1.0',
         exportedAt: new Date().toISOString(),
         vaultName: vaultName,
-        originalVaultData: vaultData, // Keep original encrypted format
+        originalVaultData: vaultFileData, // Keep original encrypted format
         metadata: {
           version: decryptedData.version,
           created: decryptedData.created,
@@ -521,7 +1004,14 @@ ipcMain.handle('import-vault', async (event, importPath, newVaultName, password)
     // Try to decrypt with the original password to validate the import file
     try {
       const originalKey = crypto.pbkdf2Sync(password, originalSalt, 100000, 32, 'sha512');
-      const decryptedData = decryptData(originalVaultData, originalKey);
+
+      // Extract only the encrypted part for decryption
+      const originalEncryptedData = {
+        encrypted: originalVaultData.encrypted,
+        authTag: originalVaultData.authTag,
+        iv: originalVaultData.iv
+      };
+      const decryptedData = decryptData(originalEncryptedData, originalKey);
 
       // Re-encrypt with new salt for the imported vault
       const newSalt = crypto.randomBytes(32);
@@ -530,7 +1020,9 @@ ipcMain.handle('import-vault', async (event, importPath, newVaultName, password)
       const newEncryptedData = encryptData(decryptedData, newKey);
       const finalData = {
         ...newEncryptedData,
-        salt: newSalt.toString('hex')
+        salt: newSalt.toString('hex'),
+        // Imported vaults start without recovery metadata (will be created when needed)
+        recoveryMetadata: {}
       };
 
       await fs.writeJson(targetVaultPath, finalData);
@@ -560,17 +1052,16 @@ ipcMain.handle('get-vault-directory', async () => {
 
 async function createDefaultVault() {
   const defaultVaultPath = path.join(vaultDir, 'default.vault');
-  
+
   if (!(await fs.pathExists(defaultVaultPath))) {
     const defaultPassword = 'changeme123'; // User will be prompted to change this
     const salt = crypto.randomBytes(32);
     const key = crypto.pbkdf2Sync(defaultPassword, salt, 100000, 32, 'sha512');
-    
+
     const vaultData = {
       version: '1.0',
       created: new Date().toISOString(),
       lastPasswordChange: new Date().toISOString(),
-      salt: salt.toString('hex'),
       entries: [],
       isDefault: true,
       passwordHistory: [],
@@ -578,17 +1069,34 @@ async function createDefaultVault() {
         enforcePasswordChange: false,
         passwordChangeWarningDays: 90,
         preventPasswordReuse: true,
-        maxPasswordHistory: 1
+        maxPasswordHistory: 3
       }
     };
+
+    // Generate initial recovery key for default vault
+    const recoveryKey = generateRecoveryKey();
+    const recoveryKeyDerived = deriveKeyFromRecoveryKey(recoveryKey, salt);
+    const encryptedRecoveryKey = encryptData({ recoveryKey }, key);
+    const encryptedMasterPassword = encryptData({ masterPassword: defaultPassword }, recoveryKeyDerived);
 
     const encryptedData = encryptData(vaultData, key);
     const finalData = {
       ...encryptedData,
-      salt: salt.toString('hex')
+      salt: salt.toString('hex'),
+      // Recovery metadata stored unencrypted in vault file
+      recoveryMetadata: {
+        recoveryKey: {
+          encryptedRecoveryKey: encryptedRecoveryKey,
+          encryptedMasterPassword: encryptedMasterPassword,
+          createdAt: new Date().toISOString(),
+          version: 1
+        }
+        // previousPassword will be added when password is first changed
+      }
     };
 
     await fs.writeJson(defaultVaultPath, finalData);
+    console.log('Default vault created with recovery key:', recoveryKey);
   }
 }
 

@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('load-vault', vaultName, password),
   saveVault: (vaultName, password, data) =>
     ipcRenderer.invoke('save-vault', vaultName, password, data),
+  deleteVault: (vaultName, confirmationPassword) =>
+    ipcRenderer.invoke('delete-vault', vaultName, confirmationPassword),
 
   // Master password management
   changeMasterPassword: (vaultName, currentPassword, newPassword) =>
@@ -35,6 +37,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('restore-vault-backup', vaultName),
   hasVaultBackup: (vaultName) =>
     ipcRenderer.invoke('has-vault-backup', vaultName),
+
+  // Recovery key management
+  generateRecoveryKey: (vaultName, masterPassword) =>
+    ipcRenderer.invoke('generate-recovery-key', vaultName, masterPassword),
+  verifyVaultRecoveryKey: (vaultName, recoveryKey) =>
+    ipcRenderer.invoke('verify-vault-recovery-key', vaultName, recoveryKey),
+  loadVaultWithRecoveryKey: (vaultName, recoveryKey) =>
+    ipcRenderer.invoke('load-vault-with-recovery-key', vaultName, recoveryKey),
+
+  // Vault recovery with older passwords
+  recoverVaultWithOldPassword: (vaultName, oldPassword) =>
+    ipcRenderer.invoke('recover-vault-with-old-password', vaultName, oldPassword),
 
   // Import/Export
   exportVault: (vaultName, password, exportPath) =>
