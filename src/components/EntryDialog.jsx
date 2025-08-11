@@ -13,23 +13,24 @@ import {
   Select,
   FormControl,
   InputLabel,
-  FormHelperText
+  FormHelperText,
+  MenuItem,
 } from '@mui/material';
 import {
   Visibility,
   VisibilityOff,
-  Refresh as RefreshIcon
+  Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import { CATEGORIES, getCategoryById } from '../utils/categoryManager';
 import { generatePassword } from '../utils/passwordGenerator';
 
-const EntryDialog = ({ 
-  open, 
-  onClose, 
-  onSave, 
-  entry = null, 
+const EntryDialog = ({
+  open,
+  onClose,
+  onSave,
+  entry = null,
   validationErrors = {},
-  onValidationErrorsChange 
+  onValidationErrorsChange,
 }) => {
   const [formData, setFormData] = useState({
     title: '',
@@ -37,7 +38,7 @@ const EntryDialog = ({
     password: '',
     url: '',
     notes: '',
-    category: 'general'
+    category: 'general',
   });
   const [showPassword, setShowPassword] = useState(false);
 
@@ -50,7 +51,7 @@ const EntryDialog = ({
         password: entry.password || '',
         url: entry.url || '',
         notes: entry.notes || '',
-        category: entry.category || 'general'
+        category: entry.category || 'general',
       });
     } else {
       setFormData({
@@ -59,17 +60,17 @@ const EntryDialog = ({
         password: '',
         url: '',
         notes: '',
-        category: 'general'
+        category: 'general',
       });
     }
   }, [entry, open]);
 
   const handleInputChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    
+    setFormData((prev) => ({ ...prev, [field]: value }));
+
     // Clear validation error for this field
     if (validationErrors[field] && onValidationErrorsChange) {
-      onValidationErrorsChange(prev => ({ ...prev, [field]: undefined }));
+      onValidationErrorsChange((prev) => ({ ...prev, [field]: undefined }));
     }
   };
 
@@ -79,7 +80,7 @@ const EntryDialog = ({
       includeLowercase: true,
       includeNumbers: true,
       includeSymbols: true,
-      excludeSimilar: true
+      excludeSimilar: true,
     });
     handleInputChange('password', newPassword);
   };
@@ -95,7 +96,7 @@ const EntryDialog = ({
       password: '',
       url: '',
       notes: '',
-      category: 'general'
+      category: 'general',
     });
     if (onValidationErrorsChange) {
       onValidationErrorsChange({});
@@ -117,7 +118,7 @@ const EntryDialog = ({
         sx: {
           backgroundColor: '#1e1e1e',
           border: '1px solid rgba(255, 255, 255, 0.1)',
-        }
+        },
       }}
     >
       <DialogTitle sx={{ color: 'white' }}>
@@ -135,9 +136,11 @@ const EntryDialog = ({
             required
             sx={{ '& .MuiInputBase-input': { color: 'white' } }}
           />
-          
+
           <FormControl fullWidth>
-            <InputLabel sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>Category</InputLabel>
+            <InputLabel sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+              Category
+            </InputLabel>
             <Select
               value={formData.category}
               onChange={(e) => handleInputChange('category', e.target.value)}
@@ -222,7 +225,10 @@ const EntryDialog = ({
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose} sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+        <Button
+          onClick={handleClose}
+          sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
+        >
           Cancel
         </Button>
         <Button onClick={handleSave} variant="contained">
