@@ -9,19 +9,19 @@ import {
   Box,
   Menu,
   MenuItem,
-  Tooltip
+  Tooltip,
 } from '@mui/material';
 import {
   ContentCopy as CopyIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
-  MoreVert as MoreVertIcon
+  MoreVert as MoreVertIcon,
 } from '@mui/icons-material';
 import { getCategoryById } from '../utils/categoryManager';
 
 const EntryCard = ({ entry, onEdit, onDelete, onCopyPassword }) => {
   const [anchorEl, setAnchorEl] = useState(null);
-  
+
   const category = getCategoryById(entry.category);
   const CategoryIcon = category.icon;
 
@@ -60,35 +60,47 @@ const EntryCard = ({ entry, onEdit, onDelete, onCopyPassword }) => {
       }}
     >
       <CardContent>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+          }}
+        >
           <Box sx={{ flex: 1 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
               <CategoryIcon sx={{ mr: 1, color: category.color }} />
-              <Typography variant="h6" sx={{ color: 'white', fontWeight: 'bold' }}>
+              <Typography
+                variant="h6"
+                sx={{ color: 'white', fontWeight: 'bold' }}
+              >
                 {entry.title}
               </Typography>
             </Box>
-            
-            <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 1 }}>
+
+            <Typography
+              variant="body2"
+              sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 1 }}
+            >
               {entry.username}
             </Typography>
-            
+
             {entry.url && (
-              <Typography 
-                variant="body2" 
-                sx={{ 
-                  color: '#2196f3', 
+              <Typography
+                variant="body2"
+                sx={{
+                  color: '#2196f3',
                   mb: 1,
                   textDecoration: 'none',
                   cursor: 'pointer',
-                  '&:hover': { textDecoration: 'underline' }
+                  '&:hover': { textDecoration: 'underline' },
                 }}
                 onClick={() => window.open(entry.url, '_blank')}
               >
                 {entry.url}
               </Typography>
             )}
-            
+
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
               <Chip
                 label={category.name}
@@ -99,11 +111,12 @@ const EntryCard = ({ entry, onEdit, onDelete, onCopyPassword }) => {
                   fontSize: '0.75rem',
                 }}
               />
-              
+
               <Tooltip title="Copy Password">
                 <IconButton
                   size="small"
                   onClick={handleCopyPassword}
+                  aria-label="Copy Password"
                   sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
                 >
                   <CopyIcon fontSize="small" />
@@ -111,9 +124,10 @@ const EntryCard = ({ entry, onEdit, onDelete, onCopyPassword }) => {
               </Tooltip>
             </Box>
           </Box>
-          
+
           <IconButton
             onClick={handleMenuOpen}
+            aria-label="Open menu"
             sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
           >
             <MoreVertIcon />
@@ -129,7 +143,7 @@ const EntryCard = ({ entry, onEdit, onDelete, onCopyPassword }) => {
           sx: {
             backgroundColor: '#2a2a2a',
             border: '1px solid rgba(255, 255, 255, 0.1)',
-          }
+          },
         }}
       >
         <MenuItem onClick={handleCopyPassword}>
@@ -156,7 +170,10 @@ const EntryList = ({ entries, onEdit, onDelete, onCopyPassword }) => {
         <Typography variant="h6" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
           No password entries found
         </Typography>
-        <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.5)', mt: 1 }}>
+        <Typography
+          variant="body2"
+          sx={{ color: 'rgba(255, 255, 255, 0.5)', mt: 1 }}
+        >
           Click the + button to add your first password entry
         </Typography>
       </Box>
