@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
+import { Snackbar, Alert } from '@mui/material';
 import {
   BrowserRouter as Router,
   Routes,
@@ -12,6 +13,7 @@ import VaultLogin from './components/VaultLogin';
 import PasswordManager from './components/PasswordManager';
 import CreateVault from './components/CreateVault';
 import ConfigurationDialog from './components/ConfigurationDialog';
+import VaultRecovery from './components/VaultRecovery';
 import './App.css';
 
 const darkTheme = createTheme({
@@ -51,8 +53,9 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [vaultPassword, setVaultPassword] = useState('');
   const [availableVaults, setAvailableVaults] = useState([]);
-  const [currentView, setCurrentView] = useState('selector'); // selector, login, manager, create
+  const [currentView, setCurrentView] = useState('selector'); // selector, login, manager, create, recovery
   const [showConfiguration, setShowConfiguration] = useState(false);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
   useEffect(() => {
     loadAvailableVaults();
@@ -98,6 +101,13 @@ function App() {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
+
+  // Reload vaults when returning to selector view
+  useEffect(() => {
+    if (currentView === 'selector') {
+      loadAvailableVaults();
+    }
+  }, [currentView]);
 
   const loadAvailableVaults = async () => {
     if (window.electronAPI) {
@@ -150,7 +160,11 @@ function App() {
           setVaultPassword(masterPassword);
           setIsAuthenticated(true);
           setCurrentView('manager');
-          return { success: true };
+          return {
+            success: true,
+            recoveryKey: result.recoveryKey,
+            recoveryKeyCreatedAt: result.recoveryKeyCreatedAt
+          };
         } else {
           return { success: false, error: result.error };
         }
@@ -169,10 +183,46 @@ function App() {
   };
 
   const goBack = () => {
-    if (currentView === 'login' || currentView === 'create') {
+    if (currentView === 'login' || currentView === 'create' || currentView === 'recovery') {
       setCurrentView('selector');
       setCurrentVault(null);
     }
+  };
+
+  const handleRecovery = () => {
+    setCurrentView('recovery');
+  };
+
+  const handleVaultRecovered = (vaultData, recoveryMethod, password) => {
+    console.log("Successfully recovered vault with method: ", recoveryMethod);
+    setVaultPassword(password);
+    setCurrentVault(currentVault);
+
+    setIsAuthenticated(true);
+    setCurrentView('manager');
+  };
+
+  const handleVaultDeleted = (vaultName, message) => {
+    // Show success message
+    setSnackbar({
+      open: true,
+      message: message,
+      severity: 'success'
+    });
+
+    // Refresh the vault list
+    loadAvailableVaults();
+
+    // If the deleted vault was the current vault, clear it
+    if (currentVault === vaultName) {
+      setCurrentVault(null);
+      setIsAuthenticated(false);
+      setVaultPassword('');
+    }
+  };
+
+  const handleSnackbarClose = () => {
+    setSnackbar({ ...snackbar, open: false });
   };
 
   const renderCurrentView = () => {
@@ -183,6 +233,7 @@ function App() {
             vaults={availableVaults}
             onVaultSelect={handleVaultSelect}
             onCreateNew={() => setCurrentView('create')}
+            onVaultDeleted={handleVaultDeleted}
           />
         );
       case 'login':
@@ -191,6 +242,7 @@ function App() {
             vaultName={currentVault}
             onLogin={handleVaultLogin}
             onBack={goBack}
+            onRecovery={handleRecovery}
           />
         );
       case 'create':
@@ -199,6 +251,14 @@ function App() {
             onCreateVault={handleVaultCreate}
             onBack={goBack}
             existingVaults={availableVaults}
+          />
+        );
+      case 'recovery':
+        return (
+          <VaultRecovery
+            vaultName={currentVault}
+            onRecover={handleVaultRecovered}
+            onBack={goBack}
           />
         );
       case 'manager':
@@ -227,6 +287,22 @@ function App() {
           vaultName={currentVault}
           vaultPassword={vaultPassword}
         />
+
+        {/* Success/Error Messages */}
+        <Snackbar
+          open={snackbar.open}
+          autoHideDuration={6000}
+          onClose={handleSnackbarClose}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        >
+          <Alert
+            onClose={handleSnackbarClose}
+            severity={snackbar.severity}
+            sx={{ width: '100%' }}
+          >
+            {snackbar.message}
+          </Alert>
+        </Snackbar>
       </div>
     </ThemeProvider>
   );
