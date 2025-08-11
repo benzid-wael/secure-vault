@@ -45,6 +45,7 @@ import Settings from './Settings';
 import EnhancedEntryDialog from './EnhancedEntryDialog';
 import SearchAndFilter from './SearchAndFilter';
 import AddEntryMenu from './AddEntryMenu';
+import ImportExportDialog from './ImportExportDialog';
 import {
   validateEntryByType,
   getSearchFields,
@@ -72,6 +73,8 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
   const [currentVaultPassword, setCurrentVaultPassword] =
     useState(vaultPassword);
   const [selectedEntryType, setSelectedEntryType] = useState('password');
+  const [showImportExport, setShowImportExport] = useState(false);
+  const [availableVaults, setAvailableVaults] = useState([]);
 
   // Predefined categories
   const categories = [
@@ -119,7 +122,19 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
 
   useEffect(() => {
     loadVaultData();
+    loadAvailableVaults();
   }, []);
+
+  const loadAvailableVaults = async () => {
+    if (window.electronAPI) {
+      try {
+        const vaults = await window.electronAPI.getVaults();
+        setAvailableVaults(vaults || []);
+      } catch (error) {
+        console.error('Error loading available vaults:', error);
+      }
+    }
+  };
 
   const loadVaultData = async () => {
     if (window.electronAPI && vaultName && vaultPassword) {
