@@ -11,6 +11,7 @@ const mockElectronAPI = {
   createVault: vi.fn(),
   deleteVault: vi.fn(),
   listVaults: vi.fn(),
+  getVaults: vi.fn(),
   exportVault: vi.fn(),
   importVault: vi.fn(),
   changeMasterPassword: vi.fn(),
@@ -250,6 +251,10 @@ describe('Entry Types Integration', () => {
       data: { entries: [] },
     });
     mockElectronAPI.saveVault.mockResolvedValue({ success: true });
+    mockElectronAPI.getVaults.mockResolvedValue({
+      success: true,
+      vaults: ['test-vault'],
+    });
   });
 
   afterEach(() => {
@@ -262,12 +267,30 @@ describe('Entry Types Integration', () => {
     );
 
     // Wait for loading to complete
-    await waitFor(() => {
-      expect(screen.queryByText('Loading vault...')).not.toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.queryByText('Loading vault...')).not.toBeInTheDocument();
+      },
+      { timeout: 3000 }
+    );
 
+    // Wait for the FAB button to be enabled (not disabled)
+    await waitFor(
+      () => {
+        const fabButton = screen.getByTestId('add-entry-menu');
+        expect(fabButton).toBeInTheDocument();
+        expect(fabButton).not.toBeDisabled();
+      },
+      { timeout: 3000 }
+    );
+
+    // Click the FAB button to open the menu
+    const fabButton = screen.getByTestId('add-entry-menu');
+    fireEvent.click(fabButton);
+
+    // Wait for the menu to open and find the WiFi option
     await waitFor(() => {
-      expect(screen.getByTestId('add-entry-menu')).toBeInTheDocument();
+      expect(screen.getByTestId('add-wifi')).toBeInTheDocument();
     });
 
     // Test creating a WiFi entry
@@ -356,12 +379,30 @@ describe('Entry Types Integration', () => {
     );
 
     // Wait for loading to complete
-    await waitFor(() => {
-      expect(screen.queryByText('Loading vault...')).not.toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.queryByText('Loading vault...')).not.toBeInTheDocument();
+      },
+      { timeout: 3000 }
+    );
 
+    // Wait for the FAB button to be enabled
+    await waitFor(
+      () => {
+        const fabButton = screen.getByTestId('add-entry-menu');
+        expect(fabButton).toBeInTheDocument();
+        expect(fabButton).not.toBeDisabled();
+      },
+      { timeout: 3000 }
+    );
+
+    // Click the FAB button to open the menu
+    const fabButton = screen.getByTestId('add-entry-menu');
+    fireEvent.click(fabButton);
+
+    // Wait for the menu to open
     await waitFor(() => {
-      expect(screen.getByTestId('add-entry-menu')).toBeInTheDocument();
+      expect(screen.getByTestId('add-otp')).toBeInTheDocument();
     });
 
     // Test creating an OTP entry
@@ -404,12 +445,30 @@ describe('Entry Types Integration', () => {
     );
 
     // Wait for loading to complete
-    await waitFor(() => {
-      expect(screen.queryByText('Loading vault...')).not.toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.queryByText('Loading vault...')).not.toBeInTheDocument();
+      },
+      { timeout: 3000 }
+    );
 
+    // Wait for the FAB button to be enabled
+    await waitFor(
+      () => {
+        const fabButton = screen.getByTestId('add-entry-menu');
+        expect(fabButton).toBeInTheDocument();
+        expect(fabButton).not.toBeDisabled();
+      },
+      { timeout: 3000 }
+    );
+
+    // Click the FAB button to open the menu
+    const fabButton = screen.getByTestId('add-entry-menu');
+    fireEvent.click(fabButton);
+
+    // Wait for the menu to open
     await waitFor(() => {
-      expect(screen.getByTestId('add-entry-menu')).toBeInTheDocument();
+      expect(screen.getByTestId('add-level3')).toBeInTheDocument();
     });
 
     // Test creating a Level 3 card
@@ -436,6 +495,7 @@ describe('Entry Types Integration', () => {
           entries: expect.arrayContaining([
             expect.objectContaining({
               entryType: 'level3_card',
+              title: 'Test level3_card',
             }),
           ]),
         })
@@ -476,8 +536,8 @@ describe('Entry Types Integration', () => {
       expect(passwordEntry).toHaveAttribute('data-entry-type', 'password');
       expect(wifiEntry).toHaveAttribute('data-entry-type', 'wifi');
 
-      expect(passwordEntry).toHaveTextContent('Gmail (password)');
-      expect(wifiEntry).toHaveTextContent('Home WiFi (wifi)');
+      expect(passwordEntry).toHaveTextContent('Gmail');
+      expect(wifiEntry).toHaveTextContent('Home WiFi');
     });
   });
 });

@@ -293,6 +293,7 @@ describe('PasswordManager', () => {
   const mockElectronAPI = {
     loadVault: vi.fn(),
     saveVault: vi.fn(),
+    getVaults: vi.fn(),
   };
 
   beforeEach(() => {
@@ -305,6 +306,10 @@ describe('PasswordManager', () => {
       data: { entries: [] },
     });
     mockElectronAPI.saveVault.mockResolvedValue({ success: true });
+    mockElectronAPI.getVaults.mockResolvedValue({
+      success: true,
+      vaults: ['test-vault'],
+    });
   });
 
   afterEach(() => {

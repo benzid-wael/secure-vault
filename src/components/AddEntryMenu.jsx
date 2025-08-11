@@ -46,6 +46,7 @@ const AddEntryMenu = ({ onEntryTypeSelect, disabled = false }) => {
       <Fab
         color="primary"
         aria-label="add entry"
+        data-testid="add-entry-menu"
         onClick={handleClick}
         disabled={disabled}
         sx={{
@@ -135,6 +136,7 @@ const AddEntryMenu = ({ onEntryTypeSelect, disabled = false }) => {
                 return (
                   <MenuItem
                     key={entryType}
+                    data-testid={`add-${entryType}`}
                     onClick={() => handleEntryTypeSelect(entryType)}
                     sx={{
                       py: 1.5,

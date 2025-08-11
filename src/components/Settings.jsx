@@ -31,6 +31,7 @@ import {
   Check as CheckIcon
 } from '@mui/icons-material';
 import { getPasswordStrength, validatePasswordStrength } from '../utils/passwordValidation';
+import RecoveryKeyDisplay from './RecoveryKeyDisplay';
 
 const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
   const [settings, setSettings] = useState({
@@ -48,6 +49,9 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
   });
   const [validationErrors, setValidationErrors] = useState({});
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [showRecoveryKey, setShowRecoveryKey] = useState(false);
+  const [recoveryKey, setRecoveryKey] = useState('');
+  const [generatingRecoveryKey, setGeneratingRecoveryKey] = useState(false);
   const [loading, setLoading] = useState(true);
   const [hasBackup, setHasBackup] = useState(false);
 
@@ -80,6 +84,24 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
 
   const showSnackbar = (message, severity = 'success') => {
     setSnackbar({ open: true, message, severity });
+  };
+
+  const handleGenerateRecoveryKey = async () => {
+    setGeneratingRecoveryKey(true);
+    try {
+      const result = await window.electronAPI.generateRecoveryKey(vaultName, vaultPassword);
+      if (result.success) {
+        setRecoveryKey(result.recoveryKey);
+        setShowRecoveryKey(true);
+        showSnackbar('Recovery key generated successfully');
+      } else {
+        showSnackbar(result.error || 'Failed to generate recovery key', 'error');
+      }
+    } catch (error) {
+      showSnackbar('Failed to generate recovery key', 'error');
+    } finally {
+      setGeneratingRecoveryKey(false);
+    }
   };
 
   const checkBackupStatus = async () => {
@@ -370,18 +392,75 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
             <TextField
               label="Password History Limit"
               type="number"
-              value={settings.maxPasswordHistory}
+              value={settings.maxPasswordHistory || 3}
               onChange={(e) => {
-                const value = Math.max(1, parseInt(e.target.value) || 1);
+                const value = Math.max(1, parseInt(e.target.value) || 3);
                 handleSettingsChange({ ...settings, maxPasswordHistory: value });
               }}
               sx={{ minWidth: 200 }}
-              helperText="Number of previous passwords to remember"
-              inputProps={{ min: 1, max: 20 }}
+              helperText="Number of previous passwords to remember (only last password used for recovery)"
+              inputProps={{ min: 1, max: 10 }}
             />
           </Box>
         </CardContent>
       </Card>
+
+      {/* Recovery Key Management */}
+      <Card sx={{ mb: 3, backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
+        <CardContent>
+          <Typography variant="h6" sx={{ color: 'white', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <SecurityIcon sx={{ color: '#ff9800' }} />
+            Recovery Key Management
+          </Typography>
+
+          <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 2 }}>
+            Recovery keys allow you to access your vault if you forget your master password.
+            Keep your recovery key in a safe place separate from your vault.
+          </Typography>
+
+          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+            <Button
+              variant="contained"
+              onClick={handleGenerateRecoveryKey}
+              disabled={generatingRecoveryKey}
+              sx={{
+                background: 'linear-gradient(45deg, #ff9800 30%, #ffb74d 90%)',
+                '&:hover': {
+                  background: 'linear-gradient(45deg, #f57c00 30%, #ffa726 90%)',
+                }
+              }}
+            >
+              {generatingRecoveryKey ? 'Generating...' : 'Generate New Recovery Key'}
+            </Button>
+          </Box>
+
+          <Alert
+            severity="warning"
+            sx={{
+              mt: 2,
+              backgroundColor: 'rgba(255, 152, 0, 0.1)',
+              border: '1px solid rgba(255, 152, 0, 0.3)',
+              '& .MuiAlert-message': { color: 'white' }
+            }}
+          >
+            <Typography variant="body2">
+              <strong>Important:</strong> Generating a new recovery key will invalidate any previous recovery keys.
+              Make sure to save the new key before closing this dialog.
+            </Typography>
+          </Alert>
+        </CardContent>
+      </Card>
+
+      {/* Recovery Key Display Dialog */}
+      <RecoveryKeyDisplay
+        open={showRecoveryKey}
+        onClose={() => setShowRecoveryKey(false)}
+        recoveryKey={recoveryKey}
+        vaultName={vaultName}
+        vaultPassword={vaultPassword}
+        onRegenerateKey={handleGenerateRecoveryKey}
+        isNewVault={false}
+      />
 
       {/* Change Password Dialog */}
       <Dialog

@@ -17,7 +17,7 @@ import {
   Security as SecurityIcon
 } from '@mui/icons-material';
 
-const VaultLogin = ({ vaultName, onLogin, onBack }) => {
+const VaultLogin = ({ vaultName, onLogin, onBack, onRecovery }) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -146,6 +146,24 @@ const VaultLogin = ({ vaultName, onLogin, onBack }) => {
             ) : (
               'Unlock Vault'
             )}
+          </Button>
+        </Box>
+
+        <Box sx={{ mt: 2, textAlign: 'center' }}>
+          <Button
+            variant="text"
+            onClick={onRecovery}
+            disabled={loading}
+            sx={{
+              color: 'rgba(255, 255, 255, 0.7)',
+              textTransform: 'none',
+              '&:hover': {
+                color: '#ff9800',
+                backgroundColor: 'rgba(255, 152, 0, 0.1)'
+              }
+            }}
+          >
+            Forgot your password? Use recovery options
           </Button>
         </Box>
       </form>
