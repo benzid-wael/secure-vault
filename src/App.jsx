@@ -1,11 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+} from 'react-router-dom';
 import VaultSelector from './components/VaultSelector';
 import VaultLogin from './components/VaultLogin';
 import PasswordManager from './components/PasswordManager';
 import CreateVault from './components/CreateVault';
+import ConfigurationDialog from './components/ConfigurationDialog';
 import './App.css';
 
 const darkTheme = createTheme({
@@ -46,33 +52,50 @@ function App() {
   const [vaultPassword, setVaultPassword] = useState('');
   const [availableVaults, setAvailableVaults] = useState([]);
   const [currentView, setCurrentView] = useState('selector'); // selector, login, manager, create
+  const [showConfiguration, setShowConfiguration] = useState(false);
 
   useEffect(() => {
     loadAvailableVaults();
-    
+
     // Set up menu event listeners
     if (window.electronAPI) {
       window.electronAPI.onMenuNewVault(() => {
         setCurrentView('create');
       });
-      
+
       window.electronAPI.onMenuOpenVault(() => {
         setCurrentView('selector');
         setIsAuthenticated(false);
         setCurrentVault(null);
       });
-      
+
       window.electronAPI.onMenuLockVault(() => {
         lockVault();
       });
+
+      window.electronAPI.onMenuConfiguration(() => {
+        setShowConfiguration(true);
+      });
     }
+
+    // Set up keyboard shortcut for configuration dialog (Ctrl+S)
+    const handleKeyDown = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+        event.preventDefault();
+        setShowConfiguration(true);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
 
     return () => {
       if (window.electronAPI) {
         window.electronAPI.removeAllListeners('menu-new-vault');
         window.electronAPI.removeAllListeners('menu-open-vault');
         window.electronAPI.removeAllListeners('menu-lock-vault');
+        window.electronAPI.removeAllListeners('menu-configuration');
       }
+      document.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
 
@@ -95,7 +118,10 @@ function App() {
   const handleVaultLogin = async (password) => {
     if (window.electronAPI && currentVault) {
       try {
-        const result = await window.electronAPI.verifyVaultPassword(currentVault, password);
+        const result = await window.electronAPI.verifyVaultPassword(
+          currentVault,
+          password
+        );
         if (result.success) {
           setVaultPassword(password);
           setIsAuthenticated(true);
@@ -114,7 +140,10 @@ function App() {
   const handleVaultCreate = async (vaultName, masterPassword) => {
     if (window.electronAPI) {
       try {
-        const result = await window.electronAPI.createVault(vaultName, masterPassword);
+        const result = await window.electronAPI.createVault(
+          vaultName,
+          masterPassword
+        );
         if (result.success) {
           await loadAvailableVaults();
           setCurrentVault(vaultName);
@@ -190,6 +219,14 @@ function App() {
       <CssBaseline />
       <div className="App">
         {renderCurrentView()}
+
+        {/* Configuration Dialog - Available globally with Ctrl+S */}
+        <ConfigurationDialog
+          open={showConfiguration}
+          onClose={() => setShowConfiguration(false)}
+          vaultName={currentVault}
+          vaultPassword={vaultPassword}
+        />
       </div>
     </ThemeProvider>
   );

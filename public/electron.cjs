@@ -621,6 +621,14 @@ function createMenu() {
           }
         },
         { type: 'separator' },
+        {
+          label: 'Configuration',
+          accelerator: 'CmdOrCtrl+S',
+          click: () => {
+            mainWindow.webContents.send('menu-configuration');
+          }
+        },
+        { type: 'separator' },
         { role: 'quit' }
       ]
     },
