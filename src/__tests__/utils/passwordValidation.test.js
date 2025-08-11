@@ -74,7 +74,7 @@ describe('passwordValidation', () => {
     });
 
     it('should return error for short password', () => {
-      const result = validatePasswordStrength('123');
+      const result = validatePasswordStrength('VeRyS2c');
       expect(result).toEqual(['Password must be at least 8 characters long']);
     });
 

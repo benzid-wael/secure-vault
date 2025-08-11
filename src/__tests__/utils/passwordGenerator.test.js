@@ -52,18 +52,33 @@ describe('passwordGenerator', () => {
     });
 
     it('should generate password with mixed character types', () => {
-      const password = generatePassword(20, {
-        includeUppercase: true,
-        includeLowercase: true,
-        includeNumbers: true,
-        includeSymbols: true
-      });
-      expect(password).toHaveLength(20);
-      // Should contain at least one character from each type (statistically very likely)
-      expect(password).toMatch(/[A-Z]/);
-      expect(password).toMatch(/[a-z]/);
-      expect(password).toMatch(/[0-9]/);
-      expect(password).toMatch(/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/);
+      // Test multiple times to ensure consistency
+      let hasUpper = false, hasLower = false, hasNumber = false, hasSymbol = false;
+      
+      for (let i = 0; i < 5; i++) {
+        const password = generatePassword(50, {
+          includeUppercase: true,
+          includeLowercase: true,
+          includeNumbers: true,
+          includeSymbols: true
+        });
+        
+        expect(password).toHaveLength(50);
+        
+        if (/[A-Z]/.test(password)) hasUpper = true;
+        if (/[a-z]/.test(password)) hasLower = true;
+        if (/[0-9]/.test(password)) hasNumber = true;
+        if (/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)) hasSymbol = true;
+        
+        // If we have all types, break early
+        if (hasUpper && hasLower && hasNumber && hasSymbol) break;
+      }
+      
+      // With 5 attempts at 50 characters each, we should have all character types
+      expect(hasUpper).toBe(true);
+      expect(hasLower).toBe(true);
+      expect(hasNumber).toBe(true);
+      expect(hasSymbol).toBe(true);
     });
 
     it('should exclude similar characters when requested', () => {

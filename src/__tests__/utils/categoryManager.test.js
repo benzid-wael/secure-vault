@@ -1,7 +1,8 @@
 // Unit tests for category manager utilities
+import { vi } from 'vitest';
 
 // Mock Material-UI icons
-jest.mock('@mui/icons-material', () => ({
+vi.mock('@mui/icons-material', () => ({
   Lock: () => 'GeneralIcon',
   Language: () => 'WebsiteIcon',
   Email: () => 'EmailIcon',
