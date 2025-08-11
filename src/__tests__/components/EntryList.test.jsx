@@ -102,7 +102,14 @@ describe('EntryList Component', () => {
     expect(screen.getByText('No password entries found')).toBeInTheDocument();
   });
 
-  it('calls onCopyPassword when copy icon is clicked', () => {
+  it('copies field value when copy icon is clicked', () => {
+    // Mock clipboard API
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+
     render(
       <EntryList
         entries={entries}
@@ -112,8 +119,10 @@ describe('EntryList Component', () => {
       />
     );
 
-    const copyButtons = screen.getAllByLabelText('Copy Password');
+    const copyButtons = screen.getAllByLabelText('Copy username');
     fireEvent.click(copyButtons[0]);
-    expect(mockOnCopyPassword).toHaveBeenCalledWith(entries[0].password);
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      entries[0].username
+    );
   });
 });

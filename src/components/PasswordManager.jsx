@@ -42,7 +42,14 @@ import {
 } from '@mui/icons-material';
 
 import Settings from './Settings';
-import EntryDialog from './EntryDialog';
+import EnhancedEntryDialog from './EnhancedEntryDialog';
+import SearchAndFilter from './SearchAndFilter';
+import AddEntryMenu from './AddEntryMenu';
+import {
+  validateEntryByType,
+  getSearchFields,
+  ENTRY_TYPE_DEFINITIONS,
+} from '../utils/entryTypes';
 
 const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
   const [entries, setEntries] = useState([]);
@@ -58,11 +65,13 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedEntryTypeFilter, setSelectedEntryTypeFilter] = useState('');
   const [validationErrors, setValidationErrors] = useState({});
   const [showSettings, setShowSettings] = useState(false);
   const [currentVaultPassword, setCurrentVaultPassword] =
     useState(vaultPassword);
+  const [selectedEntryType, setSelectedEntryType] = useState('password');
 
   // Predefined categories
   const categories = [
@@ -166,17 +175,12 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
   };
 
   const validateEntry = (entry) => {
-    const errors = {};
-    if (!entry.title?.trim()) {
-      errors.title = 'Title is required';
-    }
-    if (!entry.username?.trim()) {
-      errors.username = 'Username/Email is required';
-    }
-    if (!entry.password?.trim()) {
-      errors.password = 'Password is required';
-    }
-    return errors;
+    return validateEntryByType(entry, entry.entryType || 'password');
+  };
+
+  const handleAddEntryType = (entryType) => {
+    setSelectedEntryType(entryType);
+    setShowAddDialog(true);
   };
 
   const handleAddEntry = async (formData) => {
@@ -201,7 +205,9 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
     if (success) {
       setShowAddDialog(false);
       setValidationErrors({});
-      showSnackbar('Password entry added successfully');
+      const entryTypeName =
+        ENTRY_TYPE_DEFINITIONS[formData.entryType]?.name || 'Entry';
+      showSnackbar(`${entryTypeName} added successfully`);
     }
   };
 
@@ -277,19 +283,38 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
   };
 
   const filteredEntries = entries.filter((entry) => {
+    // Enhanced search that works with different entry types
+    const searchFields = getSearchFields(entry.entryType || 'password');
     const matchesSearch =
-      entry.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      entry.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (entry.url && entry.url.toLowerCase().includes(searchTerm.toLowerCase()));
+      searchTerm === '' ||
+      searchFields.some((fieldName) => {
+        const value = entry[fieldName];
+        return (
+          value &&
+          value.toString().toLowerCase().includes(searchTerm.toLowerCase())
+        );
+      });
 
     const matchesCategory =
-      selectedCategory === 'all' || entry.category === selectedCategory;
+      selectedCategory === '' ||
+      selectedCategory === 'all' ||
+      entry.category === selectedCategory;
 
-    return matchesSearch && matchesCategory;
+    const matchesEntryType =
+      selectedEntryTypeFilter === '' ||
+      (entry.entryType || 'password') === selectedEntryTypeFilter;
+
+    return matchesSearch && matchesCategory && matchesEntryType;
   });
 
   const handlePasswordChanged = (newPassword) => {
     setCurrentVaultPassword(newPassword);
+  };
+
+  const handleClearFilters = () => {
+    setSearchTerm('');
+    setSelectedCategory('');
+    setSelectedEntryTypeFilter('');
   };
 
   if (loading) {
@@ -367,56 +392,18 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
         </Box>
       </Box>
 
-      {/* Search Bar */}
-      <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
-        <TextField
-          fullWidth
-          placeholder="Search passwords..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon sx={{ color: 'rgba(255, 255, 255, 0.5)' }} />
-              </InputAdornment>
-            ),
-          }}
-          sx={{
-            '& .MuiOutlinedInput-root': {
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
-            },
-          }}
-        />
-        <FormControl sx={{ minWidth: 200 }}>
-          <InputLabel sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
-            Category
-          </InputLabel>
-          <Select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            label="Category"
-            sx={{
-              '& .MuiOutlinedInput-notchedOutline': {
-                borderColor: 'rgba(255, 255, 255, 0.23)',
-              },
-              '& .MuiSelect-select': {
-                color: 'white',
-              },
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
-            }}
-          >
-            <MenuItem value="all">All Categories</MenuItem>
-            {categories.map((category) => (
-              <MenuItem key={category.value} value={category.value}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  {category.icon}
-                  {category.label}
-                </Box>
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Box>
+      {/* Search and Filter */}
+      <SearchAndFilter
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        selectedCategory={selectedCategory}
+        onCategoryChange={setSelectedCategory}
+        selectedEntryType={selectedEntryTypeFilter}
+        onEntryTypeChange={setSelectedEntryTypeFilter}
+        onClearFilters={handleClearFilters}
+        entriesCount={entries.length}
+        filteredCount={filteredEntries.length}
+      />
 
       {/* Password Entries */}
       <Box sx={{ flexGrow: 1, overflow: 'auto', mb: 2 }}>
@@ -594,20 +581,8 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
         )}
       </Box>
 
-      {/* Floating Action Button */}
-      <Fab
-        color="primary"
-        onClick={() => setShowAddDialog(true)}
-        data-testid="fab-button"
-        sx={{
-          position: 'fixed',
-          bottom: 32,
-          right: 32,
-          background: 'linear-gradient(45deg, #2196f3 30%, #21cbf3 90%)',
-        }}
-      >
-        <AddIcon />
-      </Fab>
+      {/* Add Entry Menu */}
+      <AddEntryMenu onEntryTypeSelect={handleAddEntryType} disabled={loading} />
 
       {/* Context Menu */}
       <Menu
@@ -634,7 +609,7 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
       </Menu>
 
       {/* Add/Edit Dialog */}
-      <EntryDialog
+      <EnhancedEntryDialog
         open={showAddDialog || editingEntry !== null}
         onClose={() => {
           setShowAddDialog(false);
@@ -643,6 +618,7 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
         }}
         onSave={editingEntry ? handleEditEntry : handleAddEntry}
         entry={editingEntry}
+        entryType={selectedEntryType}
         validationErrors={validationErrors}
         onValidationErrorsChange={setValidationErrors}
       />

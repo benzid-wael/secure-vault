@@ -13,28 +13,32 @@ import {
 } from '@mui/material';
 import { Search as SearchIcon, Clear as ClearIcon } from '@mui/icons-material';
 import { CATEGORIES } from '../utils/categoryManager';
+import { ENTRY_TYPE_DEFINITIONS } from '../utils/entryTypes';
 
 const SearchAndFilter = ({
   searchTerm,
   onSearchChange,
   selectedCategory,
   onCategoryChange,
+  selectedEntryType,
+  onEntryTypeChange,
   onClearFilters,
   entriesCount = 0,
   filteredCount = 0,
 }) => {
-  const hasActiveFilters = searchTerm || selectedCategory;
+  const hasActiveFilters = searchTerm || selectedCategory || selectedEntryType;
 
   return (
     <Box sx={{ mb: 3 }}>
-      <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+      <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
         {/* Search Field */}
         <TextField
           placeholder="Search entries..."
           value={searchTerm}
           onChange={(e) => onSearchChange(e.target.value)}
-          fullWidth
           sx={{
+            flex: 1,
+            minWidth: 250,
             '& .MuiInputBase-input': { color: 'white' },
             '& .MuiOutlinedInput-root': {
               '& fieldset': { borderColor: 'rgba(255, 255, 255, 0.3)' },
@@ -61,8 +65,49 @@ const SearchAndFilter = ({
           }}
         />
 
+        {/* Entry Type Filter */}
+        <FormControl sx={{ minWidth: 180 }}>
+          <InputLabel
+            id="entry-type-select-label"
+            sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
+          >
+            Entry Type
+          </InputLabel>
+          <Select
+            labelId="entry-type-select-label"
+            id="entry-type-select"
+            value={selectedEntryType || ''}
+            onChange={(e) => onEntryTypeChange(e.target.value)}
+            label="Entry Type"
+            sx={{
+              color: 'white',
+              '& .MuiOutlinedInput-notchedOutline': {
+                borderColor: 'rgba(255, 255, 255, 0.3)',
+              },
+              '&:hover .MuiOutlinedInput-notchedOutline': {
+                borderColor: 'rgba(255, 255, 255, 0.5)',
+              },
+            }}
+          >
+            <MenuItem value="">All Types</MenuItem>
+            {Object.entries(ENTRY_TYPE_DEFINITIONS).map(
+              ([type, definition]) => {
+                const Icon = definition.icon;
+                return (
+                  <MenuItem key={type} value={type}>
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <Icon sx={{ mr: 1, color: definition.color }} />
+                      {definition.name}
+                    </Box>
+                  </MenuItem>
+                );
+              }
+            )}
+          </Select>
+        </FormControl>
+
         {/* Category Filter */}
-        <FormControl sx={{ minWidth: 200 }}>
+        <FormControl sx={{ minWidth: 180 }}>
           <InputLabel
             id="category-select-label"
             sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
@@ -72,7 +117,7 @@ const SearchAndFilter = ({
           <Select
             labelId="category-select-label"
             id="category-select"
-            value={selectedCategory}
+            value={selectedCategory || ''}
             onChange={(e) => onCategoryChange(e.target.value)}
             label="Category"
             sx={{
@@ -131,6 +176,19 @@ const SearchAndFilter = ({
                     backgroundColor: 'rgba(76, 175, 80, 0.2)',
                     color: '#4caf50',
                     border: '1px solid rgba(76, 175, 80, 0.3)',
+                  }}
+                />
+              )}
+
+              {selectedEntryType && (
+                <Chip
+                  label={`Type: ${ENTRY_TYPE_DEFINITIONS[selectedEntryType]?.name}`}
+                  size="small"
+                  onDelete={() => onEntryTypeChange('')}
+                  sx={{
+                    backgroundColor: 'rgba(255, 152, 0, 0.2)',
+                    color: '#ff9800',
+                    border: '1px solid rgba(255, 152, 0, 0.3)',
                   }}
                 />
               )}
