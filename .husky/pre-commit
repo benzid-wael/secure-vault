@@ -1,0 +1,19 @@
+#!/bin/sh
+set -e
+
+# Format staged files
+npx lint-staged
+
+# Run all tests
+echo "Running all tests..."
+npm run test -- --run
+
+# Generate coverage (informational)
+echo "Checking test coverage..."
+npm run test -- --coverage --run
+
+echo "✅ Pre-commit checks completed!"
+echo "📊 Current coverage: ~7%. Goal: 70% (will enforce once we reach it)"
+  echo "Test coverage is below threshold (70%)"
+  exit 0
+fi
