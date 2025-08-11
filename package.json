@@ -2,15 +2,18 @@
   "name": "secure-password-manager",
   "version": "1.0.0",
   "description": "A secure password management application built with Electron and React",
-  "main": "public/electron.js",
+  "type": "module",
+  "main": "public/electron.cjs",
   "homepage": "./",
   "scripts": {
-    "start": "NODE_ENV=production node_modules/react-scripts/bin/react-scripts.js start",
-    "build": "NODE_ENV=production node_modules/react-scripts/bin/react-scripts.js build",
-    "test": "NODE_ENV=production node_modules/react-scripts/bin/react-scripts.js test",
-    "eject": "NODE_ENV=production node_modules/react-scripts/bin/react-scripts.js eject",
+    "dev": "vite",
+    "start": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
     "electron": "electron .",
-    "electron-dev": "concurrently \"npm start\" \"wait-on http://localhost:3000 && electron .\"",
+    "electron-dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
     "electron-pack": "npm run build && electron-builder",
     "preelectron-pack": "npm run build"
   },
@@ -29,15 +32,19 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.14.2",
-    "react-scripts": "^5.0.1",
     "uuid": "^9.0.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.4",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
+    "@vitejs/plugin-react": "^4.7.0",
+    "@vitest/ui": "^2.1.9",
     "concurrently": "^8.2.0",
     "electron-builder": "^24.4.0",
+    "jsdom": "^25.0.1",
+    "vite": "^5.4.19",
+    "vitest": "^2.1.9",
     "wait-on": "^7.0.1"
   },
   "build": {
@@ -48,7 +55,7 @@
     },
     "files": [
       "build/**/*",
-      "public/electron.js",
+      "public/electron.cjs",
       "node_modules/**/*"
     ],
     "mac": {
