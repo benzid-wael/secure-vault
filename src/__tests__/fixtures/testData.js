@@ -9,7 +9,7 @@ export const mockVaultEntries = [
     notes: 'Personal email account',
     category: 'email',
     createdAt: '2024-01-01T10:00:00.000Z',
-    updatedAt: '2024-01-01T10:00:00.000Z'
+    updatedAt: '2024-01-01T10:00:00.000Z',
   },
   {
     id: '2',
@@ -20,7 +20,7 @@ export const mockVaultEntries = [
     notes: 'Social media account',
     category: 'website',
     createdAt: '2024-01-02T11:00:00.000Z',
-    updatedAt: '2024-01-02T11:00:00.000Z'
+    updatedAt: '2024-01-02T11:00:00.000Z',
   },
   {
     id: '3',
@@ -31,7 +31,7 @@ export const mockVaultEntries = [
     notes: 'Database access for work',
     category: 'work',
     createdAt: '2024-01-03T09:00:00.000Z',
-    updatedAt: '2024-01-03T09:00:00.000Z'
+    updatedAt: '2024-01-03T09:00:00.000Z',
   },
   {
     id: '4',
@@ -42,8 +42,8 @@ export const mockVaultEntries = [
     notes: 'Online banking access',
     category: 'finance',
     createdAt: '2024-01-04T14:00:00.000Z',
-    updatedAt: '2024-01-04T14:00:00.000Z'
-  }
+    updatedAt: '2024-01-04T14:00:00.000Z',
+  },
 ];
 
 export const mockVaultInfo = {
@@ -54,26 +54,26 @@ export const mockVaultInfo = {
   passwordHistory: [
     {
       changedAt: '2023-12-01T00:00:00.000Z',
-      passwordHash: 'hash123'
-    }
+      passwordHash: 'hash123',
+    },
   ],
   settings: {
     enforcePasswordChange: false,
     passwordChangeWarningDays: 90,
     preventPasswordReuse: true,
-    maxPasswordHistory: 3
-  }
+    maxPasswordHistory: 3,
+  },
 };
 
 export const mockElectronAPI = {
-  loadVault: jest.fn(),
-  addEntry: jest.fn(),
-  updateEntry: jest.fn(),
-  deleteEntry: jest.fn(),
-  changeMasterPassword: jest.fn(),
-  updateVaultSettings: jest.fn(),
-  restoreVaultBackup: jest.fn(),
-  hasVaultBackup: jest.fn()
+  loadVault: vi.fn(),
+  addEntry: vi.fn(),
+  updateEntry: vi.fn(),
+  deleteEntry: vi.fn(),
+  changeMasterPassword: vi.fn(),
+  updateVaultSettings: vi.fn(),
+  restoreVaultBackup: vi.fn(),
+  hasVaultBackup: vi.fn(),
 };
 
 export const createMockEntry = (overrides = {}) => ({
@@ -86,13 +86,17 @@ export const createMockEntry = (overrides = {}) => ({
   category: 'general',
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
-  ...overrides
+  ...overrides,
 });
 
-export const createMockVaultResult = (success = true, data = mockVaultInfo, error = null) => ({
+export const createMockVaultResult = (
+  success = true,
+  data = mockVaultInfo,
+  error = null
+) => ({
   success,
   data: success ? data : null,
-  error: success ? null : error
+  error: success ? null : error,
 });
 
 // Mock password generation options
@@ -102,14 +106,14 @@ export const mockPasswordOptions = {
   includeLowercase: true,
   includeNumbers: true,
   includeSymbols: true,
-  excludeSimilar: true
+  excludeSimilar: true,
 };
 
 // Mock validation errors
 export const mockValidationErrors = {
   title: 'Title is required',
   username: 'Username/Email is required',
-  password: 'Password is required'
+  password: 'Password is required',
 };
 
 // Helper function to create a clean test environment
@@ -117,26 +121,26 @@ export const createTestEnvironment = () => {
   // Mock window.electronAPI
   Object.defineProperty(window, 'electronAPI', {
     value: mockElectronAPI,
-    writable: true
+    writable: true,
   });
 
   // Mock navigator.clipboard
   Object.defineProperty(navigator, 'clipboard', {
     value: {
-      writeText: jest.fn().mockResolvedValue()
+      writeText: vi.fn().mockResolvedValue(),
     },
-    writable: true
+    writable: true,
   });
 
   // Reset all mocks
-  Object.values(mockElectronAPI).forEach(mock => {
-    if (jest.isMockFunction(mock)) {
+  Object.values(mockElectronAPI).forEach((mock) => {
+    if (typeof mock?.mockReset === 'function') {
       mock.mockReset();
     }
   });
 
   return {
     electronAPI: mockElectronAPI,
-    clipboard: navigator.clipboard
+    clipboard: navigator.clipboard,
   };
 };
