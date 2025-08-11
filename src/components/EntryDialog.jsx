@@ -1,4 +1,4 @@
-// Dedicated component for add/edit entry dialog
+// Enhanced entry dialog component supporting multiple entry types
 import { useState, useEffect } from 'react';
 import {
   Dialog,
@@ -14,6 +14,9 @@ import {
   FormControl,
   InputLabel,
   MenuItem,
+  Typography,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import {
   Visibility,
@@ -22,6 +25,15 @@ import {
 } from '@mui/icons-material';
 import { CATEGORIES } from '../utils/categoryManager';
 import { generatePassword } from '../utils/passwordGenerator';
+import {
+  ENTRY_TYPES,
+  ENTRY_TYPE_DEFINITIONS,
+  FIELD_TYPES,
+  getEntryTypeDefinition,
+  createEmptyEntry,
+  validateEntryByType,
+} from '../utils/entryTypes';
+import Level3CardGrid from './Level3CardGrid';
 
 const EntryDialog = ({
   open,
@@ -31,43 +43,36 @@ const EntryDialog = ({
   validationErrors = {},
   onValidationErrorsChange,
 }) => {
-  const [formData, setFormData] = useState({
-    title: '',
-    username: '',
-    password: '',
-    url: '',
-    notes: '',
-    category: 'general',
-  });
-  const [showPassword, setShowPassword] = useState(false);
+  const [selectedEntryType, setSelectedEntryType] = useState(
+    ENTRY_TYPES.PASSWORD
+  );
+  const [formData, setFormData] = useState({});
+  const [showPasswords, setShowPasswords] = useState({});
+  const [isEditing, setIsEditing] = useState(false);
 
   // Initialize form data when dialog opens or entry changes
   useEffect(() => {
     if (open) {
-      // Always hide password when dialog opens
-      setShowPassword(false);
+      setShowPasswords({});
 
       if (entry) {
-        setFormData({
-          title: entry.title || '',
-          username: entry.username || '',
-          password: entry.password || '',
-          url: entry.url || '',
-          notes: entry.notes || '',
-          category: entry.category || 'general',
-        });
+        setIsEditing(true);
+        setSelectedEntryType(entry.entryType || ENTRY_TYPES.PASSWORD);
+        setFormData(entry);
       } else {
-        setFormData({
-          title: '',
-          username: '',
-          password: '',
-          url: '',
-          notes: '',
-          category: 'general',
-        });
+        setIsEditing(false);
+        setSelectedEntryType(ENTRY_TYPES.PASSWORD);
+        setFormData(createEmptyEntry(ENTRY_TYPES.PASSWORD));
       }
     }
   }, [entry, open]);
+
+  // Update form data when entry type changes (only for new entries)
+  useEffect(() => {
+    if (open && !isEditing) {
+      setFormData(createEmptyEntry(selectedEntryType));
+    }
+  }, [selectedEntryType, open, isEditing]);
 
   const handleInputChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -78,7 +83,7 @@ const EntryDialog = ({
     }
   };
 
-  const handleGeneratePassword = () => {
+  const handleGeneratePassword = (fieldName = 'password') => {
     const newPassword = generatePassword(16, {
       includeUppercase: true,
       includeLowercase: true,
@@ -86,30 +91,37 @@ const EntryDialog = ({
       includeSymbols: true,
       excludeSimilar: true,
     });
-    handleInputChange('password', newPassword);
+    handleInputChange(fieldName, newPassword);
+  };
+
+  const togglePasswordVisibility = (fieldName) => {
+    setShowPasswords((prev) => ({
+      ...prev,
+      [fieldName]: !prev[fieldName],
+    }));
   };
 
   const handleSave = () => {
-    onSave(formData);
+    const entryData = {
+      ...formData,
+      entryType: selectedEntryType,
+      id: isEditing ? entry.id : Date.now().toString(),
+      createdAt: isEditing ? entry.createdAt : new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    onSave(entryData);
   };
 
   const handleClose = () => {
-    setFormData({
-      title: '',
-      username: '',
-      password: '',
-      url: '',
-      notes: '',
-      category: 'general',
-    });
-    setShowPassword(false); // Always hide password when closing
+    setFormData({});
+    setShowPasswords({});
+    setSelectedEntryType(ENTRY_TYPES.PASSWORD);
+    setIsEditing(false);
     if (onValidationErrorsChange) {
       onValidationErrorsChange({});
     }
     onClose();
   };
-
-  const isEditing = !!entry;
 
   return (
     <Dialog

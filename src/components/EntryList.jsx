@@ -1,4 +1,4 @@
-// Dedicated component for displaying password entries
+// Enhanced component for displaying different types of entries
 import React, { useState } from 'react';
 import {
   Card,
@@ -16,14 +16,34 @@ import {
   Edit as EditIcon,
   Delete as DeleteIcon,
   MoreVert as MoreVertIcon,
+  Search as SearchIcon,
 } from '@mui/icons-material';
 import { getCategoryById } from '../utils/categoryManager';
+import {
+  getEntryTypeDefinition,
+  getDisplayFields,
+  getCopyableFields,
+  ENTRY_TYPES,
+  getCodeAtPosition,
+} from '../utils/entryTypes';
 
-const EntryCard = ({ entry, onEdit, onDelete, onCopyPassword }) => {
+const EntryCard = ({ entry, onEdit, onDelete, onCopyPassword, testId }) => {
   const [anchorEl, setAnchorEl] = useState(null);
 
   const category = getCategoryById(entry.category);
   const CategoryIcon = category.icon;
+
+  // Get entry type information
+  const entryTypeDef = getEntryTypeDefinition(
+    entry.entryType || ENTRY_TYPES.PASSWORD
+  );
+  const EntryTypeIcon = entryTypeDef.icon;
+  const displayFields = getDisplayFields(
+    entry.entryType || ENTRY_TYPES.PASSWORD
+  );
+  const copyableFields = getCopyableFields(
+    entry.entryType || ENTRY_TYPES.PASSWORD
+  );
 
   const handleMenuOpen = (event) => {
     setAnchorEl(event.currentTarget);
@@ -43,13 +63,46 @@ const EntryCard = ({ entry, onEdit, onDelete, onCopyPassword }) => {
     handleMenuClose();
   };
 
+  const handleCopyField = (fieldName) => {
+    const value = entry[fieldName];
+    if (value) {
+      navigator.clipboard
+        .writeText(value)
+        .then(() => {
+          // Could show a snackbar here
+        })
+        .catch(() => {
+          console.error('Failed to copy to clipboard');
+        });
+    }
+    handleMenuClose();
+  };
+
   const handleCopyPassword = () => {
-    onCopyPassword(entry.password);
+    // For backward compatibility
+    const passwordField = entry.password || entry.secret || entry.privateKey;
+    if (passwordField) {
+      navigator.clipboard
+        .writeText(passwordField)
+        .then(() => {
+          // Could show a snackbar here
+        })
+        .catch(() => {
+          console.error('Failed to copy to clipboard');
+        });
+
+      // Call the callback if provided
+      if (onCopyPassword) {
+        onCopyPassword(passwordField);
+      }
+    }
     handleMenuClose();
   };
 
   return (
     <Card
+      data-testid={testId}
+      data-entry-type={entry.entryType}
       sx={{
         backgroundColor: '#2a2a2a',
         border: '1px solid rgba(255, 255, 255, 0.1)',
@@ -69,7 +122,7 @@ const EntryCard = ({ entry, onEdit, onDelete, onCopyPassword }) => {
         >
           <Box sx={{ flex: 1 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-              <CategoryIcon sx={{ mr: 1, color: category.color }} />
+              <EntryTypeIcon sx={{ mr: 1, color: entryTypeDef.color }} />
               <Typography
                 variant="h6"
                 sx={{ color: 'white', fontWeight: 'bold' }}
@@ -78,14 +131,24 @@ const EntryCard = ({ entry, onEdit, onDelete, onCopyPassword }) => {
               </Typography>
             </Box>
 
-            <Typography
-              variant="body2"
-              sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 1 }}
-            >
-              {entry.username}
-            </Typography>
+            {/* Display entry type specific fields */}
+            {displayFields.map((fieldName) => {
+              const value = entry[fieldName];
+              if (!value) return null;
 
-            {entry.url && (
+              return (
+                <Typography
+                  key={fieldName}
+                  variant="body2"
+                  sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 1 }}
+                >
+                  {value}
+                </Typography>
+              );
+            })}
+
+            {/* Special handling for URLs */}
+            {(entry.url || entry.onlineBankingUrl) && (
               <Typography
                 variant="body2"
                 sx={{
@@ -95,33 +158,49 @@ const EntryCard = ({ entry, onEdit, onDelete, onCopyPassword }) => {
                   cursor: 'pointer',
                   '&:hover': { textDecoration: 'underline' },
                 }}
-                onClick={() => window.open(entry.url, '_blank')}
+                onClick={() =>
+                  window.open(entry.url || entry.onlineBankingUrl, '_blank')
+                }
               >
-                {entry.url}
+                {entry.url || entry.onlineBankingUrl}
               </Typography>
             )}
 
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
               <Chip
-                label={category.name}
+                label={entryTypeDef.name}
                 size="small"
                 sx={{
-                  backgroundColor: category.color,
+                  backgroundColor: entryTypeDef.color,
                   color: 'white',
                   fontSize: '0.75rem',
                 }}
               />
 
-              <Tooltip title="Copy Password">
-                <IconButton
-                  size="small"
-                  onClick={handleCopyPassword}
-                  aria-label="Copy Password"
-                  sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
-                >
-                  <CopyIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
+              <Chip
+                label={category.name}
+                size="small"
+                variant="outlined"
+                sx={{
+                  borderColor: category.color,
+                  color: category.color,
+                  fontSize: '0.75rem',
+                }}
+              />
+
+              {/* Quick copy button for primary field */}
+              {copyableFields.length > 0 && (
+                <Tooltip title={`Copy ${copyableFields[0]}`}>
+                  <IconButton
+                    size="small"
+                    onClick={() => handleCopyField(copyableFields[0])}
+                    aria-label={`Copy ${copyableFields[0]}`}
+                    sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
+                  >
+                    <CopyIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
             </Box>
           </Box>
 
@@ -139,17 +218,31 @@ const EntryCard = ({ entry, onEdit, onDelete, onCopyPassword }) => {
         anchorEl={anchorEl}
         open={Boolean(anchorEl)}
         onClose={handleMenuClose}
-        PaperProps={{
-          sx: {
-            backgroundColor: '#2a2a2a',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+        slotProps={{
+          paper: {
+            sx: {
+              backgroundColor: '#2a2a2a',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+            },
           },
         }}
       >
-        <MenuItem onClick={handleCopyPassword}>
-          <CopyIcon sx={{ mr: 1 }} />
-          Copy Password
-        </MenuItem>
+        {/* Dynamic copy options based on entry type */}
+        {copyableFields.map((fieldName) => {
+          const value = entry[fieldName];
+          if (!value) return null;
+
+          return (
+            <MenuItem
+              key={fieldName}
+              onClick={() => handleCopyField(fieldName)}
+            >
+              <CopyIcon sx={{ mr: 1 }} />
+              Copy {fieldName.charAt(0).toUpperCase() + fieldName.slice(1)}
+            </MenuItem>
+          );
+        })}
+
         <MenuItem onClick={handleEdit}>
           <EditIcon sx={{ mr: 1 }} />
           Edit
@@ -182,13 +275,14 @@ const EntryList = ({ entries, onEdit, onDelete, onCopyPassword }) => {
 
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
-      {entries.map((entry) => (
+      {entries.map((entry, index) => (
         <EntryCard
           key={entry.id}
           entry={entry}
           onEdit={onEdit}
           onDelete={onDelete}
           onCopyPassword={onCopyPassword}
+          testId={`entry-${index + 1}`}
         />
       ))}
     </Box>

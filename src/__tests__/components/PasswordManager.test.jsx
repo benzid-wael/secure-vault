@@ -7,37 +7,44 @@ import PasswordManager from '../../components/PasswordManager';
 // Mock all Material-UI components used in PasswordManager
 vi.mock('@mui/material/Typography', () => ({
   __esModule: true,
-  default: ({ children, ...props }) => React.createElement('div', props, children),
+  default: ({ children, ...props }) =>
+    React.createElement('div', props, children),
 }));
 
 vi.mock('@mui/material/Button', () => ({
   __esModule: true,
-  default: ({ children, onClick, ...props }) => React.createElement('button', { onClick, ...props }, children),
+  default: ({ children, onClick, ...props }) =>
+    React.createElement('button', { onClick, ...props }, children),
 }));
 
 vi.mock('@mui/material/Box', () => ({
   __esModule: true,
-  default: ({ children, ...props }) => React.createElement('div', props, children),
+  default: ({ children, ...props }) =>
+    React.createElement('div', props, children),
 }));
 
 vi.mock('@mui/material/Card', () => ({
   __esModule: true,
-  default: ({ children, ...props }) => React.createElement('div', props, children),
+  default: ({ children, ...props }) =>
+    React.createElement('div', props, children),
 }));
 
 vi.mock('@mui/material/CardContent', () => ({
   __esModule: true,
-  default: ({ children, ...props }) => React.createElement('div', props, children),
+  default: ({ children, ...props }) =>
+    React.createElement('div', props, children),
 }));
 
 vi.mock('@mui/material/IconButton', () => ({
   __esModule: true,
-  default: ({ children, onClick, ...props }) => React.createElement('button', { onClick, ...props }, children),
+  default: ({ children, onClick, ...props }) =>
+    React.createElement('button', { onClick, ...props }, children),
 }));
 
 vi.mock('@mui/material/TextField', () => ({
   __esModule: true,
-  default: ({ value, onChange, placeholder, ...props }) => React.createElement('input', { value, onChange, placeholder, ...props }),
+  default: ({ value, onChange, placeholder, ...props }) =>
+    React.createElement('input', { value, onChange, placeholder, ...props }),
 }));
 
 vi.mock('@mui/material/Chip', () => ({
@@ -45,55 +52,80 @@ vi.mock('@mui/material/Chip', () => ({
   default: ({ label, ...props }) => React.createElement('span', props, label),
 }));
 
-vi.mock('@mui/material/Fab', () => ({
+vi.mock('../../components/AddEntryMenu', () => ({
   __esModule: true,
-  default: ({ children, onClick, ...props }) => React.createElement('button', {
-    onClick,
-    'data-testid': 'fab-button',
-    'aria-label': 'Add new entry',
-    role: 'button',
-    ...props
-  }, children),
+  default: ({ onEntryTypeSelect, ...props }) =>
+    React.createElement(
+      'button',
+      {
+        onClick: () => onEntryTypeSelect('password'),
+        'data-testid': 'add-entry-menu',
+        'aria-label': 'Add new entry',
+        role: 'button',
+        ...props,
+      },
+      'Add Entry'
+    ),
 }));
 
 vi.mock('@mui/material/Alert', () => ({
   __esModule: true,
-  default: ({ children, ...props }) => React.createElement('div', { 'data-testid': 'alert', ...props }, children),
+  default: ({ children, ...props }) =>
+    React.createElement('div', { 'data-testid': 'alert', ...props }, children),
 }));
 
 vi.mock('@mui/material/Snackbar', () => ({
   __esModule: true,
-  default: ({ children, open, ...props }) => open ? React.createElement('div', { 'data-testid': 'snackbar', ...props }, children) : null,
+  default: ({ children, open, ...props }) =>
+    open
+      ? React.createElement(
+          'div',
+          { 'data-testid': 'snackbar', ...props },
+          children
+        )
+      : null,
 }));
 
 vi.mock('@mui/material/Menu', () => ({
   __esModule: true,
-  default: ({ children, open, ...props }) => open ? React.createElement('div', { 'data-testid': 'menu', ...props }, children) : null,
+  default: ({ children, open, ...props }) =>
+    open
+      ? React.createElement(
+          'div',
+          { 'data-testid': 'menu', ...props },
+          children
+        )
+      : null,
 }));
 
 vi.mock('@mui/material/MenuItem', () => ({
   __esModule: true,
-  default: ({ children, onClick, ...props }) => React.createElement('div', { onClick, ...props }, children),
+  default: ({ children, onClick, ...props }) =>
+    React.createElement('div', { onClick, ...props }, children),
 }));
 
 vi.mock('@mui/material/InputAdornment', () => ({
   __esModule: true,
-  default: ({ children, ...props }) => React.createElement('div', props, children),
+  default: ({ children, ...props }) =>
+    React.createElement('div', props, children),
 }));
 
 vi.mock('@mui/material/FormControl', () => ({
   __esModule: true,
-  default: ({ children, ...props }) => React.createElement('div', props, children),
+  default: ({ children, ...props }) =>
+    React.createElement('div', props, children),
 }));
 
 vi.mock('@mui/material/InputLabel', () => ({
   __esModule: true,
-  default: ({ children, ...props }) => React.createElement('label', props, children),
+  default: ({ children, ...props }) =>
+    React.createElement('label', props, children),
 }));
 
 vi.mock('@mui/material/Select', () => ({
   __esModule: true,
-  default: ({ children, value, onChange, ...props }) => React.createElement('select', { value, onChange, ...props }, children),
+  default: ({ children, value, onChange, ...props }) =>
+    React.createElement('select', { value, onChange, ...props }, children),
 }));
 
 // Mock Material-UI icons
@@ -141,16 +173,29 @@ vi.mock('@mui/icons-material/MoreVert', () => ({
 vi.mock('../../components/Settings', () => ({
   __esModule: true,
   default: ({ onBack, onPasswordChanged }) =>
-    React.createElement('div', { 'data-testid': 'settings-component' },
+    React.createElement(
+      'div',
+      { 'data-testid': 'settings-component' },
       React.createElement('button', { onClick: onBack }, 'Back'),
-      React.createElement('button', { onClick: () => onPasswordChanged('newpass') }, 'Change Password')
+      React.createElement(
+        'button',
+        { onClick: () => onPasswordChanged('newpass') },
+        'Change Password'
+      )
     ),
 }));
 
 // Mock the EntryDialog component
 vi.mock('../../components/EntryDialog', () => ({
   __esModule: true,
-  default: ({ open, onClose, onSave, entry, validationErrors, onValidationErrorsChange }) => {
+  default: ({
+    open,
+    onClose,
+    onSave,
+    entry,
+    validationErrors,
+    onValidationErrorsChange,
+  }) => {
     if (!open) return null;
 
     const [formData, setFormData] = React.useState({
@@ -163,7 +208,7 @@ vi.mock('../../components/EntryDialog', () => ({
     });
 
     const handleInputChange = (field, value) => {
-      setFormData(prev => ({ ...prev, [field]: value }));
+      setFormData((prev) => ({ ...prev, [field]: value }));
     };
 
     const handleSave = () => {
@@ -183,31 +228,50 @@ vi.mock('../../components/EntryDialog', () => ({
       onSave(formData);
     };
 
-    return React.createElement('div', { 'data-testid': 'entry-dialog' },
-      React.createElement('h2', {}, entry ? 'Edit Password Entry' : 'Add New Password Entry'),
+    return React.createElement(
+      'div',
+      { 'data-testid': 'entry-dialog' },
+      React.createElement(
+        'h2',
+        {},
+        entry ? 'Edit Password Entry' : 'Add New Password Entry'
+      ),
       React.createElement('input', {
         'data-testid': 'title-input',
         placeholder: 'Title',
         value: formData.title,
-        onChange: (e) => handleInputChange('title', e.target.value)
+        onChange: (e) => handleInputChange('title', e.target.value),
       }),
       React.createElement('input', {
         'data-testid': 'username-input',
         placeholder: 'Username',
         value: formData.username,
-        onChange: (e) => handleInputChange('username', e.target.value)
+        onChange: (e) => handleInputChange('username', e.target.value),
       }),
       React.createElement('input', {
         'data-testid': 'password-input',
         placeholder: 'Password',
         type: 'password',
         value: formData.password,
-        onChange: (e) => handleInputChange('password', e.target.value)
+        onChange: (e) => handleInputChange('password', e.target.value),
       }),
-      React.createElement('button', { onClick: handleSave, role: 'button' }, entry ? 'Update Entry' : 'Add'),
-      React.createElement('button', { onClick: onClose, role: 'button' }, 'Cancel'),
-      validationErrors && Object.keys(validationErrors).length > 0 &&
-        React.createElement('div', { 'data-testid': 'validation-errors' }, 'Please fill in all required fields')
+      React.createElement(
+        'button',
+        { onClick: handleSave, role: 'button' },
+        entry ? 'Update Entry' : 'Add'
+      ),
+      React.createElement(
+        'button',
+        { onClick: onClose, role: 'button' },
+        'Cancel'
+      ),
+      validationErrors &&
+        Object.keys(validationErrors).length > 0 &&
+        React.createElement(
+          'div',
+          { 'data-testid': 'validation-errors' },
+          'Please fill in all required fields'
+        )
     );
   },
 }));
@@ -375,7 +439,7 @@ describe('PasswordManager', () => {
         expect(screen.getByText('Gmail')).toBeInTheDocument();
       });
 
-      const searchInput = screen.getByPlaceholderText('Search passwords...');
+      const searchInput = screen.getByPlaceholderText('Search entries...');
       fireEvent.change(searchInput, { target: { value: 'gmail' } });
 
       expect(screen.getByText('Gmail')).toBeInTheDocument();
@@ -389,7 +453,7 @@ describe('PasswordManager', () => {
         expect(screen.getByText('Gmail')).toBeInTheDocument();
       });
 
-      const searchInput = screen.getByPlaceholderText('Search passwords...');
+      const searchInput = screen.getByPlaceholderText('Search entries...');
       fireEvent.change(searchInput, { target: { value: 'nonexistent' } });
 
       expect(screen.getByText('No passwords found')).toBeInTheDocument();
@@ -530,11 +594,11 @@ describe('PasswordManager', () => {
         expect(screen.getByText('test-vault')).toBeInTheDocument();
       });
 
-      // Click the floating action button
-      const fabButton = screen.getByTestId('fab-button');
-      fireEvent.click(fabButton);
+      // Click the add entry menu
+      const addButton = screen.getByTestId('add-entry-menu');
+      fireEvent.click(addButton);
 
-      expect(screen.getByText('Add New Password Entry')).toBeInTheDocument();
+      expect(screen.getByText('Add New Password')).toBeInTheDocument();
     });
 
     it('validates required fields', async () => {
@@ -545,8 +609,8 @@ describe('PasswordManager', () => {
       });
 
       // Open add dialog
-      const fabButton = screen.getByTestId('fab-button');
-      fireEvent.click(fabButton);
+      const addButton = screen.getByTestId('add-entry-menu');
+      fireEvent.click(addButton);
 
       // Try to submit without filling required fields
       fireEvent.click(screen.getByRole('button', { name: /add/i }));

@@ -77,6 +77,7 @@ vi.mock('@mui/material', async () => {
 describe('SearchAndFilter Component', () => {
   const mockOnSearch = vi.fn();
   const mockOnFilter = vi.fn();
+  const mockOnEntryTypeChange = vi.fn();
   const mockOnReset = vi.fn();
 
   const categories = [
@@ -89,13 +90,15 @@ describe('SearchAndFilter Component', () => {
     vi.clearAllMocks();
   });
 
-  it('renders search input and filter dropdown', () => {
+  it('renders search input and filter dropdowns', () => {
     render(
       <SearchAndFilter
         searchTerm=""
         onSearchChange={mockOnSearch}
         selectedCategory=""
         onCategoryChange={mockOnFilter}
+        selectedEntryType=""
+        onEntryTypeChange={vi.fn()}
         onClearFilters={mockOnReset}
         entriesCount={10}
         filteredCount={10}
@@ -106,6 +109,7 @@ describe('SearchAndFilter Component', () => {
       screen.getByPlaceholderText('Search entries...')
     ).toBeInTheDocument();
     expect(screen.getByLabelText('Category')).toBeInTheDocument();
+    expect(screen.getByLabelText('Entry Type')).toBeInTheDocument();
   });
 
   it('calls onSearchChange when typing in search input', () => {
@@ -186,5 +190,22 @@ describe('SearchAndFilter Component', () => {
     });
     fireEvent.change(categorySelect, { target: { value: '' } });
     expect(mockOnFilter).toHaveBeenLastCalledWith('');
+  });
+  it('shows entry type filter chip when entry type is selected', () => {
+    render(
+      <SearchAndFilter
+        searchTerm=""
+        onSearchChange={mockOnSearch}
+        selectedCategory=""
+        onCategoryChange={mockOnFilter}
+        selectedEntryType="wifi"
+        onEntryTypeChange={mockOnEntryTypeChange}
+        onClearFilters={mockOnReset}
+        entriesCount={10}
+        filteredCount={8}
+      />
+    );
+
+    expect(screen.getByText('Type: WiFi Password')).toBeInTheDocument();
   });
 });
