@@ -451,6 +451,113 @@ ipcMain.handle('has-vault-backup', async (event, vaultName) => {
   }
 });
 
+// Export vault to file
+ipcMain.handle('export-vault', async (event, vaultName, password, exportPath) => {
+  try {
+    const vaultPath = path.join(vaultDir, `${vaultName}.vault`);
+
+    // Verify vault exists and password is correct
+    if (!(await fs.pathExists(vaultPath))) {
+      return { success: false, error: 'Vault not found' };
+    }
+
+    const vaultData = await fs.readJson(vaultPath);
+    const salt = Buffer.from(vaultData.salt, 'hex');
+    const key = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha512');
+
+    try {
+      const decryptedData = decryptData(vaultData, key);
+
+      // Create export data with metadata
+      const exportData = {
+        exportVersion: '1.0',
+        exportedAt: new Date().toISOString(),
+        vaultName: vaultName,
+        originalVaultData: vaultData, // Keep original encrypted format
+        metadata: {
+          version: decryptedData.version,
+          created: decryptedData.created,
+          entryCount: decryptedData.entries?.length || 0,
+          hasSettings: !!decryptedData.settings
+        }
+      };
+
+      await fs.writeJson(exportPath, exportData, { spaces: 2 });
+      return { success: true };
+    } catch (decryptError) {
+      return { success: false, error: 'Invalid password' };
+    }
+  } catch (error) {
+    console.error('Error exporting vault:', error);
+    return { success: false, error: 'Failed to export vault' };
+  }
+});
+
+// Import vault from file
+ipcMain.handle('import-vault', async (event, importPath, newVaultName, password) => {
+  try {
+    // Check if target vault already exists
+    const targetVaultPath = path.join(vaultDir, `${newVaultName}.vault`);
+    if (await fs.pathExists(targetVaultPath)) {
+      return { success: false, error: 'Vault with this name already exists' };
+    }
+
+    // Read and validate import file
+    if (!(await fs.pathExists(importPath))) {
+      return { success: false, error: 'Import file not found' };
+    }
+
+    const importData = await fs.readJson(importPath);
+
+    // Validate import file structure
+    if (!importData.exportVersion || !importData.originalVaultData) {
+      return { success: false, error: 'Invalid import file format' };
+    }
+
+    // Verify we can decrypt the original vault data
+    const originalVaultData = importData.originalVaultData;
+    const originalSalt = Buffer.from(originalVaultData.salt, 'hex');
+
+    // Try to decrypt with the original password to validate the import file
+    try {
+      const originalKey = crypto.pbkdf2Sync(password, originalSalt, 100000, 32, 'sha512');
+      const decryptedData = decryptData(originalVaultData, originalKey);
+
+      // Re-encrypt with new salt for the imported vault
+      const newSalt = crypto.randomBytes(32);
+      const newKey = crypto.pbkdf2Sync(password, newSalt, 100000, 32, 'sha512');
+
+      const newEncryptedData = encryptData(decryptedData, newKey);
+      const finalData = {
+        ...newEncryptedData,
+        salt: newSalt.toString('hex')
+      };
+
+      await fs.writeJson(targetVaultPath, finalData);
+      return {
+        success: true,
+        metadata: importData.metadata,
+        importedAt: new Date().toISOString()
+      };
+    } catch (decryptError) {
+      return { success: false, error: 'Invalid password for import file' };
+    }
+  } catch (error) {
+    console.error('Error importing vault:', error);
+    return { success: false, error: 'Failed to import vault' };
+  }
+});
+
+// Get vault storage directory path
+ipcMain.handle('get-vault-directory', async () => {
+  try {
+    return { success: true, path: vaultDir };
+  } catch (error) {
+    console.error('Error getting vault directory:', error);
+    return { success: false, error: 'Failed to get vault directory' };
+  }
+});
+
 async function createDefaultVault() {
   const defaultVaultPath = path.join(vaultDir, 'default.vault');
   
