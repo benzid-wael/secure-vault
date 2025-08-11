@@ -12,26 +12,51 @@ export default defineConfig({
     assetsDir: 'static',
     rollupOptions: {
       input: {
-        main: resolve(fileURLToPath(new URL('.', import.meta.url)), 'index.html')
-      }
-    }
+        main: resolve(
+          fileURLToPath(new URL('.', import.meta.url)),
+          'index.html'
+        ),
+      },
+    },
   },
   server: {
     port: 3000,
-    open: false
+    open: false,
   },
   test: {
     globals: true,
     environment: 'jsdom',
     setupFiles: './src/setupTests.js',
-    css: true
+    css: true,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+      exclude: [
+        '**/node_modules/**',
+        '**/public/**',
+        '**/build/**',
+        '**/*.config.js',
+        '**/src/setupTests.js',
+        '**/src/App.jsx',
+        '**/src/index.jsx',
+        '**/*.d.ts',
+        '**/src/reportWebVitals.js',
+      ],
+      all: true,
+      lines: 70,
+      functions: 70,
+      statements: 70,
+      branches: 70,
+      clean: true,
+      skipFull: true,
+    },
   },
   resolve: {
     alias: {
-      '@': resolve(fileURLToPath(new URL('.', import.meta.url)), 'src')
-    }
+      '@': resolve(fileURLToPath(new URL('.', import.meta.url)), 'src'),
+    },
   },
   define: {
-    global: 'globalThis'
-  }
+    global: 'globalThis',
+  },
 });

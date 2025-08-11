@@ -9,22 +9,19 @@ import {
   MenuItem,
   InputAdornment,
   IconButton,
-  Chip
+  Chip,
 } from '@mui/material';
-import {
-  Search as SearchIcon,
-  Clear as ClearIcon
-} from '@mui/icons-material';
+import { Search as SearchIcon, Clear as ClearIcon } from '@mui/icons-material';
 import { CATEGORIES } from '../utils/categoryManager';
 
-const SearchAndFilter = ({ 
-  searchTerm, 
-  onSearchChange, 
-  selectedCategory, 
-  onCategoryChange, 
+const SearchAndFilter = ({
+  searchTerm,
+  onSearchChange,
+  selectedCategory,
+  onCategoryChange,
   onClearFilters,
   entriesCount = 0,
-  filteredCount = 0
+  filteredCount = 0,
 }) => {
   const hasActiveFilters = searchTerm || selectedCategory;
 
@@ -37,12 +34,12 @@ const SearchAndFilter = ({
           value={searchTerm}
           onChange={(e) => onSearchChange(e.target.value)}
           fullWidth
-          sx={{ 
+          sx={{
             '& .MuiInputBase-input': { color: 'white' },
             '& .MuiOutlinedInput-root': {
               '& fieldset': { borderColor: 'rgba(255, 255, 255, 0.3)' },
               '&:hover fieldset': { borderColor: 'rgba(255, 255, 255, 0.5)' },
-            }
+            },
           }}
           InputProps={{
             startAdornment: (
@@ -66,14 +63,19 @@ const SearchAndFilter = ({
 
         {/* Category Filter */}
         <FormControl sx={{ minWidth: 200 }}>
-          <InputLabel sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+          <InputLabel
+            id="category-select-label"
+            sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
+          >
             Category
           </InputLabel>
           <Select
+            labelId="category-select-label"
+            id="category-select"
             value={selectedCategory}
             onChange={(e) => onCategoryChange(e.target.value)}
             label="Category"
-            sx={{ 
+            sx={{
               color: 'white',
               '& .MuiOutlinedInput-notchedOutline': {
                 borderColor: 'rgba(255, 255, 255, 0.3)',
@@ -83,9 +85,7 @@ const SearchAndFilter = ({
               },
             }}
           >
-            <MenuItem value="">
-              <em>All Categories</em>
-            </MenuItem>
+            <MenuItem value="">All Categories</MenuItem>
             {CATEGORIES.map((category) => {
               const Icon = category.icon;
               return (
@@ -102,7 +102,13 @@ const SearchAndFilter = ({
       </Box>
 
       {/* Filter Status and Clear Button */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {hasActiveFilters && (
             <>
@@ -115,7 +121,7 @@ const SearchAndFilter = ({
                   border: '1px solid rgba(33, 150, 243, 0.3)',
                 }}
               />
-              
+
               {searchTerm && (
                 <Chip
                   label={`Search: "${searchTerm}"`}
@@ -128,10 +134,10 @@ const SearchAndFilter = ({
                   }}
                 />
               )}
-              
+
               {selectedCategory && (
                 <Chip
-                  label={`Category: ${CATEGORIES.find(c => c.id === selectedCategory)?.name}`}
+                  label={`Category: ${CATEGORIES.find((c) => c.id === selectedCategory)?.name}`}
                   size="small"
                   onDelete={() => onCategoryChange('')}
                   sx={{
@@ -149,9 +155,9 @@ const SearchAndFilter = ({
           <IconButton
             onClick={onClearFilters}
             size="small"
-            sx={{ 
+            sx={{
               color: 'rgba(255, 255, 255, 0.7)',
-              '&:hover': { color: 'white' }
+              '&:hover': { color: 'white' },
             }}
             title="Clear all filters"
           >
