@@ -40,6 +40,7 @@ export default defineConfig({
         '**/src/setupTests.js',
         '**/*.d.ts',
         '**/src/reportWebVitals.js',
+        '**/src/index.jsx',
         '**/*/testData.js',
         '**/scripts/**',
       ],

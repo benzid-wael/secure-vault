@@ -1,5 +1,5 @@
 // Dedicated component for add/edit entry dialog
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -13,7 +13,6 @@ import {
   Select,
   FormControl,
   InputLabel,
-  FormHelperText,
   MenuItem,
 } from '@mui/material';
 import {
@@ -21,7 +20,7 @@ import {
   VisibilityOff,
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
-import { CATEGORIES, getCategoryById } from '../utils/categoryManager';
+import { CATEGORIES } from '../utils/categoryManager';
 import { generatePassword } from '../utils/passwordGenerator';
 
 const EntryDialog = ({
@@ -44,24 +43,29 @@ const EntryDialog = ({
 
   // Initialize form data when dialog opens or entry changes
   useEffect(() => {
-    if (entry) {
-      setFormData({
-        title: entry.title || '',
-        username: entry.username || '',
-        password: entry.password || '',
-        url: entry.url || '',
-        notes: entry.notes || '',
-        category: entry.category || 'general',
-      });
-    } else {
-      setFormData({
-        title: '',
-        username: '',
-        password: '',
-        url: '',
-        notes: '',
-        category: 'general',
-      });
+    if (open) {
+      // Always hide password when dialog opens
+      setShowPassword(false);
+
+      if (entry) {
+        setFormData({
+          title: entry.title || '',
+          username: entry.username || '',
+          password: entry.password || '',
+          url: entry.url || '',
+          notes: entry.notes || '',
+          category: entry.category || 'general',
+        });
+      } else {
+        setFormData({
+          title: '',
+          username: '',
+          password: '',
+          url: '',
+          notes: '',
+          category: 'general',
+        });
+      }
     }
   }, [entry, open]);
 
@@ -98,6 +102,7 @@ const EntryDialog = ({
       notes: '',
       category: 'general',
     });
+    setShowPassword(false); // Always hide password when closing
     if (onValidationErrorsChange) {
       onValidationErrorsChange({});
     }
@@ -105,8 +110,6 @@ const EntryDialog = ({
   };
 
   const isEditing = !!entry;
-  const selectedCategory = getCategoryById(formData.category);
-  const CategoryIcon = selectedCategory.icon;
 
   return (
     <Dialog
@@ -114,6 +117,7 @@ const EntryDialog = ({
       onClose={handleClose}
       maxWidth="sm"
       fullWidth
+      data-testid="dialog"
       PaperProps={{
         sx: {
           backgroundColor: '#1e1e1e',
@@ -121,7 +125,7 @@ const EntryDialog = ({
         },
       }}
     >
-      <DialogTitle sx={{ color: 'white' }}>
+      <DialogTitle sx={{ color: 'white' }} data-testid="dialog-title">
         {isEditing ? 'Edit Password Entry' : 'Add New Password Entry'}
       </DialogTitle>
       <DialogContent>
@@ -134,6 +138,7 @@ const EntryDialog = ({
             error={!!validationErrors.title}
             helperText={validationErrors.title}
             required
+            inputProps={{ 'data-testid': 'input-title' }}
             sx={{ '& .MuiInputBase-input': { color: 'white' } }}
           />
 
@@ -145,6 +150,7 @@ const EntryDialog = ({
               value={formData.category}
               onChange={(e) => handleInputChange('category', e.target.value)}
               label="Category"
+              inputProps={{ 'data-testid': 'select' }}
               sx={{ color: 'white' }}
             >
               {CATEGORIES.map((category) => {
@@ -169,6 +175,7 @@ const EntryDialog = ({
             error={!!validationErrors.username}
             helperText={validationErrors.username}
             required
+            inputProps={{ 'data-testid': 'input-username' }}
             sx={{ '& .MuiInputBase-input': { color: 'white' } }}
           />
 
@@ -181,24 +188,51 @@ const EntryDialog = ({
             error={!!validationErrors.password}
             helperText={validationErrors.password}
             required
+            inputProps={{ 'data-testid': 'input-password' }}
             sx={{ '& .MuiInputBase-input': { color: 'white' } }}
             InputProps={{
               endAdornment: (
-                <InputAdornment position="end">
+                <InputAdornment position="end" sx={{ gap: 1 }}>
                   <IconButton
                     onClick={() => setShowPassword(!showPassword)}
-                    edge="end"
-                    sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
+                    size="small"
+                    data-testid="icon-button"
+                    sx={{
+                      color: 'rgba(255, 255, 255, 0.7)',
+                      '&:hover': {
+                        color: 'white',
+                        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                      },
+                      minWidth: '40px',
+                      minHeight: '40px',
+                    }}
+                    aria-label={
+                      showPassword ? 'Hide password' : 'Show password'
+                    }
                   >
-                    {showPassword ? <VisibilityOff /> : <Visibility />}
+                    {showPassword ? (
+                      <VisibilityOff fontSize="small" />
+                    ) : (
+                      <Visibility fontSize="small" />
+                    )}
                   </IconButton>
                   <IconButton
                     onClick={handleGeneratePassword}
-                    edge="end"
-                    sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
+                    size="small"
+                    data-testid="icon-button"
+                    sx={{
+                      color: 'rgba(255, 255, 255, 0.7)',
+                      '&:hover': {
+                        color: 'white',
+                        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                      },
+                      minWidth: '40px',
+                      minHeight: '40px',
+                    }}
                     title="Generate Password"
+                    aria-label="Generate password"
                   >
-                    <RefreshIcon />
+                    <RefreshIcon fontSize="small" />
                   </IconButton>
                 </InputAdornment>
               ),
@@ -210,6 +244,7 @@ const EntryDialog = ({
             value={formData.url}
             onChange={(e) => handleInputChange('url', e.target.value)}
             fullWidth
+            inputProps={{ 'data-testid': 'input-url' }}
             sx={{ '& .MuiInputBase-input': { color: 'white' } }}
           />
 
@@ -220,6 +255,7 @@ const EntryDialog = ({
             fullWidth
             multiline
             rows={3}
+            inputProps={{ 'data-testid': 'input-notes' }}
             sx={{ '& .MuiInputBase-input': { color: 'white' } }}
           />
         </Box>

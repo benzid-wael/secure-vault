@@ -9,7 +9,19 @@ vi.mock('@mui/material', async () => {
   const actual = await vi.importActual('@mui/material');
   return {
     ...actual,
-    TextField: ({ label, value, onChange, type, InputProps, ...props }) => (
+    TextField: ({
+      label,
+      value,
+      onChange,
+      type,
+      InputProps,
+      fullWidth,
+      error,
+      helperText,
+      required,
+      sx,
+      ...props
+    }) => (
       <div>
         <label>
           {label}
