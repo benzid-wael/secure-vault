@@ -11,7 +11,7 @@ export default defineConfig({
     react(),
     electron({
       main: {
-        entry: 'public/electron.cjs',
+        entry: 'public/electron.mjs',
         vite: {
           build: {
             outDir: 'build/electron',
