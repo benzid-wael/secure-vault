@@ -18,7 +18,7 @@ import {
   InputAdornment,
   Divider,
   Chip,
-  LinearProgress
+  LinearProgress,
 } from '@mui/material';
 import {
   Edit as EditIcon,
@@ -28,26 +28,38 @@ import {
   History as HistoryIcon,
   Warning as WarningIcon,
   ArrowBack as ArrowBackIcon,
-  Check as CheckIcon
+  Check as CheckIcon,
 } from '@mui/icons-material';
-import { getPasswordStrength, validatePasswordStrength } from '../utils/passwordValidation';
+import {
+  getPasswordStrength,
+  validatePasswordStrength,
+} from '../utils/passwordValidation';
+import RecoveryKeyDisplay from './RecoveryKeyDisplay';
 
 const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
   const [settings, setSettings] = useState({
     enforcePasswordChange: false,
     passwordChangeWarningDays: 90,
     preventPasswordReuse: true,
-    maxPasswordHistory: 1
+    maxPasswordHistory: 1,
   });
   const [vaultInfo, setVaultInfo] = useState(null);
-  const [showChangePasswordDialog, setShowChangePasswordDialog] = useState(false);
+  const [showChangePasswordDialog, setShowChangePasswordDialog] =
+    useState(false);
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: '',
     newPassword: '',
-    confirmPassword: ''
+    confirmPassword: '',
   });
   const [validationErrors, setValidationErrors] = useState({});
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'success',
+  });
+  const [showRecoveryKey, setShowRecoveryKey] = useState(false);
+  const [recoveryKey, setRecoveryKey] = useState('');
+  const [generatingRecoveryKey, setGeneratingRecoveryKey] = useState(false);
   const [loading, setLoading] = useState(true);
   const [hasBackup, setHasBackup] = useState(false);
 
@@ -60,7 +72,10 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
     const passwordToUse = passwordOverride || vaultPassword;
     if (window.electronAPI && vaultName && passwordToUse) {
       try {
-        const result = await window.electronAPI.loadVault(vaultName, passwordToUse);
+        const result = await window.electronAPI.loadVault(
+          vaultName,
+          passwordToUse
+        );
         if (result.success) {
           setVaultInfo(result.data);
           // Load settings from vault data if they exist
@@ -80,6 +95,30 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
 
   const showSnackbar = (message, severity = 'success') => {
     setSnackbar({ open: true, message, severity });
+  };
+
+  const handleGenerateRecoveryKey = async () => {
+    setGeneratingRecoveryKey(true);
+    try {
+      const result = await window.electronAPI.generateRecoveryKey(
+        vaultName,
+        vaultPassword
+      );
+      if (result.success) {
+        setRecoveryKey(result.recoveryKey);
+        setShowRecoveryKey(true);
+        showSnackbar('Recovery key generated successfully');
+      } else {
+        showSnackbar(
+          result.error || 'Failed to generate recovery key',
+          'error'
+        );
+      }
+    } catch (error) {
+      showSnackbar('Failed to generate recovery key', 'error');
+    } finally {
+      setGeneratingRecoveryKey(false);
+    }
   };
 
   const checkBackupStatus = async () => {
@@ -114,20 +153,26 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
 
   const getDaysSinceLastPasswordChange = () => {
     if (!vaultInfo?.lastPasswordChange) {
-      return Math.floor((new Date() - new Date(vaultInfo?.created || new Date())) / (1000 * 60 * 60 * 24));
+      return Math.floor(
+        (new Date() - new Date(vaultInfo?.created || new Date())) /
+          (1000 * 60 * 60 * 24)
+      );
     }
-    return Math.floor((new Date() - new Date(vaultInfo.lastPasswordChange)) / (1000 * 60 * 60 * 24));
+    return Math.floor(
+      (new Date() - new Date(vaultInfo.lastPasswordChange)) /
+        (1000 * 60 * 60 * 24)
+    );
   };
 
   const validatePasswordForm = () => {
     const errors = {};
-    
+
     if (!passwordForm.currentPassword) {
       errors.currentPassword = 'Current password is required';
     } else if (passwordForm.currentPassword !== vaultPassword) {
       errors.currentPassword = 'Current password is incorrect';
     }
-    
+
     if (!passwordForm.newPassword) {
       errors.newPassword = 'New password is required';
     } else {
@@ -137,18 +182,22 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
         errors.newPassword = strengthErrors[0];
       }
     }
-    
+
     if (!passwordForm.confirmPassword) {
       errors.confirmPassword = 'Please confirm your new password';
     } else if (passwordForm.newPassword !== passwordForm.confirmPassword) {
       errors.confirmPassword = 'Passwords do not match';
     }
-    
+
     // Check if new password is different from current (basic client-side check)
-    if (settings.preventPasswordReuse && passwordForm.newPassword === passwordForm.currentPassword) {
-      errors.newPassword = 'New password must be different from current password.';
+    if (
+      settings.preventPasswordReuse &&
+      passwordForm.newPassword === passwordForm.currentPassword
+    ) {
+      errors.newPassword =
+        'New password must be different from current password.';
     }
-    
+
     return errors;
   };
 
@@ -177,19 +226,26 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
 
       if (result.success) {
         setShowChangePasswordDialog(false);
-        setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+        setPasswordForm({
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: '',
+        });
         setValidationErrors({});
         showSnackbar('Master password changed successfully');
-        
+
         // Notify parent component about password change
         if (onPasswordChanged) {
           onPasswordChanged(passwordForm.newPassword);
         }
-        
+
         // Reload vault info using the new password directly
         loadVaultInfo(passwordForm.newPassword);
       } else {
-        showSnackbar(result.error || 'Failed to change master password', 'error');
+        showSnackbar(
+          result.error || 'Failed to change master password',
+          'error'
+        );
       }
     } catch (error) {
       showSnackbar('Error changing master password', 'error');
@@ -198,7 +254,11 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
 
   const handleSettingsChange = async (newSettings) => {
     try {
-      const result = await window.electronAPI.updateVaultSettings(vaultName, vaultPassword, newSettings);
+      const result = await window.electronAPI.updateVaultSettings(
+        vaultName,
+        vaultPassword,
+        newSettings
+      );
       if (result.success) {
         setSettings(newSettings);
         showSnackbar('Settings updated successfully');
@@ -226,7 +286,14 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
 
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          height: '100vh',
+        }}
+      >
         <Typography>Loading settings...</Typography>
       </Box>
     );
@@ -256,7 +323,7 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
               Master Password
             </Typography>
           </Box>
-          
+
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
             <HistoryIcon sx={{ mr: 1, color: 'rgba(255, 255, 255, 0.7)' }} />
             <Typography sx={{ color: 'rgba(255, 255, 255, 0.7)', mr: 2 }}>
@@ -268,14 +335,15 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
               sx={{
                 backgroundColor: getPasswordStrengthColor(daysSinceChange),
                 color: 'white',
-                fontWeight: 'bold'
+                fontWeight: 'bold',
               }}
             />
           </Box>
 
           {daysSinceChange >= settings.passwordChangeWarningDays && (
             <Alert severity="warning" sx={{ mb: 2 }}>
-              Your master password is {daysSinceChange} days old. Consider changing it for better security.
+              Your master password is {daysSinceChange} days old. Consider
+              changing it for better security.
             </Alert>
           )}
 
@@ -291,8 +359,8 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
           {hasBackup && (
             <Alert severity="info" sx={{ mt: 2 }}>
               <Typography variant="body2" sx={{ mb: 1 }}>
-                A backup of your vault is available. If you're experiencing issues accessing your vault,
-                you can restore from the backup.
+                A backup of your vault is available. If you're experiencing
+                issues accessing your vault, you can restore from the backup.
               </Typography>
               <Button
                 variant="outlined"
@@ -319,13 +387,23 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
               control={
                 <Switch
                   checked={settings.preventPasswordReuse}
-                  onChange={(e) => handleSettingsChange({ ...settings, preventPasswordReuse: e.target.checked })}
+                  onChange={(e) =>
+                    handleSettingsChange({
+                      ...settings,
+                      preventPasswordReuse: e.target.checked,
+                    })
+                  }
                 />
               }
               label={
                 <Box>
-                  <Typography sx={{ color: 'white' }}>Prevent Password Reuse</Typography>
-                  <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+                  <Typography sx={{ color: 'white' }}>
+                    Prevent Password Reuse
+                  </Typography>
+                  <Typography
+                    variant="body2"
+                    sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
+                  >
                     Warn when trying to reuse a previous master password
                   </Typography>
                 </Box>
@@ -333,20 +411,32 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
             />
           </Box>
 
-          <Divider sx={{ my: 2, backgroundColor: 'rgba(255, 255, 255, 0.1)' }} />
+          <Divider
+            sx={{ my: 2, backgroundColor: 'rgba(255, 255, 255, 0.1)' }}
+          />
 
           <Box sx={{ mb: 2 }}>
             <FormControlLabel
               control={
                 <Switch
                   checked={settings.enforcePasswordChange}
-                  onChange={(e) => handleSettingsChange({ ...settings, enforcePasswordChange: e.target.checked })}
+                  onChange={(e) =>
+                    handleSettingsChange({
+                      ...settings,
+                      enforcePasswordChange: e.target.checked,
+                    })
+                  }
                 />
               }
               label={
                 <Box>
-                  <Typography sx={{ color: 'white' }}>Enforce Password Changes</Typography>
-                  <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+                  <Typography sx={{ color: 'white' }}>
+                    Enforce Password Changes
+                  </Typography>
+                  <Typography
+                    variant="body2"
+                    sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
+                  >
                     Force password change after specified days
                   </Typography>
                 </Box>
@@ -361,7 +451,10 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
               value={settings.passwordChangeWarningDays}
               onChange={(e) => {
                 const value = Math.max(1, parseInt(e.target.value) || 1);
-                handleSettingsChange({ ...settings, passwordChangeWarningDays: value });
+                handleSettingsChange({
+                  ...settings,
+                  passwordChangeWarningDays: value,
+                });
               }}
               sx={{ minWidth: 200 }}
               helperText="Show warning after this many days"
@@ -370,25 +463,106 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
             <TextField
               label="Password History Limit"
               type="number"
-              value={settings.maxPasswordHistory}
+              value={settings.maxPasswordHistory || 3}
               onChange={(e) => {
-                const value = Math.max(1, parseInt(e.target.value) || 1);
-                handleSettingsChange({ ...settings, maxPasswordHistory: value });
+                const value = Math.max(1, parseInt(e.target.value) || 3);
+                handleSettingsChange({
+                  ...settings,
+                  maxPasswordHistory: value,
+                });
               }}
               sx={{ minWidth: 200 }}
-              helperText="Number of previous passwords to remember"
-              inputProps={{ min: 1, max: 20 }}
+              helperText="Number of previous passwords to remember (only last password used for recovery)"
+              inputProps={{ min: 1, max: 10 }}
             />
           </Box>
         </CardContent>
       </Card>
+
+      {/* Recovery Key Management */}
+      <Card sx={{ mb: 3, backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
+        <CardContent>
+          <Typography
+            variant="h6"
+            sx={{
+              color: 'white',
+              mb: 2,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+            }}
+          >
+            <SecurityIcon sx={{ color: '#ff9800' }} />
+            Recovery Key Management
+          </Typography>
+
+          <Typography
+            variant="body2"
+            sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 2 }}
+          >
+            Recovery keys allow you to access your vault if you forget your
+            master password. Keep your recovery key in a safe place separate
+            from your vault.
+          </Typography>
+
+          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+            <Button
+              variant="contained"
+              onClick={handleGenerateRecoveryKey}
+              disabled={generatingRecoveryKey}
+              sx={{
+                background: 'linear-gradient(45deg, #ff9800 30%, #ffb74d 90%)',
+                '&:hover': {
+                  background:
+                    'linear-gradient(45deg, #f57c00 30%, #ffa726 90%)',
+                },
+              }}
+            >
+              {generatingRecoveryKey
+                ? 'Generating...'
+                : 'Generate New Recovery Key'}
+            </Button>
+          </Box>
+
+          <Alert
+            severity="warning"
+            sx={{
+              mt: 2,
+              backgroundColor: 'rgba(255, 152, 0, 0.1)',
+              border: '1px solid rgba(255, 152, 0, 0.3)',
+              '& .MuiAlert-message': { color: 'white' },
+            }}
+          >
+            <Typography variant="body2">
+              <strong>Important:</strong> Generating a new recovery key will
+              invalidate any previous recovery keys. Make sure to save the new
+              key before closing this dialog.
+            </Typography>
+          </Alert>
+        </CardContent>
+      </Card>
+
+      {/* Recovery Key Display Dialog */}
+      <RecoveryKeyDisplay
+        open={showRecoveryKey}
+        onClose={() => setShowRecoveryKey(false)}
+        recoveryKey={recoveryKey}
+        vaultName={vaultName}
+        vaultPassword={vaultPassword}
+        onRegenerateKey={handleGenerateRecoveryKey}
+        isNewVault={false}
+      />
 
       {/* Change Password Dialog */}
       <Dialog
         open={showChangePasswordDialog}
         onClose={() => {
           setShowChangePasswordDialog(false);
-          setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+          setPasswordForm({
+            currentPassword: '',
+            newPassword: '',
+            confirmPassword: '',
+          });
           setValidationErrors({});
         }}
         maxWidth="sm"
@@ -396,8 +570,8 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
         PaperProps={{
           sx: {
             backgroundColor: '#1a1a1a',
-            color: 'white'
-          }
+            color: 'white',
+          },
         }}
       >
         <DialogTitle sx={{ color: 'white' }}>
@@ -410,9 +584,15 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
               type="password"
               value={passwordForm.currentPassword}
               onChange={(e) => {
-                setPasswordForm({ ...passwordForm, currentPassword: e.target.value });
+                setPasswordForm({
+                  ...passwordForm,
+                  currentPassword: e.target.value,
+                });
                 if (validationErrors.currentPassword) {
-                  setValidationErrors({ ...validationErrors, currentPassword: undefined });
+                  setValidationErrors({
+                    ...validationErrors,
+                    currentPassword: undefined,
+                  });
                 }
               }}
               fullWidth
@@ -425,9 +605,15 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
               type="password"
               value={passwordForm.newPassword}
               onChange={(e) => {
-                setPasswordForm({ ...passwordForm, newPassword: e.target.value });
+                setPasswordForm({
+                  ...passwordForm,
+                  newPassword: e.target.value,
+                });
                 if (validationErrors.newPassword) {
-                  setValidationErrors({ ...validationErrors, newPassword: undefined });
+                  setValidationErrors({
+                    ...validationErrors,
+                    newPassword: undefined,
+                  });
                 }
               }}
               fullWidth
@@ -435,10 +621,14 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
               helperText={validationErrors.newPassword}
               required
             />
-            
+
             {passwordForm.newPassword && (
               <Box sx={{ mt: 1, mb: 2 }}>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ mb: 1 }}
+                >
                   Password Strength: {getPasswordStrengthInfo().strength}
                 </Typography>
                 <LinearProgress
@@ -461,9 +651,15 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
               type="password"
               value={passwordForm.confirmPassword}
               onChange={(e) => {
-                setPasswordForm({ ...passwordForm, confirmPassword: e.target.value });
+                setPasswordForm({
+                  ...passwordForm,
+                  confirmPassword: e.target.value,
+                });
                 if (validationErrors.confirmPassword) {
-                  setValidationErrors({ ...validationErrors, confirmPassword: undefined });
+                  setValidationErrors({
+                    ...validationErrors,
+                    confirmPassword: undefined,
+                  });
                 }
               }}
               fullWidth
@@ -477,7 +673,11 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
           <Button
             onClick={() => {
               setShowChangePasswordDialog(false);
-              setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+              setPasswordForm({
+                currentPassword: '',
+                newPassword: '',
+                confirmPassword: '',
+              });
               setValidationErrors({});
             }}
           >

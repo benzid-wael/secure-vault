@@ -6,7 +6,8 @@ import App from '../App';
 
 // Mock Material-UI theme components
 vi.mock('@mui/material/styles', () => ({
-  ThemeProvider: ({ children }) => React.createElement('div', { 'data-testid': 'theme-provider' }, children),
+  ThemeProvider: ({ children }) =>
+    React.createElement('div', { 'data-testid': 'theme-provider' }, children),
   createTheme: () => ({}),
 }));
 
@@ -17,9 +18,12 @@ vi.mock('@mui/material/CssBaseline', () => ({
 
 // Mock React Router
 vi.mock('react-router-dom', () => ({
-  BrowserRouter: ({ children }) => React.createElement('div', { 'data-testid': 'router' }, children),
-  Routes: ({ children }) => React.createElement('div', { 'data-testid': 'routes' }, children),
-  Route: ({ element }) => React.createElement('div', { 'data-testid': 'route' }, element),
+  BrowserRouter: ({ children }) =>
+    React.createElement('div', { 'data-testid': 'router' }, children),
+  Routes: ({ children }) =>
+    React.createElement('div', { 'data-testid': 'routes' }, children),
+  Route: ({ element }) =>
+    React.createElement('div', { 'data-testid': 'route' }, element),
   Navigate: () => React.createElement('div', { 'data-testid': 'navigate' }),
 }));
 
@@ -78,6 +82,7 @@ describe('App - Simple Tests', () => {
     onMenuNewVault: vi.fn(),
     onMenuOpenVault: vi.fn(),
     onMenuLockVault: vi.fn(),
+    onMenuConfiguration: vi.fn(),
     removeAllListeners: vi.fn(),
   };
 
@@ -142,6 +147,7 @@ describe('App - Simple Tests', () => {
       expect(mockElectronAPI.onMenuNewVault).toHaveBeenCalled();
       expect(mockElectronAPI.onMenuOpenVault).toHaveBeenCalled();
       expect(mockElectronAPI.onMenuLockVault).toHaveBeenCalled();
+      expect(mockElectronAPI.onMenuConfiguration).toHaveBeenCalled();
     });
   });
 });

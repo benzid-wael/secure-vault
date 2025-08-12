@@ -7,17 +7,17 @@ import {
   IconButton,
   InputAdornment,
   Alert,
-  CircularProgress
+  CircularProgress,
 } from '@mui/material';
 import {
   Visibility,
   VisibilityOff,
   ArrowBack as ArrowBackIcon,
   Lock as LockIcon,
-  Security as SecurityIcon
+  Security as SecurityIcon,
 } from '@mui/icons-material';
 
-const VaultLogin = ({ vaultName, onLogin, onBack }) => {
+const VaultLogin = ({ vaultName, onLogin, onBack, onRecovery }) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -53,10 +53,7 @@ const VaultLogin = ({ vaultName, onLogin, onBack }) => {
   return (
     <div className="vault-container">
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-        <IconButton
-          onClick={onBack}
-          sx={{ color: 'white', mr: 2 }}
-        >
+        <IconButton onClick={onBack} sx={{ color: 'white', mr: 2 }}>
           <ArrowBackIcon />
         </IconButton>
         <Typography variant="h5" sx={{ color: 'white', flexGrow: 1 }}>
@@ -66,7 +63,11 @@ const VaultLogin = ({ vaultName, onLogin, onBack }) => {
 
       <div className="vault-header">
         <LockIcon sx={{ fontSize: '4rem', color: '#2196f3', mb: 2 }} />
-        <Typography variant="h4" className="vault-title" sx={{ fontSize: '2rem' }}>
+        <Typography
+          variant="h4"
+          className="vault-title"
+          sx={{ fontSize: '2rem' }}
+        >
           {vaultName}
         </Typography>
         <Typography variant="body1" className="vault-subtitle">
@@ -100,7 +101,7 @@ const VaultLogin = ({ vaultName, onLogin, onBack }) => {
           sx={{
             '& .MuiOutlinedInput-root': {
               backgroundColor: 'rgba(255, 255, 255, 0.05)',
-            }
+            },
           }}
         />
 
@@ -138,7 +139,7 @@ const VaultLogin = ({ vaultName, onLogin, onBack }) => {
               background: 'linear-gradient(45deg, #2196f3 30%, #21cbf3 90%)',
               '&:hover': {
                 background: 'linear-gradient(45deg, #1976d2 30%, #1cb5e0 90%)',
-              }
+              },
             }}
           >
             {loading ? (
@@ -146,6 +147,24 @@ const VaultLogin = ({ vaultName, onLogin, onBack }) => {
             ) : (
               'Unlock Vault'
             )}
+          </Button>
+        </Box>
+
+        <Box sx={{ mt: 2, textAlign: 'center' }}>
+          <Button
+            variant="text"
+            onClick={onRecovery}
+            disabled={loading}
+            sx={{
+              color: 'rgba(255, 255, 255, 0.7)',
+              textTransform: 'none',
+              '&:hover': {
+                color: '#ff9800',
+                backgroundColor: 'rgba(255, 152, 0, 0.1)',
+              },
+            }}
+          >
+            Forgot your password? Use recovery options
           </Button>
         </Box>
       </form>

@@ -15,6 +15,7 @@ const mockElectronAPI = {
   onMenuNewVault: vi.fn(),
   onMenuOpenVault: vi.fn(),
   onMenuLockVault: vi.fn(),
+  onMenuConfiguration: vi.fn(),
   removeAllListeners: vi.fn(),
 };
 

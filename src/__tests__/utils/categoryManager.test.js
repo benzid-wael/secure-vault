@@ -12,7 +12,13 @@ vi.mock('@mui/icons-material', () => ({
   CreditCard: () => 'FinanceIcon',
   Games: () => 'GamingIcon',
   Cloud: () => 'CloudIcon',
-  Smartphone: () => 'MobileIcon'
+  Smartphone: () => 'MobileIcon',
+  Wifi: () => 'WifiIcon',
+  Security: () => 'SecurityIcon',
+  VpnKey: () => 'KeyIcon',
+  Note: () => 'NoteIcon',
+  AccountBalance: () => 'BankIcon',
+  Grid3x3: () => 'GridIcon',
 }));
 
 import {
@@ -21,28 +27,41 @@ import {
   getCategoryIcon,
   getCategoryColor,
   getCategoryName,
-  getDefaultCategory
+  getDefaultCategory,
 } from '../../utils/categoryManager';
 
 describe('categoryManager', () => {
   describe('CATEGORIES constant', () => {
     it('should contain all expected categories', () => {
-      expect(CATEGORIES).toHaveLength(10);
-      
-      const categoryIds = CATEGORIES.map(cat => cat.id);
+      expect(CATEGORIES).toHaveLength(16);
+
+      const categoryIds = CATEGORIES.map((cat) => cat.id);
       expect(categoryIds).toEqual([
-        'general', 'website', 'email', 'business', 'work',
-        'school', 'finance', 'gaming', 'cloud', 'mobile'
+        'general',
+        'website',
+        'email',
+        'business',
+        'work',
+        'school',
+        'finance',
+        'gaming',
+        'cloud',
+        'mobile',
+        'network',
+        'security',
+        'keys',
+        'notes',
+        'banking',
+        'cards',
       ]);
     });
 
     it('should have consistent structure for all categories', () => {
-      CATEGORIES.forEach(category => {
+      CATEGORIES.forEach((category) => {
         expect(category).toHaveProperty('id');
         expect(category).toHaveProperty('name');
         expect(category).toHaveProperty('icon');
         expect(category).toHaveProperty('color');
-        
         expect(typeof category.id).toBe('string');
         expect(typeof category.name).toBe('string');
         expect(typeof category.icon).toBe('function');
@@ -52,7 +71,7 @@ describe('categoryManager', () => {
     });
 
     it('should have unique category IDs', () => {
-      const ids = CATEGORIES.map(cat => cat.id);
+      const ids = CATEGORIES.map((cat) => cat.id);
       const uniqueIds = [...new Set(ids)];
       expect(ids).toHaveLength(uniqueIds.length);
     });
@@ -65,7 +84,7 @@ describe('categoryManager', () => {
         id: 'email',
         name: 'Email',
         icon: expect.any(Function),
-        color: '#f44336'
+        color: '#f44336',
       });
     });
 
@@ -75,7 +94,7 @@ describe('categoryManager', () => {
         id: 'general',
         name: 'General',
         icon: expect.any(Function),
-        color: '#757575'
+        color: '#757575',
       });
     });
 
@@ -100,10 +119,10 @@ describe('categoryManager', () => {
         { id: 'finance', name: 'Finance', color: '#795548' },
         { id: 'gaming', name: 'Gaming', color: '#e91e63' },
         { id: 'cloud', name: 'Cloud Service', color: '#00bcd4' },
-        { id: 'mobile', name: 'Mobile App', color: '#607d8b' }
+        { id: 'mobile', name: 'Mobile App', color: '#607d8b' },
       ];
 
-      expectedCategories.forEach(expected => {
+      expectedCategories.forEach((expected) => {
         const category = getCategoryById(expected.id);
         expect(category.id).toBe(expected.id);
         expect(category.name).toBe(expected.name);
@@ -137,7 +156,7 @@ describe('categoryManager', () => {
     });
 
     it('should return valid hex color format', () => {
-      CATEGORIES.forEach(category => {
+      CATEGORIES.forEach((category) => {
         const color = getCategoryColor(category.id);
         expect(color).toMatch(/^#[0-9a-f]{6}$/i);
       });
@@ -157,7 +176,7 @@ describe('categoryManager', () => {
     });
 
     it('should return string for all categories', () => {
-      CATEGORIES.forEach(category => {
+      CATEGORIES.forEach((category) => {
         const name = getCategoryName(category.id);
         expect(typeof name).toBe('string');
         expect(name.length).toBeGreaterThan(0);
@@ -172,7 +191,7 @@ describe('categoryManager', () => {
         id: 'general',
         name: 'General',
         icon: expect.any(Function),
-        color: '#757575'
+        color: '#757575',
       });
     });
 
