@@ -18,7 +18,9 @@ psd
 thumb
 sketch
 
-# coverage
 coverage
-
 *.md
+*.vault.json
+build/
+dist/
+config.bat
