@@ -80,7 +80,8 @@ describe('VaultRecovery', () => {
       );
       expect(mockOnRecover).toHaveBeenCalledWith(
         { entries: [] },
-        'recovery-key'
+        'recovery-key',
+        undefined
       );
     });
   });

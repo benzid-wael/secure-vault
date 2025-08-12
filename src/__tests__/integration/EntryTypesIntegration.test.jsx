@@ -126,15 +126,47 @@ vi.mock('../../components/EnhancedEntryDialog', () => ({
               {
                 key: 'save',
                 'data-testid': 'save-entry',
-                onClick: () =>
-                  onSave({
+                onClick: () => {
+                  // Create proper entry data based on entry type
+                  let entryData = {
                     id: Date.now().toString(),
                     title: `Test ${entryType}`,
                     entryType,
                     category: 'general',
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString(),
-                  }),
+                  };
+
+                  // Add required fields based on entry type
+                  if (entryType === 'password') {
+                    entryData = {
+                      ...entryData,
+                      username: 'testuser',
+                      password: 'testpass123',
+                    };
+                  } else if (entryType === 'wifi') {
+                    entryData = {
+                      ...entryData,
+                      ssid: 'TestNetwork',
+                      password: 'testpass123',
+                      security: 'WPA2',
+                    };
+                  } else if (entryType === 'otp') {
+                    entryData = {
+                      ...entryData,
+                      service: 'TestService',
+                      secret: 'JBSWY3DPEHPK3PXP',
+                    };
+                  } else if (entryType === 'level3_card') {
+                    entryData = {
+                      ...entryData,
+                      cardName: 'Test Level 3 Card',
+                      gridData: {},
+                    };
+                  }
+
+                  onSave(entryData);
+                },
               },
               'Save'
             ),
