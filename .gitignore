@@ -22,3 +22,7 @@ sketch
 coverage
 
 *.md
+
+# build
+build/
+dist/

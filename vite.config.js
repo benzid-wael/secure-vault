@@ -2,11 +2,32 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
 import { fileURLToPath, URL } from 'node:url';
+import electron from 'vite-plugin-electron/simple';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
   base: './',
+  plugins: [
+    react(),
+    electron({
+      main: {
+        entry: 'public/electron.cjs',
+        vite: {
+          build: {
+            outDir: 'build/electron',
+          },
+        },
+      },
+      preload: {
+        input: 'public/preload.js', // if you have one
+        vite: {
+          build: {
+            outDir: 'build/electron',
+          },
+        },
+      },
+    }),
+  ],
   build: {
     outDir: 'build',
     assetsDir: 'static',
@@ -35,6 +56,7 @@ export default defineConfig({
         '**/node_modules/**',
         '**/public/**',
         '**/build/**',
+        '**/dist/**',
         '**/.history/**',
         '**/*.config.js',
         '**/src/setupTests.js',
