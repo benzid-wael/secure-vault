@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Required for WebAuthn/Passkey support -->
+    <key>com.apple.developer.authentication-services.autofill-credential-provider</key>
+    <true/>
+
+    <!-- Required for platform authenticator access -->
+    <key>com.apple.developer.web-browser</key>
+    <true/>
+
+    <!-- Required for Touch ID/Face ID/Apple Watch access -->
+    <key>com.apple.security.device.biometry</key>
+    <true/>
+
+    <!-- Required for keychain access -->
+    <key>keychain-access-groups</key>
+    <array>
+        <string>com.securevault.app</string>
+    </array>
+
+    <!-- Optional: For network requests to verify credentials -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+</dict>
+</plist>

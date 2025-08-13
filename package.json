@@ -1,5 +1,5 @@
 {
-  "name": "secure-password-manager",
+  "name": "secure-vault",
   "version": "1.0.0",
   "description": "A secure password management application built with Electron and React",
   "type": "module",
@@ -16,19 +16,23 @@
     "test:coverage:ui": "vitest --ui --coverage",
     "test:coverage:check": "node scripts/coverage-check.js",
     "electron": "electron .",
-    "electron-dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
+    "electron-dev": "npm run stop; concurrently \"npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
     "electron-pack": "npm run build && electron-builder",
     "preelectron-pack": "npm run build",
-    "prepare": "husky"
+    "prepare": "husky",
+    "stop": "ps aux | grep -e 'Electron.app' | awk '{ print $2}' | xargs kill -9"
   },
   "dependencies": {
+    "@electron-webauthn/native": "github:iamEvanYT/electron-webauthn-native",
     "@emotion/react": "^11.11.1",
     "@emotion/styled": "^11.11.0",
     "@mui/icons-material": "^5.14.1",
     "@mui/material": "^5.14.1",
+    "@simplewebauthn/browser": "^13.1.2",
     "bcrypt": "^5.1.0",
     "crypto-js": "^4.1.1",
     "electron-is-dev": "^2.0.0",
+    "electron-webauthn": "^0.0.1",
     "fs-extra": "^11.1.1",
     "node-forge": "^1.3.1",
     "path": "^0.12.7",
@@ -47,11 +51,14 @@
     "concurrently": "^8.2.0",
     "electron": "^37.2.6",
     "electron-builder": "^24.4.0",
+    "electron-devtools-installer": "^4.0.0",
+    "electron-react-devtools": "^0.5.3",
     "eslint": "^9.33.0",
     "husky": "^9.1.7",
     "jsdom": "^25.0.1",
     "lint-staged": "^16.1.5",
     "prettier": "^3.6.2",
+    "react-devtools": "^6.1.5",
     "vite": "^7.1.1",
     "vite-plugin-electron": "^0.29.0",
     "vitest": "^3.2.4",
@@ -66,9 +73,9 @@
     ]
   },
   "build": {
-    "appId": "com.securepasswordmanager.app",
+    "appId": "com.securevault.app",
     "productName": "Secure Password Manager",
-    "asar": false,
+    "asar": true,
     "directories": {
       "output": "dist"
     },
@@ -81,7 +88,10 @@
       "package.json"
     ],
     "mac": {
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "entitlements": "public/entitlements.plist",
+      "entitlementsInherit": "public/entitlements.plist",
+      "hardenedRuntime": true
     },
     "win": {
       "target": "nsis"
