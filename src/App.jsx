@@ -10,6 +10,7 @@ import {
 } from 'react-router-dom';
 import VaultSelector from './components/VaultSelector';
 import VaultLogin from './components/VaultLogin';
+import EnhancedVaultLogin from './components/EnhancedVaultLogin';
 import PasswordManager from './components/PasswordManager';
 import CreateVault from './components/CreateVault';
 import ConfigurationDialog from './components/ConfigurationDialog';
@@ -246,7 +247,7 @@ function App() {
         );
       case 'login':
         return (
-          <VaultLogin
+          <EnhancedVaultLogin
             vaultName={currentVault}
             onLogin={handleVaultLogin}
             onBack={goBack}

@@ -61,6 +61,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('import-vault', importPath, newVaultName, password),
   getVaultDirectory: () => ipcRenderer.invoke('get-vault-directory'),
 
+  // Passkey management
+  storePasskeyData: (vaultName, password, credentialData) =>
+    ipcRenderer.invoke('store-passkey-data', vaultName, password, credentialData),
+  getPasskeyData: (vaultName) =>
+    ipcRenderer.invoke('get-passkey-data', vaultName),
+  verifyPasskeyAssertion: (vaultName, assertion) =>
+    ipcRenderer.invoke('verify-passkey-assertion', vaultName, assertion),
+  removePasskeyData: (vaultName) =>
+    ipcRenderer.invoke('remove-passkey-data', vaultName),
+
   // Menu event listeners
   onMenuNewVault: (callback) => ipcRenderer.on('menu-new-vault', callback),
   onMenuOpenVault: (callback) => ipcRenderer.on('menu-open-vault', callback),
