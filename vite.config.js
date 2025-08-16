@@ -11,7 +11,7 @@ export default defineConfig({
     react(),
     electron({
       main: {
-        entry: 'public/electron.mjs',
+        entry: 'public/main.js',
         vite: {
           build: {
             outDir: 'build/electron',
@@ -65,6 +65,7 @@ export default defineConfig({
         '**/src/index.jsx',
         '**/*/testData.js',
         '**/scripts/**',
+        'src/electron/**',
       ],
       all: true,
       lines: 79,

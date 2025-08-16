@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "A secure password management application built with Electron and React",
   "type": "module",
-  "main": "public/electron.mjs",
+  "main": "public/main.js",
   "homepage": "./",
   "scripts": {
     "dev": "vite",
@@ -75,7 +75,7 @@
     "files": [
       "src/**/*",
       "build/**/*",
-      "public/electron.mjs",
+      "public/main.js",
       "public/preload.js",
       "node_modules/**/*",
       "package.json"

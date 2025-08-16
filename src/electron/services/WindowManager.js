@@ -28,7 +28,7 @@ export class WindowManager {
         nodeIntegration: false,
         contextIsolation: true,
         enableRemoteModule: false,
-        preload: path.join(__dirname, '../../public/preload.js'),
+        preload: path.join(__dirname, '../../../public/preload.js'),
         webSecurity: true,
         allowRunningInsecureContent: false,
         experimentalFeatures: false,
