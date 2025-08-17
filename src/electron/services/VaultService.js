@@ -91,9 +91,12 @@ export class VaultService {
     };
   }
 
-  async verifyPassword(vaultName, password) {
+  async verifyPassword(vaultName, password, vaultPath = null) {
+    if (!!!vaultPath) {
+      vaultPath = this.fileService.getVaultPath(vaultName);
+    }
     try {
-      const vaultFile = await this.fileService.readVaultFile(vaultName);
+      const vaultFile = await this.fileService.readVaultPath(vaultPath);
       const salt = Buffer.from(vaultFile.salt, 'hex');
       const key = CryptographyService.deriveKey(password, salt);
 
@@ -106,7 +109,7 @@ export class VaultService {
       CryptographyService.decrypt(encryptedData, key);
       return { success: true };
     } catch (error) {
-      return { success: false, error: 'Invalid password' };
+      return { success: false, error: 'Invalid master password' };
     }
   }
 

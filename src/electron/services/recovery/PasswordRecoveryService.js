@@ -10,6 +10,19 @@ export class PasswordRecoveryService extends IRecoveryMethod {
   }
 
   /**
+   * Check if the metadata is valid
+   * @param {string} vaultName
+   * @param {Object} metadata
+   * @returns {Promise<boolean>}
+   */
+  isValid(vaultName, metadata) {
+    if (!!metadata && !metadata?.salt && !metadata?.encryptedMasterPassword) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
    * Get the unique identifier for this recovery method
    * @returns {string} Unique identifier
    */

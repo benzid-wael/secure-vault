@@ -14,7 +14,6 @@ describe('KeyRecoveryService', () => {
       const recoveryData = await keyRecoveryService.generate();
       const recoveryKey = recoveryData.data.key;
 
-      console.log('recoveryKey: ', recoveryKey);
       expect(typeof recoveryKey).toBe('string');
       // The recovery key format is base32 with dashes every 4 characters
       expect(recoveryKey).toMatch(/^[A-Z2-7]{4}(-[A-Z2-7]{4})*$/);
@@ -39,7 +38,6 @@ describe('KeyRecoveryService', () => {
         salt
       );
 
-      console.log(key);
       expect(key).toBeInstanceOf(Buffer);
       expect(key.length).toBe(32);
     });

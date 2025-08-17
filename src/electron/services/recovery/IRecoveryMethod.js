@@ -24,6 +24,16 @@ export class IRecoveryMethod {
   }
 
   /**
+   * Check if the metadata is valid
+   * @param {string} vaultName
+   * @param {Object} metadata
+   * @returns {Promise<boolean>}
+   */
+  isValid(vaultName, metadata) {
+    throw new Error('isValid() must be implemented by subclass');
+  }
+
+  /**
    * Generate new recovery method
    * @param {string} vaultName
    * @returns {Promise<RecoveryData>} RecoveryData

@@ -36,9 +36,17 @@ export class VaultFileService {
     return fs.pathExists(this.getVaultPath(vaultName));
   }
 
+  async readVaultPath(vaultPath) {
+    return fs.readJSON(vaultPath);
+  }
+
+  async writeVaultPath(vaultPath, data) {
+    return fs.writeJSON(vaultPath, data, { spaces: 2 });
+  }
+
   async readVaultFile(vaultName) {
     const vaultPath = this.getVaultPath(vaultName);
-    return fs.readJSON(vaultPath);
+    return this.readVaultPath(vaultPath);
   }
 
   async writeVaultFile(vaultName, data) {

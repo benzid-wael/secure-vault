@@ -22,6 +22,24 @@ export class KeyRecoveryService extends IRecoveryMethod {
   }
 
   /**
+   * Check if the metadata is valid
+   * @param {string} vaultName
+   * @param {Object} metadata
+   * @returns {Promise<boolean>}
+   */
+  isValid(vaultName, metadata) {
+    if (
+      !!!metadata ||
+      !metadata?.salt ||
+      !metadata?.encryptedMasterPassword ||
+      !metadata?.encryptedRecoveryKey
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
    * Generate new recovery method
    * @param {string} vaultName
    * @returns {Promise<RecoveryData>} RecoveryData
