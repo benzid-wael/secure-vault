@@ -5,7 +5,6 @@ import path from 'path';
 import { VaultService } from '../src/electron/services/VaultService.js';
 import { ImportExportService } from '../src/electron/services/ImportExportService.js';
 import { VaultSettingsService } from '../src/electron/services/VaultSettingsService.js';
-import { RecoveryPasswordService } from '../src/electron/services/RecoveryPasswordService.js';
 import { WindowManager } from '../src/electron/services/WindowManager.js';
 import { MenuService } from '../src/electron/services/MenuService.js';
 import { SecurityManager } from '../src/electron/services/SecurityManager.js';
@@ -20,7 +19,6 @@ class ElectronApp {
     this.vaultService = new VaultService(vaultDir);
     this.importExportService = new ImportExportService(vaultDir);
     this.vaultSettingsService = new VaultSettingsService(vaultDir);
-    this.recoveryPasswordService = new RecoveryPasswordService(vaultDir);
 
     this.mainWindow = null;
   }
@@ -148,10 +146,7 @@ class ElectronApp {
     ipcMain.handle(
       'recover-vault-with-old-password',
       (event, vaultName, oldPassword) =>
-        this.recoveryPasswordService.recoverWithOldPassword(
-          vaultName,
-          oldPassword
-        )
+        this.vaultService.loadVaultWithPassword(vaultName, oldPassword)
     );
 
     ipcMain.handle('get-vault-directory', async () => {

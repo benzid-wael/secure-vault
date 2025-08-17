@@ -49,7 +49,6 @@ export class ImportExportService {
         };
 
         exportPath = this._resolvePath(exportPath);
-        console.log(`export to ${exportPath}`);
         await fs.writeJSON(exportPath, exportData, { spaces: 2 });
         return { success: true };
       } catch (decryptError) {

@@ -86,26 +86,16 @@ const VaultRecovery = ({ vaultName, onRecover, onBack }) => {
     setError('');
 
     try {
-      const result = await window.electronAPI.recoverVaultWithOldPassword(
+      const loadResult = await window.electronAPI.recoverVaultWithOldPassword(
         vaultName,
         oldPassword
       );
-      if (result.success) {
-        // If we got the current password back, use it to load the vault
-        const currentPassword = result.currentPassword || oldPassword;
-        const loadResult = await window.electronAPI.loadVault(
-          vaultName,
-          currentPassword
-        );
-        if (loadResult.success) {
-          onRecover(loadResult.data, 'old-password', currentPassword);
-        } else {
-          setError(
-            'Recovery verification succeeded but failed to load vault data'
-          );
-        }
+      if (loadResult.success) {
+        onRecover(loadResult.data, 'old-password', loadResult.password);
       } else {
-        setError(result.error || 'Unable to recover vault with this password');
+        setError(
+          loadResult.error || 'Unable to recover vault with this password'
+        );
       }
     } catch (error) {
       setError(

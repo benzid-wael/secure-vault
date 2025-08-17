@@ -1,8 +1,10 @@
 import { Vault } from '../models/Vault.js';
 import { CryptographyService } from './CryptographyService.js';
-import { RecoveryKeyService } from './RecoveryKeyService.js';
 import { VaultFileService } from './VaultFileService.js';
 import { validatePasswordStrength } from '../utils/passwordValidation.js';
+import { KeyRecoveryService } from './recovery/KeyRecoveryService.js';
+import { PasswordRecoveryService } from './recovery/PasswordRecoveryService.js';
+import { RecoveryData } from './recovery/IRecoveryMethod.js';
 
 export class VaultService {
   constructor(vaultDirectory) {
@@ -21,6 +23,37 @@ export class VaultService {
     return vaults;
   }
 
+  async encryptVault(data, masterPassword, recoveryKey, oldPassword) {
+    const salt = CryptographyService.generateSalt();
+    const key = CryptographyService.deriveKey(masterPassword, salt);
+
+    // Generate recovery key
+    let recoveryMetadata = RecoveryKeyService.createRecoveryMetadata(
+      recoveryKey,
+      masterPassword,
+      salt
+    );
+
+    if (oldPassword) {
+      const currentKey = CryptographyService.deriveKey(oldPassword, salt);
+      const recoveryPassword = CryptographyService.encrypt(
+        { masterPassword },
+        currentKey
+      );
+      recoveryMetadata = {
+        ...recoveryMetadata,
+        recoveryPassword,
+      };
+    }
+
+    const encryptedData = CryptographyService.encrypt(vault.toJSON(), key);
+    return {
+      ...encryptedData,
+      salt: salt.toString('hex'),
+      recoveryMetadata,
+    };
+  }
+
   async createVault(vaultName, masterPassword) {
     if (await this.fileService.vaultExists(vaultName)) {
       throw new Error('Vault already exists');
@@ -31,14 +64,18 @@ export class VaultService {
     const key = CryptographyService.deriveKey(masterPassword, salt);
 
     // Generate recovery key
-    const recoveryKey = RecoveryKeyService.generateRecoveryKey();
-    const recoveryMetadata = RecoveryKeyService.createRecoveryMetadata(
-      recoveryKey,
+    const keyRecoveryService = new KeyRecoveryService();
+    const recoveryKey = await keyRecoveryService.generate();
+    const recoveryKeyMetadata = keyRecoveryService.createMetadata(
+      vaultName,
       masterPassword,
-      salt
+      recoveryKey
     );
 
     const encryptedData = CryptographyService.encrypt(vault.toJSON(), key);
+    let recoveryMetadata = {};
+    recoveryMetadata[keyRecoveryService.getRecoveryMethodId()] =
+      recoveryKeyMetadata;
     const vaultFile = {
       ...encryptedData,
       salt: salt.toString('hex'),
@@ -186,12 +223,11 @@ export class VaultService {
 
         // Update recovery metadata
         const updatedRecoveryMetadata =
-          await this._updateRecoveryMetadataForPasswordChange(
+          await this.#updateRecoveryMetadataForPasswordChange(
+            vaultName,
             vaultFile.recoveryMetadata || {},
             currentPassword,
-            newPassword,
-            currentSalt,
-            currentPasswordHash
+            newPassword
           );
 
         // Re-encrypt with new password
@@ -230,62 +266,6 @@ export class VaultService {
       console.error('Error changing password:', error);
       return { success: false, error: 'Failed to change master password' };
     }
-  }
-
-  async _updateRecoveryMetadataForPasswordChange(
-    existingMetadata,
-    currentPassword,
-    newPassword,
-    currentSalt,
-    currentPasswordHash
-  ) {
-    const updatedMetadata = { ...existingMetadata };
-
-    // Update previous password data
-    const currentKey = CryptographyService.deriveKey(
-      currentPassword,
-      currentSalt
-    );
-    const encryptedNewPassword = CryptographyService.encrypt(
-      { newPassword },
-      currentKey
-    );
-
-    updatedMetadata.previousPassword = {
-      passwordHash: currentPasswordHash,
-      encryptedNewPassword,
-      salt: currentSalt.toString('hex'),
-      changedAt: new Date().toISOString(),
-    };
-
-    // Update recovery key data if it exists
-    if (existingMetadata.recoveryKey) {
-      try {
-        const decryptedRecoveryKeyData = CryptographyService.decrypt(
-          existingMetadata.recoveryKey.encryptedRecoveryKey,
-          currentKey
-        );
-
-        const recoveryKey = decryptedRecoveryKeyData.recoveryKey;
-        const newSalt = CryptographyService.generateSalt();
-        const newKey = CryptographyService.deriveKey(newPassword, newSalt);
-
-        const newRecoveryMetadata = RecoveryKeyService.createRecoveryMetadata(
-          recoveryKey,
-          newPassword,
-          newSalt
-        );
-        updatedMetadata.recoveryKey = {
-          ...existingMetadata.recoveryKey,
-          ...newRecoveryMetadata.recoveryKey,
-        };
-      } catch (error) {
-        console.warn('Could not update recovery key data:', error);
-        delete updatedMetadata.recoveryKey;
-      }
-    }
-
-    return updatedMetadata;
   }
 
   async deleteVault(vaultName, confirmationPassword = null) {
@@ -355,32 +335,33 @@ export class VaultService {
       }
 
       const vaultFile = await this.fileService.readVaultFile(vaultName);
-      const salt = Buffer.from(vaultFile.salt, 'hex');
 
-      const recoveryKey = RecoveryKeyService.generateRecoveryKey();
-      const recoveryMetadata = RecoveryKeyService.createRecoveryMetadata(
-        recoveryKey,
+      const keyRecoveryService = new KeyRecoveryService();
+      const recoveryKey = await keyRecoveryService.generate();
+      const recoveryMetadata = keyRecoveryService.createMetadata(
+        vaultName,
         masterPassword,
-        salt
+        recoveryKey
       );
+      let newRecoveryMetadata = vaultFile.recoveryMetadata;
+      newRecoveryMetadata[keyRecoveryService.getRecoveryMethodId()] =
+        recoveryMetadata;
 
       // Update vault file
       const updatedVaultFile = {
         ...vaultFile,
-        recoveryMetadata: {
-          ...vaultFile.recoveryMetadata,
-          ...recoveryMetadata,
-        },
+        recoveryMetadata: newRecoveryMetadata,
       };
 
       await this.fileService.writeVaultFile(vaultName, updatedVaultFile);
 
       return {
         success: true,
-        recoveryKey,
-        createdAt: recoveryMetadata.recoveryKey.createdAt,
+        recoveryKey: recoveryKey.data.key,
+        createdAt: recoveryMetadata.createdAt,
       };
     } catch (error) {
+      console.error('Failed to generate recovery key: ', error);
       return { success: false, error: 'Failed to generate recovery key' };
     }
   }
@@ -391,59 +372,132 @@ export class VaultService {
         return { success: false, error: 'Vault not found' };
       }
 
-      if (!RecoveryKeyService.validateRecoveryKeyFormat(recoveryKey)) {
-        return { success: false, error: 'Invalid recovery key format' };
-      }
-
+      const keyRecoveryService = new KeyRecoveryService();
+      const methodId = keyRecoveryService.getRecoveryMethodId();
       const vaultFile = await this.fileService.readVaultFile(vaultName);
 
-      if (!vaultFile.recoveryMetadata?.recoveryKey) {
+      if (
+        !vaultFile.recoveryMetadata ||
+        !vaultFile.recoveryMetadata[methodId]
+      ) {
         return {
           success: false,
           error: 'No recovery key found for this vault',
         };
       }
 
-      const salt = Buffer.from(vaultFile.salt, 'hex');
-      const recoveryKeyDerived = RecoveryKeyService.deriveKeyFromRecoveryKey(
-        recoveryKey,
-        salt
+      const recoveryData = new RecoveryData({ data: { key: recoveryKey } });
+      return await keyRecoveryService.verify(
+        vaultName,
+        vaultFile.recoveryMetadata[methodId],
+        recoveryData
       );
+    } catch (error) {
+      console.error(`Failed to verify recovery key: ${error}`);
+      return { success: false, error: 'Failed to verify recovery key' };
+    }
+  }
+
+  async loadVaultWithPassword(vaultName, oldPassword) {
+    try {
+      if (!(await this.fileService.vaultExists(vaultName))) {
+        return { success: false, error: 'Vault not found' };
+      }
+
+      const vaultFile = await this.fileService.readVaultFile(vaultName);
+
+      // First, try if the old password is actually the current password
+      try {
+        const loadResult = await this.loadVault(vaultName, oldPassword);
+
+        if (loadResult.success) {
+          loadResult.password = oldPassword;
+          return loadResult;
+        }
+      } catch (error) {
+        // Not the current password, try recovery
+      }
+
+      const passwordRecoveryService = new PasswordRecoveryService();
+      const methodId = passwordRecoveryService.getRecoveryMethodId();
+      // Check if we have previous password recovery data
+      if (
+        !vaultFile.recoveryMetadata ||
+        !vaultFile.recoveryMetadata[methodId]
+      ) {
+        return {
+          success: false,
+          error:
+            'No recovery data available for this vault. You need to change your password at least once to enable previous password recovery.',
+        };
+      }
 
       try {
-        CryptographyService.decrypt(
-          vaultFile.recoveryMetadata.recoveryKey.encryptedMasterPassword,
-          recoveryKeyDerived
+        const recoveryData = new RecoveryData({
+          data: { password: oldPassword },
+        });
+        const result = await passwordRecoveryService.recoverMasterPassword(
+          vaultName,
+          vaultFile.recoveryMetadata[methodId],
+          recoveryData
         );
-        return { success: true };
+        if (!result.success) {
+          return result;
+        }
+
+        const masterPassword = result.masterPassword;
+        const loadResult = await this.loadVault(vaultName, masterPassword);
+
+        if (loadResult.success) {
+          loadResult.password = masterPassword;
+        }
+
+        return loadResult;
       } catch (error) {
-        return { success: false, error: 'Invalid recovery key' };
+        const message =
+          'Failed to recover vault using recovered master password';
+        console.error(`${message}: ${error}`);
+        return { success: false, error: message };
       }
     } catch (error) {
-      return { success: false, error: 'Failed to verify recovery key' };
+      const message = 'Failed to recover vault with old password';
+      console.error(message, ': ', error);
+      return { success: false, error: message };
     }
   }
 
   async loadVaultWithRecoveryKey(vaultName, recoveryKey) {
     try {
-      const verification = await this.verifyRecoveryKey(vaultName, recoveryKey);
-      if (!verification.success) {
-        return verification;
+      if (!(await this.fileService.vaultExists(vaultName))) {
+        return { success: false, error: 'Vault not found' };
       }
 
+      const keyRecoveryService = new KeyRecoveryService();
+      const methodId = keyRecoveryService.getRecoveryMethodId();
       const vaultFile = await this.fileService.readVaultFile(vaultName);
-      const salt = Buffer.from(vaultFile.salt, 'hex');
-      const recoveryKeyDerived = RecoveryKeyService.deriveKeyFromRecoveryKey(
-        recoveryKey,
-        salt
+
+      if (
+        !vaultFile.recoveryMetadata ||
+        !vaultFile.recoveryMetadata[methodId]
+      ) {
+        return {
+          success: false,
+          error: 'No recovery key found for this vault',
+        };
+      }
+
+      const recoveryData = new RecoveryData({ data: { key: recoveryKey } });
+      const result = await keyRecoveryService.recoverMasterPassword(
+        vaultName,
+        vaultFile.recoveryMetadata[methodId],
+        recoveryData
       );
 
-      const decryptedPasswordData = CryptographyService.decrypt(
-        vaultFile.recoveryMetadata.recoveryKey.encryptedMasterPassword,
-        recoveryKeyDerived
-      );
+      if (!result.success) {
+        return result;
+      }
 
-      const masterPassword = decryptedPasswordData.masterPassword;
+      const masterPassword = result.masterPassword;
       const loadResult = await this.loadVault(vaultName, masterPassword);
 
       if (loadResult.success) {
@@ -452,10 +506,44 @@ export class VaultService {
 
       return loadResult;
     } catch (error) {
+      console.error(`Failed to load vault with recovery key: ${error}`);
       return {
         success: false,
         error: 'Failed to load vault with recovery key',
       };
     }
+  }
+
+  async #updateRecoveryMetadataForPasswordChange(
+    vaultName,
+    existingMetadata,
+    currentPassword,
+    newPassword
+  ) {
+    const keyRecoveryService = new KeyRecoveryService();
+    const passwordRecoveryService = new PasswordRecoveryService();
+
+    const metadata = [keyRecoveryService, passwordRecoveryService]
+      .flatMap((recoveryMethod) => {
+        const methodId = recoveryMethod.getRecoveryMethodId();
+        const recoveryMetadata = existingMetadata[methodId] || {};
+        const result = recoveryMethod.onPasswordChange(
+          vaultName,
+          recoveryMetadata,
+          currentPassword,
+          newPassword
+        );
+        // By default let's return old data, so that we could recover it later if possible
+        return {
+          methodId,
+          data: result.success ? result.metadata : recoveryMetadata,
+        };
+      })
+      .reduce((obj, item) => {
+        obj[item.methodId] = item.data;
+        return obj;
+      }, {});
+
+    return metadata;
   }
 }

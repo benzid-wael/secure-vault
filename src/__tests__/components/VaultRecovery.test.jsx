@@ -107,6 +107,8 @@ describe('VaultRecovery', () => {
     // Test successful recovery with old password
     mockElectronAPI.recoverVaultWithOldPassword.mockResolvedValueOnce({
       success: true,
+      data: { entries: [] },
+      password: 'recoveredPassword',
     });
     mockElectronAPI.loadVault.mockResolvedValueOnce({
       success: true,
@@ -123,7 +125,7 @@ describe('VaultRecovery', () => {
       expect(mockOnRecover).toHaveBeenCalledWith(
         { entries: [] },
         'old-password',
-        'oldpassword123'
+        'recoveredPassword'
       );
     });
   });
