@@ -26,3 +26,4 @@ coverage
 # build
 build/
 dist/
+config.bat
