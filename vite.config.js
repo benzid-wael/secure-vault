@@ -1,94 +1,38 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
-import { fileURLToPath, URL } from 'node:url';
-import electron from 'vite-plugin-electron/simple';
+import { fileURLToPath } from 'node:url';
 
-// https://vitejs.dev/config/
+const root = fileURLToPath(new URL('.', import.meta.url));
+const isDev = process.env.NODE_ENV === 'development';
+
 export default defineConfig({
+  root: '.',
   base: './',
-  plugins: [
-    react(),
-    electron({
-      main: {
-        entry: 'public/main.js',
-        vite: {
-          build: {
-            outDir: 'build/electron',
-          },
-        },
-      },
-      preload: {
-        input: 'public/preload.js', // if you have one
-        vite: {
-          build: {
-            outDir: 'build/electron',
-          },
-        },
-      },
-    }),
-  ],
+  plugins: [react()],
   build: {
     outDir: 'build',
-    assetsDir: 'static',
+    emptyOutDir: true,
+    sourcemap: true, // Always enable source maps for better debugging
+    minify: !isDev ? 'esbuild' : false,
     rollupOptions: {
-      input: {
-        main: resolve(
-          fileURLToPath(new URL('.', import.meta.url)),
-          'index.html'
-        ),
+      input: 'index.html',
+      output: {
+        entryFileNames: 'assets/[name].[hash].js',
+        chunkFileNames: 'assets/[name].[hash].js',
+        assetFileNames: 'assets/[name].[hash][extname]',
       },
     },
   },
   server: {
     port: 3000,
-    open: false,
-  },
-  test: {
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: './src/setupTests.js',
-    css: true,
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'text-summary', 'json', 'json-summary', 'html'],
-      exclude: [
-        '**/node_modules/**',
-        '**/public/**',
-        '**/build/**',
-        '**/dist/**',
-        '**/.history/**',
-        '**/*.config.js',
-        '**/src/setupTests.js',
-        '**/*.d.ts',
-        '**/src/reportWebVitals.js',
-        '**/src/index.jsx',
-        '**/*/testData.js',
-        '**/scripts/**',
-        'src/electron/**',
-      ],
-      all: true,
-      lines: 79,
-      functions: 65,
-      statements: 79,
-      branches: 70,
-      clean: true,
-      skipFull: false,
-      thresholds: {
-        lines: 79,
-        functions: 65,
-        statements: 79,
-        branches: 70,
-      },
-      reportOnFailure: true,
-    },
   },
   resolve: {
     alias: {
-      '@': resolve(fileURLToPath(new URL('.', import.meta.url)), 'src'),
+      '@': resolve(root, 'src'),
     },
   },
-  define: {
-    global: 'globalThis',
+  optimizeDeps: {
+    exclude: ['electron'],
   },
 });

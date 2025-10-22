@@ -1,5 +1,31 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+
+// Get __dirname equivalent in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Configure error handling
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  if (error.stack) console.error(error.stack);
+  if (dialog && dialog.showErrorBox) {
+    dialog.showErrorBox(
+      'Application Error',
+      error.message || 'An unexpected error occurred'
+    );
+  }
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  if (dialog && dialog.showErrorBox) {
+    dialog.showErrorBox('Unhandled Rejection', String(reason));
+  }
+});
 
 // Import services
 import { VaultService } from '../src/electron/services/VaultService.js';
@@ -11,36 +37,76 @@ import { SecurityManager } from '../src/electron/services/SecurityManager.js';
 
 class ElectronApp {
   constructor() {
-    this.windowManager = new WindowManager();
-    this.menuService = new MenuService();
-    this.securityManager = new SecurityManager();
+    try {
+      console.log('Initializing ElectronApp...');
 
-    const vaultDir = path.join(app.getPath('userData'), 'vaults');
-    this.vaultService = new VaultService(vaultDir);
-    this.importExportService = new ImportExportService(vaultDir);
-    this.vaultSettingsService = new VaultSettingsService(vaultDir);
+      // Ensure vault directory exists
+      const vaultDir = path.join(app.getPath('userData'), 'vaults');
+      if (!fs.existsSync(vaultDir)) {
+        console.log('Creating vault directory:', vaultDir);
+        fs.mkdirSync(vaultDir, { recursive: true });
+      }
 
-    this.mainWindow = null;
+      console.log('Initializing services...');
+      this.windowManager = new WindowManager();
+      this.menuService = new MenuService();
+      this.securityManager = new SecurityManager();
+
+      console.log('Initializing vault services...');
+      this.vaultService = new VaultService(vaultDir);
+      this.importExportService = new ImportExportService(vaultDir);
+      this.vaultSettingsService = new VaultSettingsService(vaultDir);
+
+      this.mainWindow = null;
+      console.log('ElectronApp initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize ElectronApp:', error);
+      throw error;
+    }
   }
 
-  initialize() {
-    // Set up security policies
-    console.log('Setting up security policies...');
-    this.securityManager.setupSecurityPolicies();
+  async initialize() {
+    try {
+      // Set up security policies
+      this.securityManager.setupSecurityPolicies();
 
-    // Create main window
-    console.log('Creating main window...');
-    this.mainWindow = this.windowManager.createMainWindow();
+      // Create main window
+      this.mainWindow = this.windowManager.createMainWindow();
 
-    // Create application menu
-    console.log('Creating application menu...');
-    this.menuService.createMenu(this.mainWindow);
+      // Log window creation
+      this.mainWindow.webContents.on('did-finish-load', () => {
+        console.log('Window finished loading');
+      });
 
-    // Set up app event handlers
-    console.log('Setting up app event handlers...');
-    this.setupAppEventHandlers();
+      this.mainWindow.webContents.on(
+        'did-fail-load',
+        (event, errorCode, errorDescription) => {
+          console.error('Window failed to load:', {
+            errorCode,
+            errorDescription,
+          });
+          dialog.showErrorBox(
+            'Load Failed',
+            `Failed to load application: ${errorDescription}`
+          );
+        }
+      );
 
-    this.setupHandlers();
+      // Create application menu
+      this.menuService.createMenu(this.mainWindow);
+
+      // Set up app event handlers
+      this.setupAppEventHandlers();
+
+      this.setupHandlers();
+    } catch (error) {
+      console.error('Failed to initialize application:', error);
+      dialog.showErrorBox(
+        'Initialization Error',
+        `Failed to initialize application: ${error.message}`
+      );
+      app.quit();
+    }
   }
 
   setupAppEventHandlers() {
@@ -64,7 +130,15 @@ class ElectronApp {
 
   setupHandlers() {
     // IPC Handlers using the new VaultService
-    ipcMain.handle('get-vaults', () => this.vaultService.getAvailableVaults());
+    ipcMain.handle('get-vaults', async () => {
+      try {
+        const vaults = await this.vaultService.getAvailableVaults();
+        return { success: true, data: vaults };
+      } catch (error) {
+        console.error('Error getting vaults:', error);
+        return { success: false, error: error.message };
+      }
+    });
     ipcMain.handle('create-vault', (event, vaultName, masterPassword) =>
       this.vaultService.createVault(vaultName, masterPassword)
     );
@@ -162,9 +236,22 @@ class ElectronApp {
 }
 
 // Initialize the application
+console.log('Starting application initialization...');
 const electronApp = new ElectronApp();
 
-app.whenReady().then(() => {
-  console.log('This code may execute before the above import');
-  electronApp.initialize();
-});
+app
+  .whenReady()
+  .then(() => {
+    console.log('Electron is ready, initializing app...');
+    electronApp.initialize();
+  })
+  .catch((error) => {
+    console.error('Error in app.whenReady():', error);
+    if (dialog && dialog.showErrorBox) {
+      dialog.showErrorBox(
+        'App Initialization Error',
+        `Failed to start application: ${error.message}`
+      );
+    }
+    app.quit();
+  });

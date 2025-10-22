@@ -601,7 +601,31 @@ export const getCopyableFields = (entryType) => {
 
 export const getSearchFields = (entryType) => {
   const definition = getEntryTypeDefinition(entryType);
-  return definition.searchFields || ['title'];
+  // Default search fields that work for most entry types
+  const defaultSearchFields = [
+    'title',
+    'username',
+    'url',
+    'name',
+    'email',
+    'notes',
+  ];
+
+  // If the entry type has specific search fields defined, use those
+  if (definition && definition.searchFields) {
+    return definition.searchFields;
+  }
+
+  // Otherwise, return a combination of default fields and any fields from the schema
+  const schemaFields =
+    definition && definition.schema
+      ? Object.keys(definition.schema).filter(
+          (key) => typeof definition.schema[key] !== 'function'
+        )
+      : [];
+
+  // Combine and deduplicate fields
+  return [...new Set([...defaultSearchFields, ...schemaFields])];
 };
 
 export const validateEntryByType = (entry, entryType) => {

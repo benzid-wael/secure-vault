@@ -130,6 +130,7 @@ export class VaultFileService {
         .filter((file) => file.endsWith('.vault'))
         .map((file) => file.replace('.vault', ''));
     } catch (error) {
+      console.error('Error listing vaults:', error);
       return [];
     }
   }

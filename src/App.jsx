@@ -116,11 +116,23 @@ function App() {
   const loadAvailableVaults = async () => {
     if (window.electronAPI) {
       try {
-        const vaults = await window.electronAPI.getVaults();
-        setAvailableVaults(vaults);
+        const result = await window.electronAPI.getVaults();
+        if (result && result.success) {
+          setAvailableVaults(result.data || []);
+        } else {
+          console.error(
+            'Failed to load vaults:',
+            result?.error || 'Unknown error'
+          );
+          setAvailableVaults([]);
+        }
       } catch (error) {
         console.error('Error loading vaults:', error);
+        setAvailableVaults([]);
       }
+    } else {
+      console.error('Electron API not available');
+      setAvailableVaults([]);
     }
   };
 

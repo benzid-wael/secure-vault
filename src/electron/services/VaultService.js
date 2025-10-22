@@ -23,6 +23,25 @@ export class VaultService {
     return vaults;
   }
 
+  async verifyVaultPassword(vaultName, password) {
+    try {
+      // Try to load the vault with the provided password
+      const result = await this.loadVault(vaultName, password);
+      return {
+        success: result.success,
+        valid: result.success && !!result.data,
+        error: result.error,
+      };
+    } catch (error) {
+      console.error(`Error verifying password for vault ${vaultName}:`, error);
+      return {
+        success: false,
+        valid: false,
+        error: error.message,
+      };
+    }
+  }
+
   async encryptVault(data, masterPassword, recoveryKey, oldPassword) {
     const salt = CryptographyService.generateSalt();
     const key = CryptographyService.deriveKey(masterPassword, salt);
@@ -115,7 +134,13 @@ export class VaultService {
 
   async loadVault(vaultName, password) {
     try {
+      console.log(`[VaultService] Loading vault: ${vaultName}`);
       const vaultFile = await this.fileService.readVaultFile(vaultName);
+      console.log(
+        '[VaultService] Vault file loaded:',
+        JSON.stringify(vaultFile, null, 2)
+      );
+
       const salt = Buffer.from(vaultFile.salt, 'hex');
       const key = CryptographyService.deriveKey(password, salt);
 
@@ -126,9 +151,10 @@ export class VaultService {
       };
 
       const vaultData = CryptographyService.decrypt(encryptedData, key);
-      const vault = Vault.fromJSON(vaultData, vaultName);
 
-      return { success: true, data: vault.toJSON() };
+      const vault = Vault.fromJSON(vaultData, vaultName);
+      const vaultJson = vault.toJSON();
+      return { success: true, data: vaultJson };
     } catch (error) {
       return { success: false, error: error.message };
     }

@@ -1,4 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
+// Note: We're keeping require() here because this file is loaded directly by Electron
+// and needs to use the CommonJS module system
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -61,12 +63,45 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('import-vault', importPath, newVaultName, password),
   getVaultDirectory: () => ipcRenderer.invoke('get-vault-directory'),
 
+  // Menu actions
+  menuNewVault: () => ipcRenderer.invoke('menu-new-vault'),
+  menuOpenVault: () => ipcRenderer.invoke('menu-open-vault'),
+  menuLockVault: () => ipcRenderer.invoke('menu-lock-vault'),
+  menuConfiguration: () => ipcRenderer.invoke('menu-configuration'),
+
   // Menu event listeners
-  onMenuNewVault: (callback) => ipcRenderer.on('menu-new-vault', callback),
-  onMenuOpenVault: (callback) => ipcRenderer.on('menu-open-vault', callback),
-  onMenuLockVault: (callback) => ipcRenderer.on('menu-lock-vault', callback),
+  onMenuNewVault: (callback) =>
+    ipcRenderer.on('menu-new-vault', (event, ...args) => {
+      try {
+        callback(...args);
+      } catch (error) {
+        console.error('Error in menu-new-vault handler:', error);
+      }
+    }),
+  onMenuOpenVault: (callback) =>
+    ipcRenderer.on('menu-open-vault', (event, ...args) => {
+      try {
+        callback(...args);
+      } catch (error) {
+        console.error('Error in menu-open-vault handler:', error);
+      }
+    }),
+  onMenuLockVault: (callback) =>
+    ipcRenderer.on('menu-lock-vault', (event, ...args) => {
+      try {
+        callback(...args);
+      } catch (error) {
+        console.error('Error in menu-lock-vault handler:', error);
+      }
+    }),
   onMenuConfiguration: (callback) =>
-    ipcRenderer.on('menu-configuration', callback),
+    ipcRenderer.on('menu-configuration', (event, ...args) => {
+      try {
+        callback(...args);
+      } catch (error) {
+        console.error('Error in menu-configuration handler:', error);
+      }
+    }),
 
   // Remove listeners
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
