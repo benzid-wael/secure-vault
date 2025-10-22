@@ -127,27 +127,63 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
   }, []);
 
   const loadAvailableVaults = async () => {
+    console.log(
+      'loadAvailableVaults called, window.electronAPI:',
+      !!window.electronAPI
+    );
     if (window.electronAPI) {
       try {
+        console.log('Calling getVaults...');
         const vaults = await window.electronAPI.getVaults();
+        console.log('Received vaults:', vaults);
         setAvailableVaults(vaults || []);
       } catch (error) {
         console.error('Error loading available vaults:', error);
       }
+    } else {
+      console.error('window.electronAPI is not available!');
     }
   };
 
   const loadVaultData = async () => {
     if (window.electronAPI && vaultName && vaultPassword) {
       try {
+        console.log('Loading vault data for:', vaultName);
         const result = await window.electronAPI.loadVault(
           vaultName,
           vaultPassword
         );
+        console.log('Vault load result:', result);
+
         if (result.success) {
-          setEntries(result.data.entries || []);
+          console.log('Vault data received:', result.data);
+
+          // Handle both array and object formats for entries
+          let entries = result.data.entries || {};
+          console.log('Raw entries:', entries);
+
+          let entriesArray = [];
+
+          // If entries is an array, ensure each entry has an id
+          if (Array.isArray(entries)) {
+            entriesArray = entries.map((entry) => ({
+              ...entry,
+              id: entry.id || `temp-${Math.random().toString(36).substr(2, 9)}`,
+            }));
+          }
+          // If entries is an object, convert to array with id as key
+          else if (typeof entries === 'object' && entries !== null) {
+            entriesArray = Object.entries(entries).map(([id, entry]) => ({
+              ...entry,
+              id: entry.id || id, // Use existing id or the object key as id
+            }));
+          }
+
+          console.log('Processed entries array:', entriesArray);
+          setEntries(entriesArray);
         } else {
-          showSnackbar('Failed to load vault data', 'error');
+          console.error('Failed to load vault data:', result.error);
+          showSnackbar(`Failed to load vault data: ${result.error}`, 'error');
         }
       } catch (error) {
         showSnackbar('Error loading vault', 'error');
@@ -160,10 +196,16 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
   const saveVaultData = async (updatedEntries) => {
     if (window.electronAPI && vaultName && vaultPassword) {
       try {
+        // Convert array of entries to an object with IDs as keys
+        const entriesObject = updatedEntries.reduce((acc, entry) => {
+          acc[entry.id] = entry;
+          return acc;
+        }, {});
+
         const vaultData = {
           version: '1.0',
           created: new Date().toISOString(),
-          entries: updatedEntries,
+          entries: entriesObject, // Now sending an object with IDs as keys
         };
 
         const result = await window.electronAPI.saveVault(

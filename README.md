@@ -21,9 +21,20 @@ A modern, secure password management application built with Electron and React, 
 - **Secure Context**: Runs in isolated Electron context with CSP
 - **Memory Protection**: Sensitive data cleared from memory when possible
 
+## Prerequisites
+
+- Node.js 18.0.0 or higher
+- npm 9.0.0 or higher
+- Git
+
 ## Installation
 
-1. Clone the repository
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/secure-password-manager.git
+   cd secure-password-manager
+   ```
+
 2. Install dependencies:
    ```bash
    npm install
@@ -31,20 +42,68 @@ A modern, secure password management application built with Electron and React, 
 
 ## Development
 
-To run the application in development mode:
+### Start Development Server
+
+To run the application in development mode with hot-reload:
 
 ```bash
-npm run electron-dev
-```
+# Start both renderer and main processes in development mode
+npm run dev:electron
 
-This will start both the React development server and the Electron application.
+# Or start them separately in different terminals
+# Terminal 1 - Start React development server
+npm run dev:renderer
+
+# Terminal 2 - Start Electron main process
+npm run dev:main
+```
 
 ## Building
 
-To build the application for production:
+### Development Build
+
+Create an unoptimized development build:
 
 ```bash
-npm run electron-pack
+npm run build:all
+```
+
+### Production Build
+
+Create an optimized production build:
+
+```bash
+# Build both renderer and main processes
+npm run build:all
+
+# Verify the build
+npm run verify-build
+```
+
+## Packaging
+
+Package the application for distribution:
+
+```bash
+# Package for current platform
+npm run package
+
+# Package for specific platforms
+npm run package:mac    # macOS
+npm run package:win    # Windows
+npm run package:linux  # Linux
+```
+
+## Running Production Build
+
+To run the production build:
+
+```bash
+# Build the application first
+npm run build:all
+
+# Then run the production build
+npm run start:prod
 ```
 
 ## Usage

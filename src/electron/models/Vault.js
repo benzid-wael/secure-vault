@@ -4,7 +4,7 @@ export class Vault {
     version = '1.0',
     created = new Date().toISOString(),
     lastPasswordChange = new Date().toISOString(),
-    entries = [],
+    entries = {},
     passwordHistory = [],
     settings = {},
     isDefault = false,
@@ -71,7 +71,7 @@ export class Vault {
       version: this.version,
       created: this.created,
       lastPasswordChange: this.lastPasswordChange,
-      entries: this.entries,
+      entries: this.entries, // This is now an object with IDs as keys
       passwordHistory: this.passwordHistory,
       settings: this.settings,
       isDefault: this.isDefault,
