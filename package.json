@@ -50,7 +50,7 @@
     "@vitest/coverage-v8": "^3.2.4",
     "@vitest/ui": "^3.2.4",
     "concurrently": "^8.2.0",
-    "electron": "^37.2.6",
+    "electron": "^38.4.0",
     "electron-builder": "^24.4.0",
     "eslint": "^9.33.0",
     "husky": "^9.1.7",
