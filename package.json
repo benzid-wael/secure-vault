@@ -106,12 +106,7 @@
       "buildResources": "public",
       "output": "dist"
     },
-    "extraResources": [
-      {
-        "from": "build/electron/preload.js",
-        "to": "preload.js"
-      }
-    ],
+    "publish": null,
     "mac": {
       "category": "public.app-category.utilities",
       "target": [
