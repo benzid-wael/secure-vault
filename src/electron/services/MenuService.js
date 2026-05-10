@@ -28,6 +28,13 @@ export class MenuService {
               this.sendMenuEvent('menu-open-vault');
             },
           },
+          {
+            label: 'Import Vault…',
+            accelerator: 'CmdOrCtrl+I',
+            click: () => {
+              this.sendMenuEvent('menu-import-vault');
+            },
+          },
           { type: 'separator' },
           {
             label: 'Lock Vault',

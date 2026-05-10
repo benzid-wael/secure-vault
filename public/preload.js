@@ -61,11 +61,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('export-vault', vaultName, password, exportPath),
   importVault: (importPath, newVaultName, password) =>
     ipcRenderer.invoke('import-vault', importPath, newVaultName, password),
+  selectImportFile: () => ipcRenderer.invoke('select-import-file'),
   getVaultDirectory: () => ipcRenderer.invoke('get-vault-directory'),
 
   // Menu actions
   menuNewVault: () => ipcRenderer.invoke('menu-new-vault'),
   menuOpenVault: () => ipcRenderer.invoke('menu-open-vault'),
+  menuImportVault: () => ipcRenderer.invoke('menu-import-vault'),
   menuLockVault: () => ipcRenderer.invoke('menu-lock-vault'),
   menuConfiguration: () => ipcRenderer.invoke('menu-configuration'),
 
@@ -84,6 +86,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
         callback(...args);
       } catch (error) {
         console.error('Error in menu-open-vault handler:', error);
+      }
+    }),
+  onMenuImportVault: (callback) =>
+    ipcRenderer.on('menu-import-vault', (event, ...args) => {
+      try {
+        callback(...args);
+      } catch (error) {
+        console.error('Error in menu-import-vault handler:', error);
       }
     }),
   onMenuLockVault: (callback) =>

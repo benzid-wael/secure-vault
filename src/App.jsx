@@ -13,6 +13,7 @@ import VaultLogin from './components/VaultLogin';
 import PasswordManager from './components/PasswordManager';
 import CreateVault from './components/CreateVault';
 import ConfigurationDialog from './components/ConfigurationDialog';
+import ImportExportDialog from './components/ImportExportDialog';
 import VaultRecovery from './components/VaultRecovery';
 import './App.css';
 
@@ -55,6 +56,7 @@ function App() {
   const [availableVaults, setAvailableVaults] = useState([]);
   const [currentView, setCurrentView] = useState('selector'); // selector, login, manager, create, recovery
   const [showConfiguration, setShowConfiguration] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: '',
@@ -75,6 +77,12 @@ function App() {
         setIsAuthenticated(false);
         setCurrentVault(null);
       });
+
+      if (window.electronAPI.onMenuImportVault) {
+        window.electronAPI.onMenuImportVault(() => {
+          setShowImportDialog(true);
+        });
+      }
 
       window.electronAPI.onMenuLockVault(() => {
         lockVault();
@@ -99,6 +107,7 @@ function App() {
       if (window.electronAPI) {
         window.electronAPI.removeAllListeners('menu-new-vault');
         window.electronAPI.removeAllListeners('menu-open-vault');
+        window.electronAPI.removeAllListeners('menu-import-vault');
         window.electronAPI.removeAllListeners('menu-lock-vault');
         window.electronAPI.removeAllListeners('menu-configuration');
       }
@@ -306,6 +315,22 @@ function App() {
           onClose={() => setShowConfiguration(false)}
           vaultName={currentVault}
           vaultPassword={vaultPassword}
+        />
+
+        <ImportExportDialog
+          open={showImportDialog}
+          onClose={() => setShowImportDialog(false)}
+          availableVaults={availableVaults}
+          importOnly
+          onImportSuccess={() => {
+            setShowImportDialog(false);
+            loadAvailableVaults();
+            setSnackbar({
+              open: true,
+              message: 'Vault imported successfully',
+              severity: 'success',
+            });
+          }}
         />
 
         {/* Success/Error Messages */}

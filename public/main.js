@@ -232,6 +232,29 @@ class ElectronApp {
         return { success: false, error: 'Failed to get vault directory' };
       }
     });
+
+    ipcMain.handle('select-import-file', async () => {
+      const window = BrowserWindow.getFocusedWindow();
+      const result = await dialog.showOpenDialog(window, {
+        title: 'Select Vault Export File',
+        properties: ['openFile'],
+        filters: [{ name: 'Vault Export', extensions: ['vault.json', 'json'] }],
+      });
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return { success: false, canceled: true };
+      }
+
+      const filePath = result.filePaths[0];
+      if (!filePath.endsWith('.vault.json')) {
+        return {
+          success: false,
+          error: 'Selected file is not a .vault.json export',
+        };
+      }
+
+      return { success: true, filePath };
+    });
   }
 }
 

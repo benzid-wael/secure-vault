@@ -25,12 +25,16 @@ const mockElectronAPI = {
   // Menu event listeners
   onMenuNewVault: vi.fn(),
   onMenuOpenVault: vi.fn(),
+  onMenuImportVault: vi.fn(),
   onMenuLockVault: vi.fn(),
   onMenuConfiguration: vi.fn(),
 
   // Import/Export
   importVault: vi.fn().mockResolvedValue({ success: true }),
   exportVault: vi.fn().mockResolvedValue({ success: true }),
+  selectImportFile: vi
+    .fn()
+    .mockResolvedValue({ success: true, filePath: '/test/file.vault.json' }),
 
   // Recovery
   generateRecoveryKey: vi

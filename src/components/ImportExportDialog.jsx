@@ -22,23 +22,32 @@ import {
   FileUpload as ImportIcon,
   FileDownload as ExportIcon,
   Security as SecurityIcon,
+  FolderOpen as BrowseIcon,
 } from '@mui/icons-material';
 
-const ImportExportDialog = ({ 
-  open, 
-  onClose, 
-  vaultName, 
-  vaultPassword, 
+const ImportExportDialog = ({
+  open,
+  onClose,
+  vaultName,
+  vaultPassword,
   availableVaults,
-  onImportSuccess 
+  onImportSuccess,
+  importOnly = false,
 }) => {
-  const [activeTab, setActiveTab] = useState(0);
+  const initialTab = importOnly ? 1 : 0;
+  const [activeTab, setActiveTab] = useState(initialTab);
+
+  React.useEffect(() => {
+    if (open) {
+      setActiveTab(initialTab);
+    }
+  }, [open, initialTab]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ text: '', severity: 'info' });
-  
+
   // Export state
   const [exportPath, setExportPath] = useState('');
-  
+
   // Import state
   const [importPath, setImportPath] = useState('');
   const [newVaultName, setNewVaultName] = useState('');
@@ -81,9 +90,37 @@ const ImportExportDialog = ({
     }
   };
 
+  const handleBrowseImportFile = async () => {
+    if (!window.electronAPI?.selectImportFile) {
+      showMessage('File picker is not available in this environment', 'error');
+      return;
+    }
+    try {
+      const result = await window.electronAPI.selectImportFile();
+      if (result.canceled) return;
+      if (!result.success) {
+        showMessage(result.error || 'Could not select file', 'error');
+        return;
+      }
+      setImportPath(result.filePath);
+      if (!newVaultName.trim()) {
+        const base = result.filePath.split(/[\\/]/).pop() || '';
+        const suggested = base.replace(/\.vault\.json$/i, '');
+        if (suggested) setNewVaultName(suggested);
+      }
+    } catch (error) {
+      showMessage('Error opening file picker', 'error');
+    }
+  };
+
   const handleImport = async () => {
     if (!importPath.trim()) {
       showMessage('Please specify an import file path', 'error');
+      return;
+    }
+
+    if (!importPath.toLowerCase().endsWith('.vault.json')) {
+      showMessage('Import file must have a .vault.json extension', 'error');
       return;
     }
 
@@ -97,7 +134,7 @@ const ImportExportDialog = ({
       return;
     }
 
-    if (availableVaults.includes(newVaultName)) {
+    if ((availableVaults || []).includes(newVaultName)) {
       showMessage('A vault with this name already exists', 'error');
       return;
     }
@@ -118,7 +155,7 @@ const ImportExportDialog = ({
         setImportPath('');
         setNewVaultName('');
         setImportPassword('');
-        
+
         if (onImportSuccess) {
           onImportSuccess(newVaultName);
         }
@@ -139,7 +176,7 @@ const ImportExportDialog = ({
       setImportPath('');
       setNewVaultName('');
       setImportPassword('');
-      setActiveTab(0);
+      setActiveTab(initialTab);
       onClose();
     }
   };
@@ -172,39 +209,45 @@ const ImportExportDialog = ({
           </Alert>
         )}
 
-        <Tabs
-          value={activeTab}
-          onChange={(e, newValue) => setActiveTab(newValue)}
-          sx={{
-            mb: 3,
-            '& .MuiTab-root': { color: 'rgba(255, 255, 255, 0.7)' },
-            '& .Mui-selected': { color: 'white' },
-            '& .MuiTabs-indicator': { backgroundColor: '#2196f3' },
-          }}
-        >
-          <Tab
-            icon={<ExportIcon />}
-            label="Export Vault"
-            iconPosition="start"
-          />
-          <Tab
-            icon={<ImportIcon />}
-            label="Import Vault"
-            iconPosition="start"
-          />
-        </Tabs>
+        {!importOnly && (
+          <Tabs
+            value={activeTab}
+            onChange={(e, newValue) => setActiveTab(newValue)}
+            sx={{
+              mb: 3,
+              '& .MuiTab-root': { color: 'rgba(255, 255, 255, 0.7)' },
+              '& .Mui-selected': { color: 'white' },
+              '& .MuiTabs-indicator': { backgroundColor: '#2196f3' },
+            }}
+          >
+            <Tab
+              icon={<ExportIcon />}
+              label="Export Vault"
+              iconPosition="start"
+            />
+            <Tab
+              icon={<ImportIcon />}
+              label="Import Vault"
+              iconPosition="start"
+            />
+          </Tabs>
+        )}
 
         {activeTab === 0 && (
           <Box sx={{ display: 'grid', gap: 3 }}>
             <Alert severity="info">
-              Export your vault to a secure, encrypted file that can be imported later or on another device.
+              Export your vault to a secure, encrypted file that can be imported
+              later or on another device.
             </Alert>
 
             <Box>
               <Typography variant="subtitle1" sx={{ mb: 1, color: 'white' }}>
                 Current Vault: <strong>{vaultName}</strong>
               </Typography>
-              <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+              <Typography
+                variant="body2"
+                sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
+              >
                 This vault will be exported with all its entries and settings.
               </Typography>
             </Box>
@@ -219,7 +262,9 @@ const ImportExportDialog = ({
               sx={{
                 '& .MuiInputBase-input': { color: 'white' },
                 '& .MuiInputLabel-root': { color: 'rgba(255, 255, 255, 0.7)' },
-                '& .MuiFormHelperText-root': { color: 'rgba(255, 255, 255, 0.5)' },
+                '& .MuiFormHelperText-root': {
+                  color: 'rgba(255, 255, 255, 0.5)',
+                },
               }}
             />
           </Box>
@@ -228,22 +273,44 @@ const ImportExportDialog = ({
         {activeTab === 1 && (
           <Box sx={{ display: 'grid', gap: 3 }}>
             <Alert severity="warning">
-              Import a vault from an encrypted export file. The imported vault will be created as a new vault.
+              Import a vault from an encrypted export file. The imported vault
+              will be created as a new vault.
             </Alert>
 
-            <TextField
-              label="Import File Path"
-              value={importPath}
-              onChange={(e) => setImportPath(e.target.value)}
-              placeholder="/path/to/import/vault-export.vault.json"
-              fullWidth
-              helperText="Path to the vault export file (.vault.json)"
-              sx={{
-                '& .MuiInputBase-input': { color: 'white' },
-                '& .MuiInputLabel-root': { color: 'rgba(255, 255, 255, 0.7)' },
-                '& .MuiFormHelperText-root': { color: 'rgba(255, 255, 255, 0.5)' },
-              }}
-            />
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+              <TextField
+                label="Import File Path"
+                value={importPath}
+                onChange={(e) => setImportPath(e.target.value)}
+                placeholder="/path/to/import/vault-export.vault.json"
+                fullWidth
+                helperText="Path to the vault export file (.vault.json)"
+                sx={{
+                  '& .MuiInputBase-input': { color: 'white' },
+                  '& .MuiInputLabel-root': {
+                    color: 'rgba(255, 255, 255, 0.7)',
+                  },
+                  '& .MuiFormHelperText-root': {
+                    color: 'rgba(255, 255, 255, 0.5)',
+                  },
+                }}
+              />
+              <Button
+                onClick={handleBrowseImportFile}
+                disabled={loading}
+                variant="outlined"
+                startIcon={<BrowseIcon />}
+                sx={{
+                  mt: '8px',
+                  whiteSpace: 'nowrap',
+                  color: 'white',
+                  borderColor: 'rgba(255, 255, 255, 0.3)',
+                  '&:hover': { borderColor: 'rgba(255, 255, 255, 0.6)' },
+                }}
+              >
+                Browse…
+              </Button>
+            </Box>
 
             <TextField
               label="New Vault Name"
@@ -255,7 +322,9 @@ const ImportExportDialog = ({
               sx={{
                 '& .MuiInputBase-input': { color: 'white' },
                 '& .MuiInputLabel-root': { color: 'rgba(255, 255, 255, 0.7)' },
-                '& .MuiFormHelperText-root': { color: 'rgba(255, 255, 255, 0.5)' },
+                '& .MuiFormHelperText-root': {
+                  color: 'rgba(255, 255, 255, 0.5)',
+                },
               }}
             />
 
@@ -270,7 +339,9 @@ const ImportExportDialog = ({
               sx={{
                 '& .MuiInputBase-input': { color: 'white' },
                 '& .MuiInputLabel-root': { color: 'rgba(255, 255, 255, 0.7)' },
-                '& .MuiFormHelperText-root': { color: 'rgba(255, 255, 255, 0.5)' },
+                '& .MuiFormHelperText-root': {
+                  color: 'rgba(255, 255, 255, 0.5)',
+                },
               }}
             />
           </Box>
@@ -308,8 +379,8 @@ const ImportExportDialog = ({
           {loading
             ? 'Processing...'
             : activeTab === 0
-            ? 'Export Vault'
-            : 'Import Vault'}
+              ? 'Export Vault'
+              : 'Import Vault'}
         </Button>
       </DialogActions>
     </Dialog>
