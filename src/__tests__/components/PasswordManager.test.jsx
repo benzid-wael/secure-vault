@@ -395,7 +395,7 @@ describe('PasswordManager', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText('Failed to load vault data')
+          screen.getByText(/Failed to load vault data/)
         ).toBeInTheDocument();
       });
     });

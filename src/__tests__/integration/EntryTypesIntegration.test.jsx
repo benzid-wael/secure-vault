@@ -456,17 +456,19 @@ describe('Entry Types Integration', () => {
     fireEvent.click(saveButton);
 
     await waitFor(() => {
-      expect(mockElectronAPI.saveVault).toHaveBeenCalledWith(
-        'test-vault',
-        'password123',
-        expect.objectContaining({
-          entries: expect.arrayContaining([
-            expect.objectContaining({
-              entryType: 'otp',
-              title: 'Test otp',
-            }),
-          ]),
-        })
+      expect(mockElectronAPI.saveVault).toHaveBeenCalled();
+      const [vaultName, password, vaultData] =
+        mockElectronAPI.saveVault.mock.calls[0];
+      expect(vaultName).toBe('test-vault');
+      expect(password).toBe('password123');
+      const entries = Object.values(vaultData.entries);
+      expect(entries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            entryType: 'otp',
+            title: 'Test otp',
+          }),
+        ])
       );
     });
   });
@@ -520,17 +522,19 @@ describe('Entry Types Integration', () => {
     fireEvent.click(saveButton);
 
     await waitFor(() => {
-      expect(mockElectronAPI.saveVault).toHaveBeenCalledWith(
-        'test-vault',
-        'password123',
-        expect.objectContaining({
-          entries: expect.arrayContaining([
-            expect.objectContaining({
-              entryType: 'level3_card',
-              title: 'Test level3_card',
-            }),
-          ]),
-        })
+      expect(mockElectronAPI.saveVault).toHaveBeenCalled();
+      const [vaultName, password, vaultData] =
+        mockElectronAPI.saveVault.mock.calls[0];
+      expect(vaultName).toBe('test-vault');
+      expect(password).toBe('password123');
+      const entries = Object.values(vaultData.entries);
+      expect(entries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            entryType: 'level3_card',
+            title: 'Test level3_card',
+          }),
+        ])
       );
     });
   });

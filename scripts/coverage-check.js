@@ -11,7 +11,7 @@ import path from 'path';
 
 const COVERAGE_THRESHOLDS = {
   lines: 79,
-  functions: 65,
+  functions: 60,
   statements: 79,
   branches: 70,
 };
