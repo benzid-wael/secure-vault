@@ -89,10 +89,10 @@
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
-      "prettier --write"
+      "npx prettier --write"
     ],
     "*.{json,md,css}": [
-      "prettier --write"
+      "npx prettier --write"
     ]
   },
   "build": {

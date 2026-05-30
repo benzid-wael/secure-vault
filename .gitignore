@@ -22,6 +22,7 @@ sketch
 coverage
 
 *.md
+!docs/**/*.md
 
 # build
 build/
