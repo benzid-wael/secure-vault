@@ -90,12 +90,8 @@ async function loadVault(options) {
   return { vaultPath, vaultPassword, vault: result.data };
 }
 
-export function registerVaultCommand(program) {
-  const vault = program
-    .command('vault')
-    .description('Manage environment vaults');
-
-  const env = vault.command('env').description('Manage environment vaults');
+export function registerEnvCommand(program) {
+  const env = program.command('env').description('Manage environment vaults');
 
   env
     .command('init')
@@ -761,5 +757,5 @@ export function registerVaultCommand(program) {
       }
     });
 
-  return vault;
+  return env;
 }
