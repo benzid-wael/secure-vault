@@ -11,6 +11,7 @@ import secureVault from '../package.json' with { type: 'json' };
 import { VaultFileService } from '../src/electron/services/VaultFileService.js';
 import { VaultService } from '../src/electron/services/VaultService.js';
 import { VaultRecoveryService } from '../src/electron/services/VaultRecoveryService.js';
+import { registerVaultCommand } from './commands/env.js';
 
 program
   .name('SecureVault')
@@ -87,5 +88,7 @@ function getAppDataPath() {
     }
   }
 }
+
+registerVaultCommand(program);
 
 program.parse(process.argv);
