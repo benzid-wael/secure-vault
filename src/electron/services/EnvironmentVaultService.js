@@ -206,7 +206,9 @@ export class EnvironmentVaultService {
   static async init({ name, vault, password, environments = {} }) {
     const vaultPath = vault
       ? path.resolve(vault)
-      : this.getEnvVaultPath(name || this.defaultVaultPath());
+      : name
+        ? this.getEnvVaultPath(name)
+        : this.defaultVaultPath();
 
     if (!password) {
       return { success: false, error: 'Password is required' };
@@ -243,6 +245,11 @@ export class EnvironmentVaultService {
     if (!loadResult.success) return loadResult;
 
     const vault = loadResult.data;
+
+    if (!vault.listEnvironmentNames().includes(envName)) {
+      vault.addEnvironment(envName);
+    }
+
     const activeVersion = vault.getActiveVersion(envName);
 
     const nonSensitive = activeVersion ? [...activeVersion.nonSensitive] : [];
