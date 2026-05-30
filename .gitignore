@@ -5,6 +5,8 @@ logs
 **/*.backup.*
 **/*.back.*
 
+.claude/
+
 # VS Code
 .history/
 

@@ -1,9 +1,13 @@
 import chalk from 'chalk';
 import ora from 'ora';
 import { spawn } from 'child_process';
+import os from 'os';
+import path from 'path';
+import fs from 'fs-extra';
 import password from '@inquirer/password';
 
 import { EnvironmentVaultService } from '../../src/electron/services/EnvironmentVaultService.js';
+import { EnvironmentVault } from '../../src/electron/models/EnvironmentVault.js';
 
 function clipboardWrite(text) {
   const platform = process.platform;
@@ -31,19 +35,31 @@ async function copyToClipboard(text, label) {
 function parseEnvOption(val) {
   const entries = {};
   for (const pair of val.split(',')) {
-    const [envName, filePath] = pair.split('=');
+    const sep = pair.includes('=') ? '=' : ':';
+    const idx = pair.indexOf(sep);
+    if (idx === -1) {
+      throw new Error(
+        `Invalid --env format: "${pair}". Expected envName=filePath`
+      );
+    }
+    const envName = pair.slice(0, idx);
+    let filePath = pair.slice(idx + 1).trim();
+    if (filePath.startsWith('~')) {
+      filePath = os.homedir() + filePath.slice(1);
+    }
     if (!envName || !filePath) {
       throw new Error(
         `Invalid --env format: "${pair}". Expected envName=filePath`
       );
     }
-    entries[envName.trim()] = filePath.trim();
+    entries[envName.trim()] = filePath;
   }
   return entries;
 }
 
 async function getPassword(provided, promptMessage) {
   if (provided) return provided;
+  if (process.env.VAULT_ENV_PASSWORD) return process.env.VAULT_ENV_PASSWORD;
   return password({ message: promptMessage, mask: true });
 }
 
@@ -101,43 +117,73 @@ export function registerEnvCommand(program) {
     .option('--password <password>', 'Vault password (non-interactive)')
     .option(
       '-e, --env <pairs>',
-      'Import .env files: envName=path,envName2=path2',
-      parseEnvOption
+      'Import .env files: envName=path (or envName:path)',
+      (val, prev = {}) => ({ ...prev, ...parseEnvOption(val) }),
+      {}
     )
     .action(async (options) => {
-      const spinner = ora('Initializing environment vault...').start();
-
       try {
         const vaultPassword = await getPassword(
           options.password,
           'Enter vault password:'
         );
-        const confirmPassword = options.password
-          ? vaultPassword
-          : await password({ message: 'Confirm vault password:', mask: true });
 
-        if (vaultPassword !== confirmPassword) {
-          spinner.fail(chalk.red('Passwords do not match.'));
-          process.exit(1);
+        if (!options.password && !process.env.VAULT_ENV_PASSWORD) {
+          const confirm = await password({
+            message: 'Confirm vault password:',
+            mask: true,
+          });
+          if (vaultPassword !== confirm) {
+            console.log(chalk.red('Passwords do not match.'));
+            process.exit(1);
+          }
         }
 
-        const result = await EnvironmentVaultService.init({
-          name: options.name,
-          vault: options.vault,
-          password: vaultPassword,
-          environments: options.env || {},
-        });
+        const vaultPath = options.vault
+          ? path.resolve(options.vault)
+          : options.name
+            ? EnvironmentVaultService.getEnvVaultPath(options.name)
+            : EnvironmentVaultService.defaultVaultPath();
+
+        const vaultModel = new EnvironmentVault();
+        const envs = options.env || {};
+
+        for (const [envName, envFile] of Object.entries(envs)) {
+          const step = ora(
+            `Reading ${chalk.cyan(envName)} from ${chalk.gray(envFile)}`
+          ).start();
+          let content;
+          try {
+            content = await fs.readFile(envFile, 'utf-8');
+          } catch (err) {
+            step.fail(chalk.red(`Cannot read ${envFile}: ${err.message}`));
+            process.exit(1);
+          }
+          const parsed = EnvironmentVault.parseEnvFile(content);
+          const count = Object.keys(parsed).length;
+          vaultModel.importFromEnvFile(envName, content, {
+            message: 'Initial import',
+          });
+          step.succeed(`Imported ${chalk.bold(envName)} (${count} variables)`);
+        }
+
+        const step = ora('Encrypting vault…').start();
+        const result = await EnvironmentVaultService.createVault(
+          vaultPath,
+          vaultPassword,
+          vaultModel.toJSON()
+        );
 
         if (!result.success) {
-          spinner.fail(chalk.red(result.error));
+          step.fail(chalk.red(result.error));
           process.exit(1);
         }
 
-        spinner.succeed(
+        step.succeed(
           chalk.green(`Environment vault created at ${result.path}`)
         );
       } catch (error) {
-        spinner.fail(chalk.red(error.message));
+        console.error(chalk.red(error.message));
         process.exit(1);
       }
     });
