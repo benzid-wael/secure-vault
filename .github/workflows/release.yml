@@ -131,6 +131,9 @@ jobs:
     needs: build-cli
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      id-token: write # required for `npm publish --provenance`
     steps:
       - uses: actions/checkout@v4
 

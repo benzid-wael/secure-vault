@@ -6,6 +6,10 @@
   "main": "build/electron/main.cjs",
   "homepage": "./",
   "license": "MIT",
+  "author": {
+    "name": "Wael Ben Zid",
+    "email": "benzid.wael@hotmail.fr"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/benzid-wael/secure-vault.git"
