@@ -66,7 +66,7 @@ On macOS the binary is also unsigned — if it's blocked, run
 **Option B — via npm** (requires Node.js 20.10+):
 
 ```bash
-npm install -g secure-password-manager
+npm install -g @benzid.wael/secure-vault
 vault info
 ```
 

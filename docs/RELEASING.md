@@ -46,10 +46,12 @@ The token is generated on npm and then stored as a GitHub secret.
 4. In the GitHub repo: **Settings → Secrets and variables → Actions → New
    repository secret**. Name it `NPM_TOKEN`, paste the value, and save.
 
-> The published package name is the `name` field in `package.json`
-> (`secure-password-manager`). Confirm it is available on npm, or switch to a
-> scoped name (e.g. `@benzid-wael/secure-vault`) before the first publish — the
-> data directory is independent of `name`, so renaming is safe (see below).
+> The published package name is the `name` field in `package.json`,
+> `@benzid.wael/secure-vault` — a scoped name under the maintainer's npm
+> account, so publishing requires `--access public` (already set in the
+> workflow). The data directory is independent of `name`, so this name can be
+> changed safely (see below). The CLI command is always `vault` regardless of
+> the package name (set by the `bin` field).
 
 ## Code signing (not configured)
 
