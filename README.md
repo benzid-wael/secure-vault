@@ -21,24 +21,79 @@ A modern, secure password management application built with Electron and React, 
 - **Secure Context**: Runs in isolated Electron context with CSP
 - **Memory Protection**: Sensitive data cleared from memory when possible
 
-## Prerequisites
+## Download & Install
 
-- Node.js 18.0.0 or higher
+Grab the latest build for your platform from the
+[**Releases page**](https://github.com/benzid-wael/secure-vault/releases/latest).
+No need to clone the repo or install Node.
+
+### Desktop app (GUI)
+
+| OS          | Download                                  |
+| ----------- | ----------------------------------------- |
+| **macOS**   | `.dmg` (installer) or `.zip` (portable)   |
+| **Windows** | `*-Setup.exe` (installer) or portable `.exe` |
+| **Linux**   | `.AppImage` (portable) or `.deb` (Debian/Ubuntu) |
+
+> **Unsigned builds.** The app is not yet code-signed, so your OS will warn that
+> the developer is unidentified. This is expected:
+>
+> - **macOS**: right-click the app → **Open** → **Open** (only needed the first
+>   time). Or run `xattr -dr com.apple.quarantine "/Applications/Secure Password Manager.app"`.
+> - **Windows**: on the SmartScreen prompt click **More info** → **Run anyway**.
+> - **Linux (AppImage)**: `chmod +x Secure*.AppImage` then run it.
+
+### Command-line tool (`vault`)
+
+**Option A — standalone binary** (no Node required). Download the file for your
+platform from the Releases page, then:
+
+```bash
+# macOS / Linux
+chmod +x vault-macos-arm64        # or vault-linux-x64, etc.
+sudo mv vault-macos-arm64 /usr/local/bin/vault
+vault info
+```
+
+```powershell
+# Windows: rename vault-windows-x64.exe to vault.exe and add its folder to PATH
+vault info
+```
+
+On macOS the binary is also unsigned — if it's blocked, run
+`xattr -d com.apple.quarantine vault` once.
+
+**Option B — via npm** (requires Node.js 20.10+):
+
+```bash
+npm install -g secure-password-manager
+vault info
+```
+
+The CLI and the desktop app share the same encrypted vaults on disk.
+
+## Building from source
+
+### Prerequisites
+
+- Node.js 20.10.0 or higher
 - npm 9.0.0 or higher
 - Git
 
-## Installation
+### Setup
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/secure-password-manager.git
-   cd secure-password-manager
+   git clone https://github.com/benzid-wael/secure-vault.git
+   cd secure-vault
    ```
 
 2. Install dependencies:
    ```bash
    npm install
    ```
+
+See [`docs/RELEASING.md`](docs/RELEASING.md) for how releases are built and published.
 
 ## Development
 

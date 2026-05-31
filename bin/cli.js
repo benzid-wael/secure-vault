@@ -1,16 +1,32 @@
 #!/usr/bin/env node
-import path from 'path';
 import chalk from 'chalk';
 import figlet from 'figlet';
 import ora from 'ora';
 import password from '@inquirer/password';
 
 import { program } from 'commander';
+import standardFont from 'figlet/importable-fonts/Standard.js';
 import secureVault from '../package.json' with { type: 'json' };
+
+// Register the font explicitly so the banner survives bundling into a
+// standalone binary, where figlet cannot read .flf font files from disk.
+figlet.parseFont('Standard', standardFont);
+
+function banner(text) {
+  try {
+    return figlet.textSync(text, {
+      font: 'Standard',
+      horizontalLayout: 'full',
+    });
+  } catch {
+    return text;
+  }
+}
 
 import { VaultFileService } from '../src/electron/services/VaultFileService.js';
 import { VaultService } from '../src/electron/services/VaultService.js';
 import { VaultRecoveryService } from '../src/electron/services/VaultRecoveryService.js';
+import { getVaultsDir } from '../src/electron/utils/appPaths.js';
 import { registerEnvCommand } from './commands/env.js';
 
 program
@@ -19,12 +35,8 @@ program
   .description('SecureVault CLI');
 
 program.command('info').action((options) => {
-  const vaultDir = path.join(getAppDataPath(), 'vaults');
-  console.log(
-    chalk.yellow(
-      figlet.textSync('SecureVault CLI', { horizontalLayout: 'full' })
-    )
-  );
+  const vaultDir = getVaultsDir();
+  console.log(chalk.yellow(banner('SecureVault CLI')));
   console.log();
   console.log('Version: ', secureVault.version);
   console.log('Vault directory: ', vaultDir);
@@ -36,7 +48,7 @@ program
   .action(async (options) => {
     let spinner = ora(`Recovering vault: ${options.name}`).start();
 
-    const vaultDir = path.join(getAppDataPath(), 'vaults');
+    const vaultDir = getVaultsDir();
     const vfs = new VaultFileService(vaultDir);
     if (!vfs.vaultExists(options.name)) {
       spinner.failed(chalk.green('Vault not found!'));
@@ -65,29 +77,6 @@ program
       spinner.failed('Failed to recover vault!');
     }
   });
-
-function getAppDataPath() {
-  switch (process.platform) {
-    case 'darwin': {
-      return path.join(
-        process.env.HOME,
-        'Library',
-        'Application Support',
-        secureVault.name
-      );
-    }
-    case 'win32': {
-      return path.join(process.env.APPDATA, secureVault.name);
-    }
-    case 'linux': {
-      return path.join(process.env.HOME, `.${secureVault.name}`);
-    }
-    default: {
-      console.log('Unsupported platform!');
-      process.exit(1);
-    }
-  }
-}
 
 registerEnvCommand(program);
 

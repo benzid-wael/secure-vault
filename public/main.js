@@ -34,6 +34,7 @@ import { VaultSettingsService } from '../src/electron/services/VaultSettingsServ
 import { WindowManager } from '../src/electron/services/WindowManager.js';
 import { MenuService } from '../src/electron/services/MenuService.js';
 import { SecurityManager } from '../src/electron/services/SecurityManager.js';
+import { getVaultsDir } from '../src/electron/utils/appPaths.js';
 
 class ElectronApp {
   constructor() {
@@ -41,7 +42,7 @@ class ElectronApp {
       console.log('Initializing ElectronApp...');
 
       // Ensure vault directory exists
-      const vaultDir = path.join(app.getPath('userData'), 'vaults');
+      const vaultDir = getVaultsDir();
       if (!fs.existsSync(vaultDir)) {
         console.log('Creating vault directory:', vaultDir);
         fs.mkdirSync(vaultDir, { recursive: true });
@@ -225,7 +226,7 @@ class ElectronApp {
 
     ipcMain.handle('get-vault-directory', async () => {
       try {
-        const vaultDir = path.join(app.getPath('userData'), 'vaults');
+        const vaultDir = getVaultsDir();
         return { success: true, path: vaultDir };
       } catch (error) {
         console.error('Error getting vault directory:', error);

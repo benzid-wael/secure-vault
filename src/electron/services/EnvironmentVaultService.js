@@ -1,10 +1,10 @@
 import fs from 'fs-extra';
 import path from 'path';
-import os from 'os';
 
 import { CryptographyService } from './CryptographyService.js';
 import { EnvironmentVault } from '../models/EnvironmentVault.js';
 import { validatePasswordStrength } from '../utils/passwordValidation.js';
+import { getAppDataPath, getEnvsDir } from '../utils/appPaths.js';
 
 function resolvePath(...segments) {
   return process.platform === 'win32'
@@ -14,26 +14,11 @@ function resolvePath(...segments) {
 
 export class EnvironmentVaultService {
   static getAppDataPath() {
-    const appName = 'secure-password-manager';
-    switch (process.platform) {
-      case 'darwin':
-        return resolvePath(
-          os.homedir(),
-          'Library',
-          'Application Support',
-          appName
-        );
-      case 'win32':
-        return resolvePath(process.env.APPDATA, appName);
-      case 'linux':
-        return resolvePath(os.homedir(), `.${appName}`);
-      default:
-        throw new Error('Unsupported platform');
-    }
+    return getAppDataPath();
   }
 
   static getEnvsDir() {
-    return resolvePath(this.getAppDataPath(), 'envs');
+    return getEnvsDir();
   }
 
   static getEnvVaultPath(name) {

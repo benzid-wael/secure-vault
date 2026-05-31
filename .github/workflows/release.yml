@@ -1,0 +1,153 @@
+name: Release
+
+# Cut a release by pushing a version tag, e.g.
+#   git tag v0.1.0 && git push origin v0.1.0
+# The workflow builds the GUI installers (macOS / Windows / Linux) and the
+# standalone CLI binaries, then publishes them all to a single GitHub Release.
+# It can also be triggered manually from the Actions tab.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write # required to create the GitHub Release
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # GUI installers — one native runner per OS (electron-builder cannot reliably
+  # cross-compile). Artifacts are uploaded and attached to the Release later.
+  # ---------------------------------------------------------------------------
+  build-gui:
+    name: GUI (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build renderer + main
+        run: npm run build:all
+
+      - name: Package (unsigned)
+        # publish=never: we attach artifacts ourselves in the release job.
+        run: npx electron-builder --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No code-signing identities are configured, so disable signing to
+          # avoid the build hanging or failing. Users bypass Gatekeeper /
+          # SmartScreen per the README.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Collect installers
+        shell: bash
+        run: |
+          mkdir -p staged
+          # Only ship end-user artifacts, not electron-builder's metadata.
+          find dist -maxdepth 1 -type f \
+            \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' \
+               -o -name '*.AppImage' -o -name '*.deb' \) \
+            -exec cp {} staged/ \;
+          ls -la staged
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gui-${{ matrix.os }}
+          path: staged/*
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # CLI standalone binaries — Bun cross-compiles every target from one runner.
+  # ---------------------------------------------------------------------------
+  build-cli:
+    name: CLI binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Build standalone binaries
+        run: npm run package:cli
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-binaries
+          path: dist-cli/*
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Publish a single GitHub Release with every artifact attached.
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish GitHub Release
+    needs: [build-gui, build-cli]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p release
+          find artifacts -type f -exec cp {} release/ \;
+          ls -la release
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+  # ---------------------------------------------------------------------------
+  # Publish the CLI to npm (requires the NPM_TOKEN repository secret).
+  # Skipped automatically if no token is configured.
+  # ---------------------------------------------------------------------------
+  publish-npm:
+    name: Publish to npm
+    needs: build-cli
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "NPM_TOKEN not set — skipping npm publish."
+            exit 0
+          fi
+          npm publish --provenance --access public
