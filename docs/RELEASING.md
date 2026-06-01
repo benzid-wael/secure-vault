@@ -5,14 +5,14 @@ version tag builds every artifact and publishes a single GitHub Release.
 
 ## Cut a release
 
-1. Bump the version in `package.json` (e.g. `0.1.0`).
-2. Commit it: `git commit -am "chore(release): v0.1.0"`.
-3. Tag and push:
+**The git tag is the single source of truth for the version.** You do not edit
+`package.json` — every job derives the version from the tag (`v0.1.0` →
+`0.1.0`) via `npm version`, so all artifacts and the npm package stay in sync.
 
-   ```bash
-   git tag v0.1.0
-   git push origin main --tags
-   ```
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
 
 The tag triggers the workflow, which:
 
@@ -23,8 +23,15 @@ The tag triggers the workflow, which:
 | `release`     | Ubuntu                          | One GitHub Release with all of the above attached             |
 | `publish-npm` | Ubuntu                          | `npm publish` (only if `NPM_TOKEN` secret is set)             |
 
+> **Each tag must be a new version.** npm refuses to republish an existing
+> version, so re-running a failed release needs a fresh tag (e.g. `v0.1.0-rc.2`),
+> not the same one.
+>
 > Pre-release tags (containing a hyphen, e.g. `v0.1.0-rc.1`) are marked as
-> "pre-release" automatically.
+> GitHub "pre-release" **and** published to npm under the `next` dist-tag, so
+> `npm install @benzid.wael/secure-vault` still resolves to the latest stable
+> release. The `version` in `package.json` (`0.0.1`) is just an unreleased
+> placeholder and is ignored at release time.
 
 ## Required / optional secrets
 
