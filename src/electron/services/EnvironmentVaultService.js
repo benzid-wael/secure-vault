@@ -224,7 +224,7 @@ export class EnvironmentVaultService {
     envName,
     key,
     value,
-    { isPublic = false, message = null } = {}
+    { isPublic = false, isRequired = false, message = null } = {}
   ) {
     const loadResult = await this.loadVault(vaultPath, password);
     if (!loadResult.success) return loadResult;
@@ -245,6 +245,12 @@ export class EnvironmentVaultService {
     } else if (!isPublic) {
       const idx = nonSensitive.indexOf(key);
       if (idx !== -1) nonSensitive.splice(idx, 1);
+    }
+
+    // --required is additive: marking a key required persists it, and updating
+    // the value later (without the flag) does not silently un-require it.
+    if (isRequired && !required.includes(key)) {
+      required.push(key);
     }
 
     const currentVars = activeVersion ? { ...activeVersion.vars } : {};
@@ -584,6 +590,54 @@ export class EnvironmentVaultService {
       return {
         success: true,
         data: { added, removed, changed, unchanged },
+      };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  static async validateEnv(vaultPath, password, envName) {
+    const loadResult = await this.loadVault(vaultPath, password);
+    if (!loadResult.success) return loadResult;
+
+    try {
+      const vault = loadResult.data;
+      // Throws if the environment does not exist; null if it has no versions.
+      const activeVersion = vault.getActiveVersion(envName);
+      const vars = activeVersion ? activeVersion.vars : {};
+      const required = activeVersion ? activeVersion.required : [];
+
+      const errors = [];
+      const warnings = [];
+
+      for (const key of required) {
+        if (!(key in vars)) {
+          errors.push(`Missing required key: ${key}`);
+        } else if (vars[key] === '' || vars[key] == null) {
+          errors.push(`Required key is empty: ${key}`);
+        }
+      }
+
+      for (const [key, value] of Object.entries(vars)) {
+        if (typeof value !== 'string') {
+          errors.push(`Value for ${key} is not a string`);
+        }
+        if (!/^[A-Z_][A-Z0-9_]*$/.test(key)) {
+          warnings.push(
+            `Non-standard key name: "${key}" (expected UPPER_CASE)`
+          );
+        }
+      }
+
+      return {
+        success: true,
+        data: {
+          envName,
+          varCount: Object.keys(vars).length,
+          requiredCount: required.length,
+          errors,
+          warnings,
+        },
       };
     } catch (error) {
       return { success: false, error: error.message };

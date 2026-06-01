@@ -246,6 +246,7 @@ export function registerEnvCommand(program) {
     .option('--password <password>', 'Vault password (non-interactive)')
     .option('-e, --env <name>', 'Environment name (defaults to "default")')
     .option('--public', 'Mark variable as non-sensitive')
+    .option('--required', 'Mark variable as required (checked by validate)')
     .option('-m, --message <text>', 'Version message')
     .action(async (key, value, options) => {
       try {
@@ -260,7 +261,11 @@ export function registerEnvCommand(program) {
           envName,
           key,
           value,
-          { isPublic: !!options.public, message: options.message }
+          {
+            isPublic: !!options.public,
+            isRequired: !!options.required,
+            message: options.message,
+          }
         );
 
         if (!result.success) {
@@ -811,6 +816,57 @@ export function registerEnvCommand(program) {
         }
 
         console.log();
+      } catch (error) {
+        console.log(chalk.red(error.message));
+        process.exit(1);
+      }
+    });
+
+  env
+    .command('validate')
+    .description('Validate an environment (required keys present, value types)')
+    .argument('[envName]', 'Environment name (defaults to "default")')
+    .option('-n, --name <name>', 'Vault name')
+    .option('-v, --vault <path>', 'Exact vault file path')
+    .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--strict', 'Fail on warnings, not just errors')
+    .option('--json', 'Output as JSON')
+    .action(async (envName, options) => {
+      try {
+        const { vaultPath, vaultPassword } = await loadVault(options);
+        const name = envName || 'default';
+
+        const result = await EnvironmentVaultService.validateEnv(
+          vaultPath,
+          vaultPassword,
+          name
+        );
+
+        if (!result.success) {
+          console.log(chalk.red(result.error));
+          process.exit(1);
+        }
+
+        const { errors, warnings, varCount, requiredCount } = result.data;
+
+        if (options.json) {
+          console.log(JSON.stringify(result.data, null, 2));
+        } else {
+          if (errors.length === 0) {
+            console.log(
+              chalk.green(
+                `✓ ${name}: ${varCount} vars, ${requiredCount} required`
+              )
+            );
+          }
+          for (const e of errors) console.log(chalk.red(`✗ ${e}`));
+          for (const w of warnings) console.log(chalk.yellow(`! ${w}`));
+        }
+
+        // Exit codes: 0 = pass, 1 = errors (or warnings under --strict),
+        // 2 = passed with warnings.
+        if (errors.length > 0) process.exit(1);
+        if (warnings.length > 0) process.exit(options.strict ? 1 : 2);
       } catch (error) {
         console.log(chalk.red(error.message));
         process.exit(1);

@@ -953,4 +953,130 @@ describe('EnvironmentVaultService', () => {
       expect(result.success).toBe(false);
     });
   });
+
+  describe('setEnv with isRequired', () => {
+    it('marks a variable as required and persists it', async () => {
+      await EnvironmentVaultService.createVault(
+        testVaultPath,
+        testPassword,
+        new EnvironmentVault().toJSON()
+      );
+      let written = fsMock.writeJSON.mock.calls[0][1];
+      fsMock.pathExists.mockResolvedValue(true);
+      fsMock.readJSON.mockResolvedValue(written);
+
+      const result = await EnvironmentVaultService.setEnv(
+        testVaultPath,
+        testPassword,
+        'dev',
+        'API_URL',
+        'https://x',
+        { isRequired: true }
+      );
+      expect(result.success).toBe(true);
+
+      written = fsMock.writeJSON.mock.calls[1][1];
+      fsMock.readJSON.mockResolvedValue(written);
+      const load = await EnvironmentVaultService.loadVault(
+        testVaultPath,
+        testPassword
+      );
+      expect(load.data.getActiveVersion('dev').required).toContain('API_URL');
+    });
+  });
+
+  describe('validateEnv', () => {
+    async function seed(vault) {
+      await EnvironmentVaultService.createVault(
+        testVaultPath,
+        testPassword,
+        vault.toJSON()
+      );
+      const written = fsMock.writeJSON.mock.calls[0][1];
+      fsMock.pathExists.mockResolvedValue(true);
+      fsMock.readJSON.mockResolvedValue(written);
+    }
+
+    it('passes when all required keys are present', async () => {
+      await seed(
+        createPopulatedVault(
+          testEnvName,
+          { API_URL: 'x', TOKEN: 'y' },
+          { required: ['API_URL'] }
+        )
+      );
+
+      const result = await EnvironmentVaultService.validateEnv(
+        testVaultPath,
+        testPassword,
+        testEnvName
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.data.errors).toEqual([]);
+      expect(result.data.requiredCount).toBe(1);
+      expect(result.data.varCount).toBe(2);
+    });
+
+    it('reports an error for a missing required key', async () => {
+      await seed(
+        createPopulatedVault(
+          testEnvName,
+          { API_URL: 'x' },
+          { required: ['API_URL', 'DB_URL'] }
+        )
+      );
+
+      const result = await EnvironmentVaultService.validateEnv(
+        testVaultPath,
+        testPassword,
+        testEnvName
+      );
+
+      expect(result.data.errors).toContain('Missing required key: DB_URL');
+    });
+
+    it('reports an error for an empty required key', async () => {
+      await seed(
+        createPopulatedVault(
+          testEnvName,
+          { API_URL: '' },
+          { required: ['API_URL'] }
+        )
+      );
+
+      const result = await EnvironmentVaultService.validateEnv(
+        testVaultPath,
+        testPassword,
+        testEnvName
+      );
+
+      expect(result.data.errors).toContain('Required key is empty: API_URL');
+    });
+
+    it('warns on non-UPPER_CASE key names without erroring', async () => {
+      await seed(createPopulatedVault(testEnvName, { 'my-key': 'v' }));
+
+      const result = await EnvironmentVaultService.validateEnv(
+        testVaultPath,
+        testPassword,
+        testEnvName
+      );
+
+      expect(result.data.errors).toEqual([]);
+      expect(result.data.warnings.some((w) => w.includes('my-key'))).toBe(true);
+    });
+
+    it('fails for a non-existent environment', async () => {
+      await seed(createPopulatedVault(testEnvName, { A: '1' }));
+
+      const result = await EnvironmentVaultService.validateEnv(
+        testVaultPath,
+        testPassword,
+        'nope'
+      );
+
+      expect(result.success).toBe(false);
+    });
+  });
 });
