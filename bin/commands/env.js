@@ -324,6 +324,7 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--json', 'Output as JSON')
     .action(async (envName, options) => {
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
@@ -338,6 +339,11 @@ export function registerEnvCommand(program) {
         if (!result.success) {
           console.log(chalk.red(result.error));
           process.exit(1);
+        }
+
+        if (options.json) {
+          console.log(JSON.stringify(result.data, null, 2));
+          return;
         }
 
         const { data } = result;
@@ -368,6 +374,7 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--json', 'Output as JSON')
     .action(async (options) => {
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
@@ -380,6 +387,11 @@ export function registerEnvCommand(program) {
         if (!result.success) {
           console.log(chalk.red(result.error));
           process.exit(1);
+        }
+
+        if (options.json) {
+          console.log(JSON.stringify(result.data, null, 2));
+          return;
         }
 
         if (result.data.length === 0) {
@@ -621,6 +633,7 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--json', 'Output as JSON')
     .action(async (envName, options) => {
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
@@ -635,6 +648,11 @@ export function registerEnvCommand(program) {
         if (!result.success) {
           console.log(chalk.red(result.error));
           process.exit(1);
+        }
+
+        if (options.json) {
+          console.log(JSON.stringify(result.data, null, 2));
+          return;
         }
 
         if (result.data.length === 0) {
@@ -748,6 +766,7 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--json', 'Output as JSON')
     .action(async (envA, envB, options) => {
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
@@ -762,6 +781,11 @@ export function registerEnvCommand(program) {
         if (!result.success) {
           console.log(chalk.red(result.error));
           process.exit(1);
+        }
+
+        if (options.json) {
+          console.log(JSON.stringify(result.data, null, 2));
+          return;
         }
 
         const { data } = result;
