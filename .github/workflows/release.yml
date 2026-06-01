@@ -145,6 +145,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Use the CLI-specific README for the npm package
+        # The package ships only the CLI, so publish the CLI-focused readme
+        # instead of the GUI-led root README. This runs on an ephemeral
+        # checkout, so it does not modify the repo.
+        run: cp README.cli.md README.md
+
       - name: Publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

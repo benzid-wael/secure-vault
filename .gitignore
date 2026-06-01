@@ -23,9 +23,6 @@ sketch
 # coverage
 coverage
 
-*.md
-!docs/**/*.md
-
 # build
 build/
 dist/

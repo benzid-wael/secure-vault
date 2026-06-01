@@ -142,7 +142,9 @@
         "AppImage",
         "deb"
       ],
-      "category": "Utility"
+      "category": "Utility",
+      "executableName": "secure-vault",
+      "artifactName": "secure-vault-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
