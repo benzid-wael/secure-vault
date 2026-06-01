@@ -8,6 +8,13 @@ import password from '@inquirer/password';
 
 import { EnvironmentVaultService } from '../../src/electron/services/EnvironmentVaultService.js';
 import { EnvironmentVault } from '../../src/electron/models/EnvironmentVault.js';
+import {
+  INJECT_MODES,
+  buildChildEnv,
+  toDotenv,
+  parseAllowlist,
+  secureDelete,
+} from './envRunHelpers.js';
 
 function clipboardWrite(text) {
   const platform = process.platform;
@@ -867,6 +874,110 @@ export function registerEnvCommand(program) {
         // 2 = passed with warnings.
         if (errors.length > 0) process.exit(1);
         if (warnings.length > 0) process.exit(options.strict ? 1 : 2);
+      } catch (error) {
+        console.log(chalk.red(error.message));
+        process.exit(1);
+      }
+    });
+
+  env
+    .command('run')
+    .description('Run a command with the environment injected (no plaintext)')
+    .argument('<envName>', 'Environment name')
+    .argument('[command...]', 'Command to run (use -- before it)')
+    .option('-n, --name <name>', 'Vault name')
+    .option('-v, --vault <path>', 'Exact vault file path')
+    .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--inject <mode>', 'Injection mode: clean | merge | file', 'clean')
+    .option(
+      '--out-file <path>',
+      'Temp .env path to write (required for --inject file). Named --out-file ' +
+        'because Node/Bun reserve --env-file as a built-in flag.'
+    )
+    .option(
+      '--allowlist <vars>',
+      'Extra system vars to pass through in clean mode (comma-separated)'
+    )
+    .action(async (envName, command, options) => {
+      if (!command || command.length === 0) {
+        console.log(
+          chalk.red('No command specified. Usage: vault env run <env> -- <cmd>')
+        );
+        process.exit(1);
+      }
+
+      const mode = options.inject;
+      if (!INJECT_MODES.includes(mode)) {
+        console.log(
+          chalk.red(`Invalid --inject mode "${mode}" (clean|merge|file)`)
+        );
+        process.exit(1);
+      }
+      if (mode === 'file' && !options.outFile) {
+        console.log(
+          chalk.red('--out-file <path> is required for --inject file')
+        );
+        process.exit(1);
+      }
+
+      try {
+        const { vaultPath, vaultPassword } = await loadVault(options);
+
+        const exportResult = await EnvironmentVaultService.exportEnv(
+          vaultPath,
+          vaultPassword,
+          envName,
+          'json'
+        );
+        if (!exportResult.success) {
+          console.log(chalk.red(exportResult.error));
+          process.exit(1);
+        }
+
+        const vars = exportResult.data;
+        const childEnv = buildChildEnv({
+          mode,
+          vars,
+          parentEnv: process.env,
+          allowlist: parseAllowlist(options.allowlist),
+        });
+
+        let envFilePath = null;
+        if (mode === 'file') {
+          envFilePath = path.resolve(options.outFile);
+          fs.writeFileSync(envFilePath, toDotenv(vars), { mode: 0o600 });
+        }
+
+        const cleanup = () => {
+          if (envFilePath) secureDelete(envFilePath);
+        };
+
+        const child = spawn(command[0], command.slice(1), {
+          stdio: 'inherit',
+          env: childEnv,
+        });
+
+        const forward = (signal) => child.kill(signal);
+        process.on('SIGINT', forward);
+        process.on('SIGTERM', forward);
+
+        child.on('error', (err) => {
+          cleanup();
+          const msg =
+            err.code === 'ENOENT'
+              ? `Command not found: ${command[0]}`
+              : `Failed to run command: ${err.message}`;
+          console.log(chalk.red(msg));
+          process.exit(127);
+        });
+
+        child.on('exit', (code, signal) => {
+          cleanup();
+          process.removeListener('SIGINT', forward);
+          process.removeListener('SIGTERM', forward);
+          // Propagate the child's exit status; map a terminating signal to 1.
+          process.exit(signal ? 1 : (code ?? 0));
+        });
       } catch (error) {
         console.log(chalk.red(error.message));
         process.exit(1);

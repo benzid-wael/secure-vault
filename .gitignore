@@ -28,3 +28,7 @@ build/
 dist/
 dist-cli/
 config.bat
+
+# agents configs
+.agentsrc
+
