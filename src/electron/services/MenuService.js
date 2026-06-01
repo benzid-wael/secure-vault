@@ -1,6 +1,6 @@
 import electron from 'electron';
 
-const { Menu } = electron;
+const { Menu, BrowserWindow } = electron;
 
 export class MenuService {
   constructor() {
@@ -91,8 +91,18 @@ export class MenuService {
   }
 
   sendMenuEvent(eventName) {
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send(eventName);
+    // The tracked window can become stale/destroyed when the window is closed
+    // and later reopened (e.g. via the macOS dock), so fall back to whatever
+    // live window currently exists. Without this, menu items silently stop
+    // working after the first reopen.
+    let targetWindow = this.mainWindow;
+    if (!targetWindow || targetWindow.isDestroyed()) {
+      targetWindow =
+        BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+    }
+
+    if (targetWindow && !targetWindow.isDestroyed()) {
+      targetWindow.webContents.send(eventName);
     }
   }
 

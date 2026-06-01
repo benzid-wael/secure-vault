@@ -120,6 +120,10 @@ class ElectronApp {
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         this.mainWindow = this.windowManager.createMainWindow();
+        // Re-point the application menu at the new window; otherwise its
+        // click handlers keep sending to the old, destroyed window and every
+        // menu item silently stops working after a reopen.
+        this.menuService.createMenu(this.mainWindow);
       }
     });
 
