@@ -546,6 +546,43 @@ export function registerEnvCommand(program) {
     });
 
   env
+    .command('copy')
+    .description('Copy an environment to a new name')
+    .argument('<sourceName>', 'Environment to copy from')
+    .argument('<destName>', 'New environment name')
+    .option('-n, --name <name>', 'Vault name')
+    .option('-v, --vault <path>', 'Exact vault file path')
+    .option('--password <password>', 'Vault password (non-interactive)')
+    .action(async (sourceName, destName, options) => {
+      const spinner = ora(
+        `Copying "${sourceName}" to "${destName}"...`
+      ).start();
+
+      try {
+        const { vaultPath, vaultPassword } = await loadVault(options);
+
+        const result = await EnvironmentVaultService.copyEnv(
+          vaultPath,
+          vaultPassword,
+          sourceName,
+          destName
+        );
+
+        if (!result.success) {
+          spinner.fail(chalk.red(result.error));
+          process.exit(1);
+        }
+
+        spinner.succeed(
+          chalk.green(`Copied "${sourceName}" to "${destName}".`)
+        );
+      } catch (error) {
+        spinner.fail(chalk.red(error.message));
+        process.exit(1);
+      }
+    });
+
+  env
     .command('template')
     .description('Generate a .env.template from an environment')
     .argument('[envName]', 'Environment name (defaults to "default")')

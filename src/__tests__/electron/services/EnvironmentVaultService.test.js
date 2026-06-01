@@ -578,6 +578,82 @@ describe('EnvironmentVaultService', () => {
     });
   });
 
+  describe('copyEnv', () => {
+    async function seed(vault) {
+      await EnvironmentVaultService.createVault(
+        testVaultPath,
+        testPassword,
+        vault.toJSON()
+      );
+      const writtenFile = fsMock.writeJSON.mock.calls[0][1];
+      fsMock.pathExists.mockResolvedValue(true);
+      fsMock.readJSON.mockResolvedValue(writtenFile);
+    }
+
+    it('should copy an environment to a new name with the same vars', async () => {
+      await seed(createPopulatedVault(testEnvName, { KEY: 'val', HOST: 'h' }));
+
+      const result = await EnvironmentVaultService.copyEnv(
+        testVaultPath,
+        testPassword,
+        testEnvName,
+        'prod'
+      );
+
+      expect(result.success).toBe(true);
+
+      const savedFile = fsMock.writeJSON.mock.calls[1][1];
+      fsMock.readJSON.mockResolvedValue(savedFile);
+      const loadResult = await EnvironmentVaultService.loadVault(
+        testVaultPath,
+        testPassword
+      );
+      expect(loadResult.data.listEnvironmentNames().sort()).toEqual(
+        ['prod', testEnvName].sort()
+      );
+      // Destination has the source's vars, and the source is left intact.
+      expect(loadResult.data.getActiveVersion('prod').vars).toEqual({
+        KEY: 'val',
+        HOST: 'h',
+      });
+      expect(loadResult.data.getActiveVersion(testEnvName).vars).toEqual({
+        KEY: 'val',
+        HOST: 'h',
+      });
+    });
+
+    it('should fail when the destination already exists', async () => {
+      const vault = createPopulatedVault(testEnvName, { KEY: 'val' });
+      vault.addEnvironment('prod');
+      vault.addVersion('prod', { OTHER: 'x' });
+      await seed(vault);
+
+      const result = await EnvironmentVaultService.copyEnv(
+        testVaultPath,
+        testPassword,
+        testEnvName,
+        'prod'
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/already exists/i);
+    });
+
+    it('should fail when the source does not exist', async () => {
+      await seed(createPopulatedVault(testEnvName, { KEY: 'val' }));
+
+      const result = await EnvironmentVaultService.copyEnv(
+        testVaultPath,
+        testPassword,
+        'nope',
+        'prod'
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/not found/i);
+    });
+  });
+
   describe('exportEnv', () => {
     async function setup() {
       const vault = createPopulatedVault(testEnvName, { A: '1', B: '2' });

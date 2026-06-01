@@ -406,6 +406,34 @@ export class EnvironmentVaultService {
     }
   }
 
+  static async copyEnv(vaultPath, password, sourceName, destName) {
+    const loadResult = await this.loadVault(vaultPath, password);
+    if (!loadResult.success) return loadResult;
+
+    try {
+      const vault = loadResult.data;
+      // Reading the source first validates it exists before we mutate anything.
+      const activeVersion = vault.getActiveVersion(sourceName);
+      vault.addEnvironment(destName);
+
+      if (activeVersion) {
+        vault.addVersion(
+          destName,
+          { ...activeVersion.vars },
+          {
+            required: [...activeVersion.required],
+            nonSensitive: [...activeVersion.nonSensitive],
+            message: `Copied from '${sourceName}'`,
+          }
+        );
+      }
+
+      return this.saveVault(vaultPath, password, vault);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
   static async exportEnv(vaultPath, password, envName, format = 'dotenv') {
     const loadResult = await this.loadVault(vaultPath, password);
     if (!loadResult.success) return loadResult;
