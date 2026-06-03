@@ -29,6 +29,39 @@ export class EnvironmentVaultService {
     return resolvePath(this.getEnvsDir(), `${name}.env.vault.bak`);
   }
 
+  static findGitRoot(startDir) {
+    let dir = startDir;
+    while (true) {
+      if (fs.existsSync(path.join(dir, '.git'))) {
+        return dir;
+      }
+      const parent = path.dirname(dir);
+      if (parent === dir) {
+        return null;
+      }
+      dir = parent;
+    }
+  }
+
+  static findVaultUpward(startDir, stopDir) {
+    let dir = startDir;
+    while (true) {
+      const candidate = path.join(dir, '.env.vault');
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+      // Stop once we have processed the boundary directory.
+      if (dir === stopDir) {
+        return null;
+      }
+      const parent = path.dirname(dir);
+      if (parent === dir) {
+        return null;
+      }
+      dir = parent;
+    }
+  }
+
   static resolveVaultPath({ vault, name } = {}) {
     if (vault) {
       return path.resolve(vault);
@@ -38,14 +71,19 @@ export class EnvironmentVaultService {
       return this.getEnvVaultPath(name);
     }
 
+    const cwd = process.cwd();
     const cwdName = path
-      .basename(process.cwd())
+      .basename(cwd)
       .replace(/[^a-z0-9_-]/gi, '_')
       .toLowerCase();
 
-    const localVault = path.resolve('.env.vault');
-    if (fs.existsSync(localVault)) {
-      return localVault;
+    // Walk up from cwd toward ancestors looking for `.env.vault`, bounded by
+    // the git root. If no git root is found, only cwd itself is checked.
+    const gitRoot = this.findGitRoot(cwd);
+    const stopDir = gitRoot || cwd;
+    const upwardVault = this.findVaultUpward(cwd, stopDir);
+    if (upwardVault) {
+      return path.resolve(upwardVault);
     }
 
     const configVault = path.resolve('config', '.env.vault');

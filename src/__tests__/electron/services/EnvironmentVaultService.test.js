@@ -76,6 +76,116 @@ describe('EnvironmentVaultService', () => {
     });
   });
 
+  describe('resolveVaultPath', () => {
+    let cwdSpy;
+
+    afterEach(() => {
+      if (cwdSpy) {
+        cwdSpy.mockRestore();
+        cwdSpy = undefined;
+      }
+    });
+
+    // Drive fs.existsSync from a set of paths that "exist".
+    function existsForPaths(...existing) {
+      const set = new Set(existing);
+      fsMock.existsSync.mockImplementation((p) => set.has(p));
+    }
+
+    it('uses path.resolve when an explicit vault flag is given', () => {
+      const result = EnvironmentVaultService.resolveVaultPath({
+        vault: './custom/.env.vault',
+      });
+      expect(result).toBe(path.resolve('./custom/.env.vault'));
+    });
+
+    it('uses the app-data env path when a name is given', () => {
+      const result = EnvironmentVaultService.resolveVaultPath({
+        name: 'myproj',
+      });
+      expect(result).toContain('myproj.env.vault');
+    });
+
+    it('finds .env.vault in a parent directory up to the git root', () => {
+      cwdSpy = vi
+        .spyOn(process, 'cwd')
+        .mockReturnValue('/repo/packages/api/src');
+      // .git lives at the repo root; the vault sits two levels up from cwd.
+      existsForPaths('/repo/.git', '/repo/packages/.env.vault');
+
+      const result = EnvironmentVaultService.resolveVaultPath({});
+      expect(result).toBe('/repo/packages/.env.vault');
+    });
+
+    it('finds .env.vault directly in cwd before walking up', () => {
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/app');
+      existsForPaths('/repo/.git', '/repo/app/.env.vault', '/repo/.env.vault');
+
+      const result = EnvironmentVaultService.resolveVaultPath({});
+      expect(result).toBe('/repo/app/.env.vault');
+    });
+
+    it('finds .env.vault at the git root itself', () => {
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/app');
+      existsForPaths('/repo/.git', '/repo/.env.vault');
+
+      const result = EnvironmentVaultService.resolveVaultPath({});
+      expect(result).toBe('/repo/.env.vault');
+    });
+
+    it('does NOT ascend above the git root', () => {
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/app');
+      // Vault exists ABOVE the git root and must be ignored.
+      existsForPaths('/repo/.git', '/.env.vault');
+
+      const result = EnvironmentVaultService.resolveVaultPath({});
+      expect(result).toBeNull();
+    });
+
+    it('only checks cwd when no .git exists anywhere up the chain', () => {
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/no-git/app');
+      // A vault exists in a parent, but with no git root we must not walk up.
+      existsForPaths('/no-git/.env.vault');
+
+      const result = EnvironmentVaultService.resolveVaultPath({});
+      expect(result).toBeNull();
+    });
+
+    it('finds .env.vault in cwd when no .git exists', () => {
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/no-git/app');
+      existsForPaths('/no-git/app/.env.vault');
+
+      const result = EnvironmentVaultService.resolveVaultPath({});
+      expect(result).toBe('/no-git/app/.env.vault');
+    });
+
+    it('falls back to config/.env.vault when no walk-up match', () => {
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/app');
+      const configVault = path.resolve('config', '.env.vault');
+      existsForPaths('/repo/.git', configVault);
+
+      const result = EnvironmentVaultService.resolveVaultPath({});
+      expect(result).toBe(configVault);
+    });
+
+    it('falls back to the app-data path when it exists', () => {
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/app');
+      const appDataVault = EnvironmentVaultService.getEnvVaultPath('app');
+      existsForPaths('/repo/.git', appDataVault);
+
+      const result = EnvironmentVaultService.resolveVaultPath({});
+      expect(result).toBe(appDataVault);
+    });
+
+    it('returns null when nothing is found', () => {
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/app');
+      existsForPaths('/repo/.git');
+
+      const result = EnvironmentVaultService.resolveVaultPath({});
+      expect(result).toBeNull();
+    });
+  });
+
   describe('createVault', () => {
     it('should create a new vault successfully', async () => {
       const result = await EnvironmentVaultService.createVault(
