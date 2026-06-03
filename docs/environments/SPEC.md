@@ -24,7 +24,8 @@
 13. [Milestones & Roadmap](#13-milestones--roadmap)
 14. [North Star / Future Work](#14-north-star--future-work)
 15. [Open Questions](#15-open-questions)
-16. [Appendix: Comparison to 1Password Environments](#16-appendix-comparison-to-1password-environments)
+16. [Known Issues & Pending Reconciliations](#16-known-issues--pending-reconciliations)
+17. [Appendix: Comparison to 1Password Environments](#17-appendix-comparison-to-1password-environments)
 
 ---
 
@@ -1435,7 +1436,182 @@ Questions that need resolution before implementation:
 
 ---
 
-## 16. Appendix: Comparison to 1Password Environments
+## 16. Known Issues & Pending Reconciliations
+
+Items discovered during implementation or end-to-end validation that are not
+yet resolved. Unlike §15 (open questions about design), each item here is a
+concrete divergence between docs, code, or stated behavior — each needs to
+be **fixed**, **explicitly accepted**, or **the docs need to be updated to
+match the implementation**. Track resolution per release.
+
+### 16.1 `env set` / `get` / `rm` arg shape diverges from spec
+
+**Where seen:** §6.1 (command tree), §6.3 (`vault env set`), `README.cli.md`,
+implementation in `bin/commands/env.js`.
+
+**Spec says:**
+
+```
+vault env set <env> <key>=<value>
+vault env get <env> <key>
+vault env rm  <env> <key>
+```
+
+**Implementation does:**
+
+```
+vault env set <key> <value> [-e <env>]    # env defaults to "default"
+vault env get <key>          [-e <env>]
+vault env rm  <key>          [-e <env>]
+```
+
+**README.cli.md** disagrees with **both** (`vault env set API_KEY s3cr3t` — no
+env, no `=`, two positionals).
+
+**Impact:** Users following any of the three sources hit "missing required
+argument" or silently write to the wrong environment. Surfaced during a clean
+end-to-end smoke test where `vault env set dev MY_KEY=hello` interpreted
+`dev` as the key and `MY_KEY=hello` as the value, writing to the default env.
+
+**Resolution options:**
+
+| Option                                            | Cost                                                   | Notes                                                                                    |
+| ------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| (a) Align implementation to spec                  | CLI rewrite for 5 commands + breaking change for users | Most consistent. Pairs env-first with `show`/`rollback`/`history` which already do this. |
+| (b) Update spec + README to match implementation  | Docs-only change                                       | Defensible — var-level commands using `-e` makes `env get FOO` (default env) ergonomic.  |
+| (c) Accept both forms during a deprecation window | Implementation change + ongoing maintenance            | Lowest friction for current users; higher long-term cost.                                |
+
+**Recommended:** (b) — codify the split: env-level ops (`show`, `rename`,
+`copy`, `delete`, `rollback`, `diff`, `validate`, `export`, `template`,
+`history`) take env as positional; var-level ops (`set`, `get`, `rm`) use
+`-e <env>` with default `"default"`. Document the rationale.
+
+### 16.2 `env get <key>` rejects a second positional
+
+**Where seen:** implementation in `bin/commands/env.js`.
+
+`env get` declares exactly one positional (`<key>`). Invocations of the form
+`vault env get dev MY_KEY` exit with:
+
+```
+error: too many arguments for 'get'. Expected 1 argument but got 2.
+```
+
+Same root cause as 16.1 — implementation expects `<key>` + `-e <env>`, not
+`<env> <key>`. Resolution piggybacks on 16.1.
+
+### 16.3 `env squash` missing env positional in implementation
+
+**Where seen:** §6.1 (`vault env squash <env>`), §6.3 (`vault env squash` docs
+example), implementation.
+
+**Spec says:**
+
+```
+vault env squash <env> [--keep <n>]
+```
+
+**Implementation does:**
+
+```
+vault env squash [-e <env>] [--keep <n>]    # env defaults to "default"
+```
+
+Same family as 16.1. Spec and `--help` disagree. Same recommendation: codify
+the var-level vs env-level split or update implementation.
+
+### 16.4 README.cli.md examples don't match either spec or implementation
+
+**Where seen:** `README.cli.md` lines 47–55.
+
+Example shown: `vault env set API_KEY s3cr3t` — two positionals, no env
+specified, doesn't follow the `KEY=VALUE` pattern from §6.1 either.
+
+**Action:** once 16.1 is resolved, regenerate README examples from a single
+source. Consider deriving them programmatically from the registered Commander
+commands to prevent future drift.
+
+### 16.5 Spec is silent on `--password-file` / `--password-stdin` exit codes
+
+**Where seen:** §6.2 global flags (now lists the two new flags); §12.5
+(Password Prompt) doesn't enumerate failure modes; Appendix B (Error Codes)
+has no entry for "password source conflict" or "password file unreadable".
+
+**Implementation behavior** (verified via smoke test):
+
+| Condition                                                          | Exit | stderr message                                                            |
+| ------------------------------------------------------------------ | ---- | ------------------------------------------------------------------------- |
+| Conflict: `--password` + `--password-file` (or any 2+)             | 1    | `Error: choose only one of --password, --password-file, --password-stdin` |
+| `--password-file` points at a missing/unreadable file              | 1    | `Error: cannot read password file "<path>": <ENOENT detail>`              |
+| `--password-stdin` with closed/errored stdin                       | 1    | `Error: cannot read password from stdin: <detail>`                        |
+| Correct password resolved but wrong for the vault (decrypt failed) | 1    | passed through from vault load (currently `ENV_VAULT_DECRYPT_FAILED`)     |
+
+**Action:** add a new "Password Resolution" subsection under §6.2 or §12.5
+listing precedence, mutual-exclusion rule, and exit codes. Add codes to
+Appendix B (e.g. `PASSWORD_SOURCE_CONFLICT`, `PASSWORD_FILE_UNREADABLE`,
+`PASSWORD_STDIN_FAILED`). All three currently use exit 1 — consider distinct
+codes once a CI-hardening pass lands.
+
+### 16.6 `.env.vault` auto-discovery: walk-up + git-root semantics not in spec
+
+**Where seen:** §5.2 (Discovery Priority) lists `./.env.vault` and
+`./config/.env.vault` as the only auto-detect paths.
+
+**Implementation does** (per `EnvironmentVaultService.findVaultUpward`): walks
+from cwd toward ancestors looking for `.env.vault`, bounded by the **git
+root**. If no `.git` is found, only cwd is checked.
+
+**Behavior is more useful than the spec describes** — devs running from a
+subdirectory of a monorepo find the project-root vault without needing
+`--vault` — but the spec doesn't document it.
+
+**Action:** update §5.2 to describe walk-up + git-root boundary. Add an
+example to §5.3. Document the fallback when there's no `.git` (cwd only, not
+parents). Decide whether `./config/.env.vault` is still in the discovery
+order (implementation still checks it AFTER the walk-up).
+
+### 16.7 Test imports CLI internals from `bin/commands/env.js`
+
+**Where seen:** `src/__tests__/cli/passwordResolution.test.js` imports
+`stripTrailingNewline`, `readPasswordFile`, `readPasswordStdin`,
+`hasNonInteractivePassword`, `resolvePassword` directly from
+`../../../bin/commands/env.js`.
+
+**Why it matters:** `bin/` is the CLI entry tree, normally not consumed as a
+library. This works today but:
+
+- It depends on `bin/commands/env.js` being a real ES module (it is).
+- The published npm package shape needs to include `bin/commands/`
+  importable, not stripped/minified.
+- Future refactors might split commands into modules and break the import.
+
+**Action:** either (a) extract the password-resolution helpers into
+`src/utils/password.js` and re-export from `bin/commands/env.js`, then update
+the test to import from `src/utils/password.js` — cleanest separation; or
+(b) accept the current shape and add a comment in the test plus a regression
+test in `package.json#files` to ensure `bin/commands/` is published.
+
+**Recommended:** (a). Pure utility functions don't belong in the command
+layer.
+
+### 16.8 `readPasswordStdin` test mocks `fs-extra` but production uses `fs`
+
+**Where seen:** `src/__tests__/cli/passwordResolution.test.js`
+`describe('readPasswordStdin')` block.
+
+The production code (`bin/commands/env.js:84`) calls `fs.readFileSync(0,
+'utf8')`. The test mocks `fsExtra.readFileSync`. The mock "works" because
+`fs-extra` re-exports `fs.readFileSync` unchanged, so spying on one observes
+the other. This is an implementation coincidence, not a contract.
+
+**Action:** switch the spy to `fs.readFileSync` directly, or add a comment
+explaining the cross-module spy. Risk if left: a future fs-extra update that
+wraps `readFileSync` (e.g., for promisification) silently breaks the test
+or — worse — makes the test pass against fs-extra while production drifts.
+
+---
+
+## 17. Appendix: Comparison to 1Password Environments
 
 | Feature               | 1Password Environments        | Secure Vault Envs                    |
 | --------------------- | ----------------------------- | ------------------------------------ |
@@ -1487,6 +1663,7 @@ Questions that need resolution before implementation:
 
 ## Appendix C: Changelog
 
-| Date       | Revision | Author  | Changes       |
-| ---------- | -------- | ------- | ------------- |
-| 2026-05-30 | 1        | wbenzid | Initial draft |
+| Date       | Revision | Author  | Changes                                                                                  |
+| ---------- | -------- | ------- | ---------------------------------------------------------------------------------------- |
+| 2026-05-30 | 1        | wbenzid | Initial draft                                                                            |
+| 2026-05-26 | 2        | wbenzid | Add §16 Known Issues & Pending Reconciliations (8 items from v0.1.0-rc.5 e2e validation) |

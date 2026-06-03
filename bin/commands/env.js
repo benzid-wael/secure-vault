@@ -64,9 +64,100 @@ function parseEnvOption(val) {
   return entries;
 }
 
-async function getPassword(provided, promptMessage) {
-  if (provided) return provided;
+/**
+ * Strip exactly one trailing newline sequence (`\n` or `\r\n`) from a string.
+ * Other whitespace — including interior and leading/trailing spaces — is
+ * preserved, since a password may legitimately contain spaces.
+ */
+export function stripTrailingNewline(value) {
+  if (value.endsWith('\r\n')) return value.slice(0, -2);
+  if (value.endsWith('\n')) return value.slice(0, -1);
+  return value;
+}
+
+/**
+ * Read a password from a file, stripping a single trailing newline.
+ * Throws if the file cannot be read so the caller can surface the error.
+ */
+export function readPasswordFile(filePath) {
+  const content = fs.readFileSync(filePath, 'utf8');
+  return stripTrailingNewline(content);
+}
+
+/** Read a password from stdin (fd 0), stripping a single trailing newline. */
+export function readPasswordStdin() {
+  const content = fs.readFileSync(0, 'utf8');
+  return stripTrailingNewline(content);
+}
+
+/**
+ * True when the password came from an explicit non-interactive source
+ * (flag, file, stdin) or the environment variable — i.e. no prompt was shown.
+ */
+export function hasNonInteractivePassword(options) {
+  return !!(
+    options.password ||
+    options.passwordFile ||
+    options.passwordStdin ||
+    process.env.VAULT_ENV_PASSWORD
+  );
+}
+
+/**
+ * Resolve the master password from the available sources, in precedence order:
+ *   1. --password <password>
+ *   2. --password-file <path>
+ *   3. --password-stdin
+ *   4. VAULT_ENV_PASSWORD env var
+ *   5. interactive prompt
+ *
+ * Only one of the explicit sources (flag/file/stdin) may be provided; supplying
+ * more than one is a usage error.
+ */
+export async function resolvePassword(options, promptMessage) {
+  const explicit = [
+    options.password != null,
+    !!options.passwordFile,
+    !!options.passwordStdin,
+  ].filter(Boolean).length;
+
+  if (explicit > 1) {
+    console.log(
+      chalk.red(
+        'Error: choose only one of --password, --password-file, --password-stdin'
+      )
+    );
+    process.exit(1);
+  }
+
+  if (options.password != null) return options.password;
+
+  if (options.passwordFile) {
+    try {
+      return readPasswordFile(options.passwordFile);
+    } catch (err) {
+      console.log(
+        chalk.red(
+          `Error: cannot read password file "${options.passwordFile}": ${err.message}`
+        )
+      );
+      process.exit(1);
+    }
+  }
+
+  if (options.passwordStdin) {
+    try {
+      return readPasswordStdin();
+    } catch (err) {
+      console.log(
+        chalk.red(`Error: cannot read password from stdin: ${err.message}`)
+      );
+      process.exit(1);
+    }
+  }
+
   if (process.env.VAULT_ENV_PASSWORD) return process.env.VAULT_ENV_PASSWORD;
+
   return password({ message: promptMessage, mask: true });
 }
 
@@ -95,10 +186,7 @@ async function resolveVaultPath(options) {
 }
 
 async function loadVault(options) {
-  const vaultPassword = await getPassword(
-    options.password,
-    'Enter vault password:'
-  );
+  const vaultPassword = await resolvePassword(options, 'Enter vault password:');
   const vaultPath = await resolveVaultPath(options);
   const result = await EnvironmentVaultService.loadVault(
     vaultPath,
@@ -122,6 +210,8 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name (defaults to CWD directory name)')
     .option('-v, --vault <path>', 'Exact path for the vault file')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
     .option(
       '-e, --env <pairs>',
       'Import .env files: envName=path (or envName:path)',
@@ -130,12 +220,12 @@ export function registerEnvCommand(program) {
     )
     .action(async (options) => {
       try {
-        const vaultPassword = await getPassword(
-          options.password,
+        const vaultPassword = await resolvePassword(
+          options,
           'Enter vault password:'
         );
 
-        if (!options.password && !process.env.VAULT_ENV_PASSWORD) {
+        if (!hasNonInteractivePassword(options)) {
           const confirm = await password({
             message: 'Confirm vault password:',
             mask: true,
@@ -203,12 +293,14 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
     .action(async (envName, files, options) => {
       const spinner = ora('Importing .env files...').start();
 
       try {
-        const vaultPassword = await getPassword(
-          options.password,
+        const vaultPassword = await resolvePassword(
+          options,
           'Enter vault password:'
         );
         const vaultPath = await resolveVaultPath(options);
@@ -251,6 +343,8 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
     .option('-e, --env <name>', 'Environment name (defaults to "default")')
     .option('--public', 'Mark variable as non-sensitive')
     .option('--required', 'Mark variable as required (checked by validate)')
@@ -294,6 +388,8 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
     .option('-e, --env <name>', 'Environment name (defaults to "default")')
     .option('--pair', 'Output as KEY=VALUE')
     .option('--clip', 'Copy value to clipboard')
@@ -336,6 +432,8 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
     .option('--json', 'Output as JSON')
     .action(async (envName, options) => {
       try {
@@ -386,6 +484,8 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
     .option('--json', 'Output as JSON')
     .action(async (options) => {
       try {
@@ -432,6 +532,8 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
     .option('-e, --env <name>', 'Environment name (defaults to "default")')
     .action(async (key, options) => {
       const spinner = ora(`Removing ${key}...`).start();
@@ -466,6 +568,8 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
     .option(
       '-f, --format <format>',
       'Output format: dotenv (default) or json',
@@ -512,6 +616,8 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
     .action(async (envName, options) => {
       const spinner = ora(`Deleting environment "${envName}"...`).start();
 
@@ -544,6 +650,8 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
     .action(async (oldName, newName, options) => {
       const spinner = ora(`Renaming "${oldName}" to "${newName}"...`).start();
 
@@ -577,6 +685,8 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
     .action(async (sourceName, destName, options) => {
       const spinner = ora(
         `Copying "${sourceName}" to "${destName}"...`
@@ -613,6 +723,8 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
     .option('--clip', 'Copy template to clipboard')
     .action(async (envName, options) => {
       try {
@@ -645,6 +757,8 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
     .option('--json', 'Output as JSON')
     .action(async (envName, options) => {
       try {
@@ -701,6 +815,8 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
     .option('-e, --env <name>', 'Environment name (defaults to "default")')
     .action(async (versionN, options) => {
       const spinner = ora(`Rolling back to v${versionN}...`).start();
@@ -736,6 +852,8 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
     .option('-e, --env <name>', 'Environment name (defaults to "default")')
     .option('-k, --keep <count>', 'Number of versions to keep', Number, 1)
     .action(async (options) => {
@@ -778,6 +896,8 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
     .option('--json', 'Output as JSON')
     .action(async (envA, envB, options) => {
       try {
@@ -836,6 +956,8 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
     .option('--strict', 'Fail on warnings, not just errors')
     .option('--json', 'Output as JSON')
     .action(async (envName, options) => {
@@ -888,6 +1010,8 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
     .option('--inject <mode>', 'Injection mode: clean | merge | file', 'clean')
     .option(
       '--out-file <path>',
@@ -990,13 +1114,15 @@ export function registerEnvCommand(program) {
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Current vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
     .action(async (options) => {
       const spinner = ora('Changing vault password...').start();
 
       try {
         const vaultPath = await resolveVaultPath(options);
-        const currentPassword = await getPassword(
-          options.password,
+        const currentPassword = await resolvePassword(
+          options,
           'Enter current password:'
         );
         const newPassword = await password({
