@@ -236,11 +236,20 @@ Both are produced by the `release` job in
    EOF
    ```
 
-2. Export the **private** key and add it as the `GPG_PRIVATE_KEY` secret:
+2. Export the **private** key, **base64-encode it**, and add the result as the
+   `GPG_PRIVATE_KEY` secret:
 
    ```bash
-   gpg --armor --export-secret-keys releases@example.com   # paste into the secret
+   # macOS
+   gpg --armor --export-secret-keys releases@example.com | base64 | pbcopy
+   # Linux
+   gpg --armor --export-secret-keys releases@example.com | base64 -w0 | xclip -selection clipboard
    ```
+
+   Base64 is used so the multi-line armored key survives being pasted into a
+   GitHub secret. Storing the raw armored block directly tends to collapse its
+   newlines, which makes `gpg --import` fail with `no valid OpenPGP data found`.
+   The workflow base64-decodes the secret before importing.
 
 3. If the key has a passphrase, also set `GPG_PASSPHRASE`. (The example above
    uses `%no-protection`, so no passphrase is needed.)
@@ -249,10 +258,10 @@ Both are produced by the `release` job in
    users can fetch it — the repo README, a keyserver, or the release notes — so
    they can verify.
 
-| Secret            | Value                                        |
-| ----------------- | -------------------------------------------- |
-| `GPG_PRIVATE_KEY` | armored private key (`--export-secret-keys`) |
-| `GPG_PASSPHRASE`  | key passphrase _(only if the key has one)_   |
+| Secret            | Value                                                                    |
+| ----------------- | ------------------------------------------------------------------------ |
+| `GPG_PRIVATE_KEY` | **base64** of the armored private key (`--export-secret-keys \| base64`) |
+| `GPG_PASSPHRASE`  | key passphrase _(only if the key has one)_                               |
 
 ### How users verify
 

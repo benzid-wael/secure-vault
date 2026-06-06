@@ -144,7 +144,17 @@ jobs:
             echo "GPG_PRIVATE_KEY not set — skipping GPG signature (checksums still attached)."
             exit 0
           fi
-          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          # The secret is the armored private key, base64-encoded — see
+          # docs/CODE_SIGNING.md. Base64 survives the newline-mangling that a
+          # raw ASCII-armored paste suffers in GitHub secrets (the cause of the
+          # "no valid OpenPGP data found" import failure). Decode, then import.
+          # A malformed/undecodable key skips the signature rather than failing
+          # the whole release — checksums are still attached either way.
+          if ! printf '%s' "$GPG_PRIVATE_KEY" | base64 -d 2>/dev/null | gpg --batch --import 2>/dev/null; then
+            echo "GPG_PRIVATE_KEY could not be decoded/imported — skipping GPG signature (checksums still attached)."
+            echo "Hint: store it as 'gpg --armor --export-secret-keys <id> | base64'."
+            exit 0
+          fi
           # Produce a detached, armored signature: SHA256SUMS.asc
           gpg --batch --yes --pinentry-mode loopback \
             ${GPG_PASSPHRASE:+--passphrase "$GPG_PASSPHRASE"} \
