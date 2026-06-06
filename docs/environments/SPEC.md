@@ -340,13 +340,30 @@ Every environment vault has a logical name. The on-disk filename is always
 
 When locating an existing vault for read or run commands:
 
-1. **`--vault <path>` flag** — exact path, used as-is
+1. **`--vault <path>` flag** — exact path, used as-is (`path.resolve`d)
 2. **`--name <name>` flag** — `<app-data>/envs/<name>.env.vault`
-3. **No flag** — auto-detect:
-   a. `./.env.vault` — project root
-   b. `./config/.env.vault` — common config directory
-   c. `<app-data>/envs/<dirname>.env.vault` — app data by CWD dirname
-4. If no vault found → error with suggestion to use `--vault` or `--name`
+3. **No flag** — auto-detect, in this order:
+   a. **Walk-up for `.env.vault`** — starting at the CWD, check each directory
+   for `.env.vault`, moving toward ancestors. The walk is **bounded by the
+   git root** (the nearest ancestor containing a `.git`), inclusive of that
+   boundary directory. The first match wins. If the CWD is **not** inside a
+   git repository, only the CWD itself is checked — the walk does not ascend.
+   (This subsumes the old "`./.env.vault`" rule as its first iteration.)
+   b. `./config/.env.vault` — checked **after** the walk-up, relative to the
+   CWD only (not walked up).
+   c. `<app-data>/envs/<dirname>.env.vault` — app data by CWD dirname, only if
+   it already exists.
+4. If no vault found → error with suggestion to use `--vault` or `--name`.
+
+> **Walk-up rationale (§16.6).** Running a `vault env` command from a
+> subdirectory of a monorepo finds the project-root vault without needing
+> `--vault`. The git-root boundary keeps the search from escaping the project
+> (it never walks above the repository), and the no-`.git` fallback keeps the
+> behavior predictable outside a repo (CWD only).
+>
+> Note: discovery (steps 3a–3c above) is used by **read/run** commands. The
+> **creation** default (`init` with no flag) is always
+> `<app-data>/envs/<dirname>.env.vault` — it does not walk up. See §5.1.
 
 The `<app-data>` path follows the same convention as the main vault:
 
@@ -361,13 +378,16 @@ The `<dirname>` is the basename of the current working directory, sanitized to
 
 ### 5.3 Example Resolutions
 
-| CWD    | Flags                                        | Resolved Path                             |
-| ------ | -------------------------------------------- | ----------------------------------------- |
-| `/app` | `--name superxpnse-be`                       | `<app-data>/envs/superxpnse-be.env.vault` |
-| `/app` | `--vault ./project.env.vault`                | `/app/project.env.vault`                  |
-| `/app` | _(none, creates)_                            | `<app-data>/envs/app.env.vault`           |
-| `/app` | _(none, reads & ./config/.env.vault exists)_ | `/app/config/.env.vault`                  |
-| `/app` | `--vault ~/team/shared.env.vault`            | `~/team/shared.env.vault`                 |
+| CWD             | Flags / context                                                          | Resolved Path                             |
+| --------------- | ------------------------------------------------------------------------ | ----------------------------------------- |
+| `/app`          | `--name superxpnse-be`                                                   | `<app-data>/envs/superxpnse-be.env.vault` |
+| `/app`          | `--vault ./project.env.vault`                                            | `/app/project.env.vault`                  |
+| `/app`          | _(none, creates)_                                                        | `<app-data>/envs/app.env.vault`           |
+| `/app`          | `--vault ~/team/shared.env.vault`                                        | `~/team/shared.env.vault`                 |
+| `/repo/svc/api` | _(none; `/repo/.git` and `/repo/.env.vault` exist)_                      | `/repo/.env.vault` (found by walk-up)     |
+| `/repo/svc/api` | _(none; `/repo/.git` exists, `/repo/svc/api/.env.vault` exists)_         | `/repo/svc/api/.env.vault` (nearest wins) |
+| `/tmp/loose`    | _(none; no `.git` anywhere up the tree, no `./.env.vault`)_              | falls through to `./config` then app-data |
+| `/repo/svc`     | _(none; `/repo/.git` exists, only `/repo/svc/config/.env.vault` exists)_ | `/repo/svc/config/.env.vault`             |
 
 ### 5.4 Backup Files
 
@@ -383,10 +403,12 @@ The service creates timestamped backups on destructive operations:
 
 ## 6. CLI Reference
 
-### 6.1 Command Argument Convention
+### 6.1 Commands
+
+#### 6.1.1 Argument Convention
 
 Commands fall into two families that take the target environment differently.
-This split is intentional — see §6.1.1 for the rationale.
+This split is intentional — see §6.1.3 for the rationale.
 
 - **Var-level** commands operate on a single key inside an environment. They take
   the **key as the positional** and the environment as a `-e, --env <name>` flag
@@ -398,7 +420,7 @@ This split is intentional — see §6.1.1 for the rationale.
   `"default"` when omitted; multi-target or destructive commands
   (`delete`, `rename`, `copy`, `diff`, `import`, `run`) require it.
 
-### 6.1 Command Tree
+#### 6.1.2 Command Tree
 
 ```
 vault env
@@ -434,7 +456,7 @@ vault env
   └── change-password                 Re-encrypt the vault with a new password
 ```
 
-#### 6.1.1 Rationale: var-level vs env-level (resolves §16.1–16.3)
+#### 6.1.3 Rationale: var-level vs env-level (resolves §16.1–16.3)
 
 The original draft of this spec showed every command as env-first
 (`set <env> <key>=<value>`). The implementation instead splits commands by
@@ -1636,7 +1658,7 @@ as positional; var-level ops (`set`, `get`, `rm`) plus the version ops
 rationale.
 
 **RESOLVED** (option b) — §6.1 now documents the var-level vs env-level split
-with the rationale in §6.1.1, and every §6.3 detail block matches the registered
+with the rationale in §6.1.3, and every §6.3 detail block matches the registered
 command shapes. No CLI behavior changed. Note: `rollback` is `-e`-based (a
 version op), correcting this item's earlier draft which grouped it with the
 env-positional commands. Covers §16.1, §16.2, and §16.3.
@@ -1731,6 +1753,12 @@ subdirectory of a monorepo find the project-root vault without needing
 example to §5.3. Document the fallback when there's no `.git` (cwd only, not
 parents). Decide whether `./config/.env.vault` is still in the discovery
 order (implementation still checks it AFTER the walk-up).
+
+**RESOLVED** — §5.2 step 3 now documents the walk-up, the git-root boundary
+(inclusive), and the no-`.git` fallback (CWD only). `./config/.env.vault` is
+kept in the order, explicitly after the walk-up; §5.3 gains walk-up examples.
+A note clarifies that discovery applies to read/run, while `init` always
+creates under app-data (no walk-up). Walk-up + boundary verified empirically.
 
 ### 16.7 Test imports CLI internals from `bin/commands/env.js`
 
@@ -1840,3 +1868,4 @@ or — worse — makes the test pass against fs-extra while production drifts.
 | 2026-05-26 | 2        | wbenzid | Add §16 Known Issues & Pending Reconciliations (8 items from v0.1.0-rc.5 e2e validation)                                                                          |
 | 2026-06-06 | 3        | wbenzid | Codify var-level vs env-level command split (§6.1, §6.1.1); align all §6.3 usage/examples and §7 flows to the implementation; mark §16.1–16.3 RESOLVED (option b) |
 | 2026-06-06 | 4        | wbenzid | Document password resolution (§6.2.1: precedence, mutual exclusion, exit codes); update §12.5; add `PASSWORD_*` codes to Appendix B; mark §16.5 RESOLVED (docs)   |
+| 2026-06-06 | 5        | wbenzid | Document walk-up + git-root vault discovery (§5.2/§5.3); mark §16.6 RESOLVED. Fix duplicate §6.1 heading (now §6.1.1/6.1.2/6.1.3) and stale cross-refs            |
