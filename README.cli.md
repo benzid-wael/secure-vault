@@ -40,18 +40,23 @@ vault recover --name <vault>     # recover a vault with your master password
 
 Manage `.env` secrets as encrypted, versioned vaults:
 
+Variable-level commands (`set`, `get`, `rm`) take the **key** as the argument and
+the environment as `-e <env>` (defaults to `"default"`). Environment-level
+commands take the **environment name** as the argument.
+
 ```bash
 vault env init                   # create an environment vault for this project
 vault env import dev .env        # import a .env file into the "dev" environment
-vault env set API_KEY s3cr3t     # set a variable
-vault env get API_KEY            # read a variable
+vault env set API_KEY s3cr3t -e dev   # set a variable in "dev"
+vault env get API_KEY -e dev          # read it back
 vault env show dev               # show all variables in an environment
 vault env list                   # list environments in the vault
 vault env export dev             # print as dotenv (or JSON)
 vault env template dev           # generate a .env.template (keys only)
 vault env diff dev prod          # compare two environments
 vault env history dev            # view version history
-vault env rollback 3             # restore a previous version
+vault env rollback 3 -e dev      # restore a previous version of "dev"
+vault env run dev -- npm start   # run a command with the env injected
 ```
 
 Other commands: `rm`, `delete`, `rename`, `squash`, `change-password`. Run
