@@ -383,40 +383,77 @@ The service creates timestamped backups on destructive operations:
 
 ## 6. CLI Reference
 
+### 6.1 Command Argument Convention
+
+Commands fall into two families that take the target environment differently.
+This split is intentional — see §6.1.1 for the rationale.
+
+- **Var-level** commands operate on a single key inside an environment. They take
+  the **key as the positional** and the environment as a `-e, --env <name>` flag
+  (default `"default"`): `set`, `get`, `rm`, plus `rollback` (positional is the
+  version number) and `squash` (no positional).
+- **Env-level** commands operate on a whole environment. They take the
+  **environment name as a positional**. Single-target read/inspect commands
+  (`show`, `history`, `validate`, `export`, `template`) default the positional to
+  `"default"` when omitted; multi-target or destructive commands
+  (`delete`, `rename`, `copy`, `diff`, `import`, `run`) require it.
+
 ### 6.1 Command Tree
 
 ```
 vault env
-  ├── init [--name <name>]          Initialize a new environment vault
-  │     [--env <name>:<file>]       (optionally import .env files)
+  ├── init [--name <name>]            Initialize a new environment vault
+  │     [--env <name>:<file>]         (optionally import .env files)
   │
-  ├── list                          List all environments
-  ├── show <env>                    Show env details (sensitive values masked)
-  ├── get <env> <key>               Get a single value
-  │     [--clip]                    (copy value to clipboard)
-  │     [--pair]                    (copy KEY=VALUE to clipboard)
-  ├── set <env> <key>=<value>       Set a key (creates new version)
-  │     [--public]                  (mark as non-sensitive)
-  ├── rename <env> <new-name>       Rename an environment
-  ├── rm <env> <key>                Remove a key (creates new version)
-  ├── copy <src> <dst>              Copy an environment
+  │   ── var-level (key positional, -e <env>, default "default") ──
+  ├── set <key> <value> [-e <env>]    Set a key (creates new version)
+  │     [--public] [--required]       (--public = non-sensitive; --required = checked by validate)
+  │     [--message <text>]
+  ├── get <key> [-e <env>]            Get a single value
+  │     [--clip] [--pair]             (--clip copies value; --pair copies KEY=VALUE)
+  ├── rm  <key> [-e <env>]            Remove a key (creates new version)
+  ├── rollback <version> [-e <env>]   Rollback to a previous version
+  ├── squash [-e <env>] [--keep <n>]  Squash version history
   │
-  ├── import <env>:<file>           Import .env file into an existing env
-  │     [--as <name>]               (set environment name separately)
+  │   ── env-level (env positional; defaults to "default" where shown as [env]) ──
+  ├── list                            List all environments
+  ├── show     [env]                  Show env details (sensitive values masked)
+  ├── history  [env]                  Show version history
+  ├── validate [env] [--strict]       Validate environment
+  ├── export   [env] [--format ...]   Export as .env / JSON to stdout
+  ├── template [env]                  Export keys-only placeholder file
   │
-  ├── history <env>                 Show version history
-  ├── rollback <env> <version>      Rollback to a previous version
-  ├── squash <env> [--keep <n>]     Squash version history
-  ├── diff <a> <b>                  Show diff between two versions/envs
+  │   ── env-level (env positional REQUIRED) ──
+  ├── delete <env>                    Delete an entire environment
+  ├── rename <oldName> <newName>      Rename an environment
+  ├── copy   <src> <dst>              Copy an environment to a new name
+  ├── diff   <envA> <envB>            Show diff between two environments
+  ├── import <env> <file...>          Import .env file(s) into an environment
+  ├── run    <env> [--] <cmd>...      Run command with env injected
   │
-  ├── export <env>                  Export as .env to stdout
-  ├── template <env>                Export keys-only placeholder file
-  ├── validate <env>                Validate environment
-  │
-  ├── run <env> [--] <cmd>          Run command with env injected
-  │
-  └── password
-      └── change                    Change vault password
+  └── change-password                 Re-encrypt the vault with a new password
+```
+
+#### 6.1.1 Rationale: var-level vs env-level (resolves §16.1–16.3)
+
+The original draft of this spec showed every command as env-first
+(`set <env> <key>=<value>`). The implementation instead splits commands by
+the unit they act on, and this section codifies that as the canonical contract
+(option (b) from §16.1):
+
+- Var-level ops (`set`/`get`/`rm`) make the common single-env case ergonomic:
+  `vault env get API_URL` reads from the `"default"` env with no ceremony. The
+  environment is a flag because it's the part that usually stays constant across
+  a run of commands, while the key changes every time.
+- `rollback` and `squash` are version operations scoped to one env, so they
+  follow the same `-e <env>` convention rather than taking the env positionally.
+- Env-level ops take the env positionally because the environment _is_ the
+  argument — there is no key to compete for the positional slot.
+
+`KEY=VALUE` is **not** accepted by `set`; the key and value are two separate
+positionals (`set <key> <value>`). Examples throughout this document and in
+`README.cli.md` follow these shapes.
+
 ```
 
 ### 6.2 Global Flags
@@ -434,374 +471,431 @@ vault env
 #### `vault env init`
 
 ```
+
 USAGE
-  vault env init [--name <name>] [--vault <path>]
-    [--env <env-name>:<file-path>]...
-    [--description <text>]
+vault env init [--name <name>] [--vault <path>]
+[--env <env-name>:<file-path>]...
+[--description <text>]
 
 FLAGS
-  --name <name>             Logical vault name. Creates <name>.env.vault in app data.
-                            Defaults to CWD directory basename if omitted.
-  --vault <path>            Exact file path (overrides app data default).
-  --env <name>:<file>       Import a .env file as an environment. Repeatable.
-                            Parses KEY=VALUE lines, creates version 1.
-  --description <text>      Optional description for the vault.
+--name <name> Logical vault name. Creates <name>.env.vault in app data.
+Defaults to CWD directory basename if omitted.
+--vault <path> Exact file path (overrides app data default).
+--env <name>:<file> Import a .env file as an environment. Repeatable.
+Parses KEY=VALUE lines, creates version 1.
+--description <text> Optional description for the vault.
 
 DESCRIPTION
-  Creates a new encrypted .env.vault. Prompts for a new password and
-  confirmation. Password strength is validated (min 8 chars, mixed case + digits).
+Creates a new encrypted .env.vault. Prompts for a new password and
+confirmation. Password strength is validated (min 8 chars, mixed case + digits).
 
-  When `--env` is provided, each file is parsed and imported as a named
-  environment (version 1). Lines starting with `#` are treated as comments
-  and ignored. Empty lines are skipped. Both `KEY=value` and `export KEY=value`
-  formats are supported.
+When `--env` is provided, each file is parsed and imported as a named
+environment (version 1). Lines starting with `#` are treated as comments
+and ignored. Empty lines are skipped. Both `KEY=value` and `export KEY=value`
+formats are supported.
 
-  Without `--env`, the vault is created empty. Use `vault env set` to add
-  environments later.
+Without `--env`, the vault is created empty. Use `vault env set` to add
+environments later.
 
 EXAMPLES
-  # Empty vault, default name (CWD dirname), stored in app data
-  vault env init
 
-  # Named vault in app data
-  vault env init --name superxpnse-be
+# Empty vault, default name (CWD dirname), stored in app data
 
-  # Named vault with two environments imported from .env files
-  vault env init --name superxpnse-be \
-    --env dev:.env.development \
-    --env prod:.env.production
+vault env init
 
-  # Custom location
-  vault env init --vault ./config/project.env.vault
+# Named vault in app data
 
-  # Import and describe
-  vault env init --name myapp --env staging:.env.staging \
-    --description "Team-shared env vault for MyApp"
+vault env init --name superxpnse-be
+
+# Named vault with two environments imported from .env files
+
+vault env init --name superxpnse-be \
+ --env dev:.env.development \
+ --env prod:.env.production
+
+# Custom location
+
+vault env init --vault ./config/project.env.vault
+
+# Import and describe
+
+vault env init --name myapp --env staging:.env.staging \
+ --description "Team-shared env vault for MyApp"
+
 ```
 
 #### `vault env set`
 
 ```
+
 USAGE
-  vault env set <env> <key>=<value> [--vault <path>]
+vault env set <key> <value> [-e <env>] [--vault <path>]
 
 FLAGS
-  --public              Mark this var as non-sensitive (shown unmasked in `show`)
-  --message <text>      Optional version message
+-e, --env <name> Environment to write to (default: "default")
+--public Mark this var as non-sensitive (shown unmasked in `show`)
+--required Mark this var as required (checked by `validate`)
+--message <text> Optional version message
 
 DESCRIPTION
-  Creates a new version of <env> with the key added or updated.
-  If <env> doesn't exist, creates it as a new environment.
-  The <value> may contain a template reference.
+Creates a new version of the target env with the key added or updated.
+If the env doesn't exist, creates it as a new environment.
+The <value> may contain a template reference.
 
-  By default, every var is **sensitive** — its value is masked in `show` output.
-  Use `--public` to mark a var as non-sensitive (e.g., API URLs, ports).
-  Non-sensitive vars are displayed in full in `show` and included in `template`.
+By default, every var is **sensitive** — its value is masked in `show` output.
+Use `--public` to mark a var as non-sensitive (e.g., API URLs, ports).
+Non-sensitive vars are displayed in full in `show` and included in `template`.
 
 EXAMPLES
-  vault env set staging API_URL=https://staging.example.com --public
-  vault env set staging API_KEY=sk-abc123 --message "Rotate API key"
-  vault env set staging DB_URL="{{env:base/DB_URL}}"     # template ref
+vault env set API_URL https://staging.example.com -e staging --public
+vault env set API_KEY sk-abc123 -e staging --message "Rotate API key"
+vault env set DB_URL "{{env:base/DB_URL}}" -e staging # template ref
+vault env set PORT 3000 # writes to the "default" env
+
 ```
 
 #### `vault env show`
 
 ```
+
 USAGE
-  vault env show <env> [--vault <path>]
+vault env show [env] [--vault <path>] [--json]
 
 DESCRIPTION
-  Displays environment metadata and all keys.
-  **Sensitive** values are masked (show first/last 4 chars).
-  **Non-sensitive** values are shown in full (see `vault env set --public`).
-  Use --json for machine-readable output.
+Displays environment metadata and all keys.
+**Sensitive** values are masked (show first/last 4 chars).
+**Non-sensitive** values are shown in full (see `vault env set --public`).
+Use --json for machine-readable output.
 
 OUTPUT EXAMPLE
-  Environment: staging
-  Description: (none)
-  Active version: 3 of 5
-  Created: 2026-05-15
-  Updated: 2026-05-30
-  Extends: base
+Environment: staging
+Description: (none)
+Active version: 3 of 5
+Created: 2026-05-15
+Updated: 2026-05-30
+Extends: base
 
-  Keys:
-    API_URL ✓  https://staging.example.com          ← non-sensitive, shown fully
-    API_KEY ▸  sk_a**********123
-    DB_URL  ▸  postgres://s*******/db
+Keys:
+API_URL ✓ https://staging.example.com ← non-sensitive, shown fully
+API_KEY ▸ sk_a\***\*\*\*\*\***123
+DB_URL ▸ postgres://s**\*\*\***/db
+
 ```
 
 #### `vault env get`
 
 ```
+
 USAGE
-  vault env get <env> <key> [--vault <path>] [--clip] [--pair]
+vault env get <key> [-e <env>] [--vault <path>] [--clip] [--pair]
 
 FLAGS
-  --clip    Copy the value to system clipboard instead of printing to stdout
-  --pair    Copy the full KEY=VALUE string to system clipboard
+-e, --env <name> Environment to read from (default: "default")
+--clip Copy the value to system clipboard instead of printing to stdout
+--pair Copy the full KEY=VALUE string to system clipboard
 
 DESCRIPTION
-  Prints the resolved value of a single key to stdout.
-  When `--clip` is used, the value is written to the system clipboard
-  (pbcopy on macOS, xclip/wl-copy on Linux, clip on Windows).
-  When `--pair` is used, copies KEY=VALUE instead of just the value.
+Prints the resolved value of a single key to stdout.
+When `--clip` is used, the value is written to the system clipboard
+(pbcopy on macOS, xclip/wl-copy on Linux, clip on Windows).
+When `--pair` is used, copies KEY=VALUE instead of just the value.
 
-  Sensitive vs non-sensitive does not matter here — the value is revealed
-  either way (you already authenticated by unlocking the vault).
+Sensitive vs non-sensitive does not matter here — the value is revealed
+either way (you already authenticated by unlocking the vault).
 
 EXAMPLES
-  vault env get staging API_URL
-  # → https://staging.example.com
+vault env get API_URL -e staging
 
-  vault env get staging API_KEY --clip
-  # (copied to clipboard, no stdout output)
+# → https://staging.example.com
 
-  vault env get staging API_KEY --pair
-  # (copies "API_KEY=sk-abc123" to clipboard)
+vault env get API_KEY -e staging --clip
+
+# (copied to clipboard, no stdout output)
+
+vault env get API_KEY -e staging --pair
+
+# (copies "API_KEY=sk-abc123" to clipboard)
+
 ```
 
 #### `vault env history`
 
 ```
+
 USAGE
-  vault env history <env> [--vault <path>]
+vault env history [env] [--vault <path>] [--json]
 
 OUTPUT EXAMPLE
-  Version  Created              Message
-  1        2026-05-15 10:00    Initial setup
-  2        2026-05-20 14:30    Add DB_URL
-  3        2026-05-25 09:00    Rotate API key          ← active
-  4        2026-05-30 11:00    Add staging URL         ← rolled back
-  5        2026-05-30 14:00    (unlabeled)
+Version Created Message
+1 2026-05-15 10:00 Initial setup
+2 2026-05-20 14:30 Add DB_URL
+3 2026-05-25 09:00 Rotate API key ← active
+4 2026-05-30 11:00 Add staging URL ← rolled back
+5 2026-05-30 14:00 (unlabeled)
+
 ```
 
 #### `vault env rollback`
 
 ```
+
 USAGE
-  vault env rollback <env> <version> [--vault <path>]
+vault env rollback <version> [-e <env>] [--vault <path>]
+
+FLAGS
+-e, --env <name> Environment to roll back (default: "default")
 
 DESCRIPTION
-  Rolls back to a previous version by creating a NEW version whose vars
-  match the target version. The rolled-back versions remain in history.
+Rolls back to a previous version by creating a NEW version whose vars
+match the target version. The rolled-back versions remain in history.
 
-  Example: env has versions [v1, v2, v3(active)]
-  `rollback staging 1` → [v1, v2, v3, v4(active=v1 copy)]
+Example: env has versions [v1, v2, v3(active)]
+`rollback 1 -e staging` → [v1, v2, v3, v4(active=v1 copy)]
 
-  Use `history` to see version numbers. Version `1` is always the oldest.
-  To undo a rollback, rollback again to the version before it.
+Use `history` to see version numbers. Version `1` is always the oldest.
+To undo a rollback, rollback again to the version before it.
+
 ```
 
 #### `vault env run`
 
 ```
+
 USAGE
-  vault env run <env> [--vault <path>]
-    [--inject clean|merge|file]
-    [--env-file <path>]
-    [--allowlist <comma-separated-vars>]
-    [--] <command>...
+vault env run <env> [--vault <path>]
+[--inject clean|merge|file]
+[--env-file <path>]
+[--allowlist <comma-separated-vars>]
+[--] <command>...
 
 FLAGS
-  --inject <mode>
-    clean (default)   Only vault vars + allowlisted system vars (PATH, HOME, SHELL, USER, TMPDIR)
-    merge             Vault vars merged into inherited process.env
-    file              Write --env-file, set an env var pointing to it, spawn, cleanup
+--inject <mode>
+clean (default) Only vault vars + allowlisted system vars (PATH, HOME, SHELL, USER, TMPDIR)
+merge Vault vars merged into inherited process.env
+file Write --env-file, set an env var pointing to it, spawn, cleanup
 
-  --env-file <path>
-    Path to write a temporary .env file. Required when --inject=file.
-    The file is created before spawn, securely deleted after child exits.
+--env-file <path>
+Path to write a temporary .env file. Required when --inject=file.
+The file is created before spawn, securely deleted after child exits.
 
-  --allowlist <vars>
-    Additional system vars to allow through in clean mode (comma-separated, no spaces).
+--allowlist <vars>
+Additional system vars to allow through in clean mode (comma-separated, no spaces).
 
 DESCRIPTION
-  Decrypts the env vault, resolves templates, validates required vars,
-  and spawns the command with environment variables injected according to
-  the --inject mode. The child process inherits stdio.
+Decrypts the env vault, resolves templates, validates required vars,
+and spawns the command with environment variables injected according to
+the --inject mode. The child process inherits stdio.
 
-  On exit, all temp files are securely deleted and decrypted data is zeroed.
+On exit, all temp files are securely deleted and decrypted data is zeroed.
 
 EXAMPLES
-  # Inject env vars into npm start (clean mode)
-  vault env run development -- npm start
 
-  # Merge mode for tools that need full parent env
-  vault env run development --inject merge -- npx react-native run-ios
+# Inject env vars into npm start (clean mode)
 
-  # Temp .env file for react-native-config build
-  vault env run staging --inject file --env-file .env -- npx react-native run-ios
+vault env run development -- npm start
 
-  # Clean mode with additional system vars allowed
-  vault env run production --allowlist NODE_PATH,LANG -- npm run build
+# Merge mode for tools that need full parent env
+
+vault env run development --inject merge -- npx react-native run-ios
+
+# Temp .env file for react-native-config build
+
+vault env run staging --inject file --env-file .env -- npx react-native run-ios
+
+# Clean mode with additional system vars allowed
+
+vault env run production --allowlist NODE_PATH,LANG -- npm run build
+
 ```
 
 #### `vault env export`
 
 ```
+
 USAGE
-  vault env export <env> [--vault <path>] [--format dotenv|json]
+vault env export [env] [--vault <path>] [--format dotenv|json]
 
 DESCRIPTION
-  Decrypts, resolves templates, and outputs the environment in the
-  requested format to stdout. Suitable for piping or redirecting.
+Decrypts, resolves templates, and outputs the environment in the
+requested format to stdout. Suitable for piping or redirecting.
 
 EXAMPLES
-  # Create a plain .env file (one-time, non-secure export)
-  vault env export staging > .env.staging
 
-  # Pipe into Docker Compose
-  vault env export production --format json | docker compose --env-file /dev/stdin up
+# Create a plain .env file (one-time, non-secure export)
 
-  # Feed into CI pipeline
-  vault env export production > .env  # SECURITY: delete after use!
+vault env export staging > .env.staging
+
+# Pipe into Docker Compose
+
+vault env export production --format json | docker compose --env-file /dev/stdin up
+
+# Feed into CI pipeline
+
+vault env export production > .env # SECURITY: delete after use!
+
 ```
 
 #### `vault env template`
 
 ```
+
 USAGE
-  vault env template <env> [--vault <path>]
+vault env template [env] [--vault <path>] [--clip]
 
 DESCRIPTION
-  Outputs a .env.example-style file with keys only and placeholder values.
-  Ideal for documenting required variables without exposing secrets.
+Outputs a .env.example-style file with keys only and placeholder values.
+Ideal for documenting required variables without exposing secrets.
 
 OUTPUT
-  API_URL=<required>
-  API_KEY=<required>
-  DB_URL=<required>
+API_URL=<required>
+API_KEY=<required>
+DB_URL=<required>
+
 ```
 
 #### `vault env validate`
 
 ```
+
 USAGE
-  vault env validate <env> [--vault <path>] [--strict]
+vault env validate [env] [--vault <path>] [--strict]
 
 FLAGS
-  --strict    Fail on warnings, not just errors
+--strict Fail on warnings, not just errors
 
 DESCRIPTION
-  Validates the environment without executing anything. Checks:
-  - All required keys present after template resolution
-  - No unresolved template references
-  - No circular extends chains
-  - No circular template refs
-  - All values are strings (not objects/arrays)
-  - No keys that look suspicious (hex secrets, private keys in non-required)
+Validates the environment without executing anything. Checks:
+
+- All required keys present after template resolution
+- No unresolved template references
+- No circular extends chains
+- No circular template refs
+- All values are strings (not objects/arrays)
+- No keys that look suspicious (hex secrets, private keys in non-required)
 
 EXIT CODES
-  0   Validation passed
-  1   Validation failed (errors)
-  2   Validation passed with warnings (requires --strict to fail)
+0 Validation passed
+1 Validation failed (errors)
+2 Validation passed with warnings (requires --strict to fail)
 
 OUTPUT EXAMPLE
-  ✓ staging: 12 vars, 3 required
-  ✓ extends chain: staging → base (2 levels)
-  ✓ All template references resolve
-  ! Non-standard key name: "my-api-key" (expected UPPER_CASE)
+✓ staging: 12 vars, 3 required
+✓ extends chain: staging → base (2 levels)
+✓ All template references resolve
+! Non-standard key name: "my-api-key" (expected UPPER_CASE)
+
 ```
 
 #### `vault env diff`
 
 ```
+
 USAGE
-  vault env diff <env-a> <env-b> [--vault <path>]
+vault env diff <env-a> <env-b> [--vault <path>]
 
 DESCRIPTION
-  Compares the resolved active versions of two environments.
-  Shows added, removed, changed, and unchanged keys.
+Compares the resolved active versions of two environments.
+Shows added, removed, changed, and unchanged keys.
 
 OUTPUT EXAMPLE
-  ── staging → production ──
+── staging → production ──
 
-  Added:
-    + SENTRY_DSN
+Added: + SENTRY_DSN
 
-  Removed:
-    - DEBUG
+Removed: - DEBUG
 
-  Changed:
-    API_URL https://staging.example.com → https://example.com
-    API_KEY [masked] → [masked]
+Changed:
+API_URL https://staging.example.com → https://example.com
+API_KEY [masked] → [masked]
 
-  Unchanged (8)
+Unchanged (8)
+
 ```
 
 #### `vault env import`
 
 ```
-USAGE
-  vault env import [<env-name>:]<file-path> [--vault <path>] [--as <name>]
 
-FLAGS
-  --as <name>       Environment name (alternative to prefix in positional)
+USAGE
+vault env import <env> <file...> [--name <name>] [--vault <path>]
 
 DESCRIPTION
-  Imports a .env file into an existing environment vault.
-  Parses KEY=VALUE lines (skips comments, blank lines, supports `export` prefix).
-  Creates a new version with all vars from the file.
+Imports one or more .env files into an environment of an existing vault.
+The environment name is the first positional; one or more file paths follow.
+Parses KEY=VALUE lines (skips comments, blank lines, supports `export` prefix).
+Creates a new version with all vars from the file(s).
 
-  The environment name can be specified as a prefix to the file path
-  (`staging:.env.staging`) or with `--as staging`.
+If the environment doesn't exist yet, it is created.
+
+(Note: the `<env>:<file>` prefix form is only used by `init --env`; the
+standalone `import` command takes the env as a separate positional.)
 
 EXAMPLES
-  vault env import staging:.env.staging --name superxpnse-be
-  vault env import .env.local --as development --name myapp
+vault env import staging .env.staging --name superxpnse-be
+vault env import development .env.local --name myapp
 
-  # Import into an environment that doesn't exist yet (creates it)
-  vault env import prod:.env.production --name superxpnse-be
+# Import multiple files into one environment
+
+vault env import prod .env.production .env.secrets --name superxpnse-be
+
 ```
 
 #### `vault env squash`
 
 ```
+
 USAGE
-  vault env squash <env> [--keep <n>] [--vault <path>]
+vault env squash [-e <env>] [--keep <n>] [--vault <path>]
 
 FLAGS
-  --keep <n>    Number of versions to keep after squashing (default: 1)
+-e, --env <name> Environment to squash (default: "default")
+--keep <n> Number of versions to keep after squashing (default: 1)
 
 DESCRIPTION
-  Compresses the version history of an environment by merging older versions
-  into a single version. This is useful for cleaning up noisy history or
-  reducing file size after many iterative changes.
+Compresses the version history of an environment by merging older versions
+into a single version. This is useful for cleaning up noisy history or
+reducing file size after many iterative changes.
 
-  The squashed version preserves the **vars of the most recent version**
-  in the squashed range. All versions outside the kept window are collapsed
-  into version 1. Remaining versions are renumbered sequentially.
+The squashed version preserves the **vars of the most recent version**
+in the squashed range. All versions outside the kept window are collapsed
+into version 1. Remaining versions are renumbered sequentially.
 
-  Example with --keep 2:
-    Before: [v1, v2, v3, v4, v5]
-    After:  [v1(squashed=v3), v2(=v4), v3(=v5)]
-    Kept:   v3, v4, v5 → renumbered as 1, 2, 3
+Example with --keep 2:
+Before: [v1, v2, v3, v4, v5]
+After: [v1(squashed=v3), v2(=v4), v3(=v5)]
+Kept: v3, v4, v5 → renumbered as 1, 2, 3
 
-  Example with --keep 1 (default):
-    Before: [v1, v2, v3]
-    After:  [v1(squashed=v3)]
-    All history collapsed to one version.
+Example with --keep 1 (default):
+Before: [v1, v2, v3]
+After: [v1(squashed=v3)]
+All history collapsed to one version.
 
-  Squashing is irreversible — create a backup first if you might need the
-  full history later.
+Squashing is irreversible — create a backup first if you might need the
+full history later.
 
 EXAMPLES
-  # Squash everything to a single version
-  vault env squash staging
 
-  # Keep the last 3 versions, squash everything older
-  vault env squash staging --keep 3
+# Squash everything to a single version
+
+vault env squash -e staging
+
+# Keep the last 3 versions, squash everything older
+
+vault env squash -e staging --keep 3
+
 ```
 
-#### `vault env password change`
+#### `vault env change-password`
 
 ```
+
 USAGE
-  vault env password change [--vault <path>]
+vault env change-password [--vault <path>]
 
 DESCRIPTION
-  Re-encrypts the entire vault with a new password.
-  Prompts for current password, then new password + confirmation.
+Re-encrypts the entire vault with a new password.
+Prompts for current password, then new password + confirmation.
+
 ```
 
 ---
@@ -811,103 +905,111 @@ DESCRIPTION
 ### 7.1 First-Time Setup
 
 ```
-User                  CLI                    Filesystem
- │                     │                        │
- ├─ vault env init ───→│                        │
- │                     ├─ prompt password ──→   │
- │←─ enter password ───┤                        │
- │                     ├─ generate salt         │
- │                     ├─ derive key            │
- │                     ├─ create empty payload  │
- │                     ├─ encrypt               │
- │                     ├─ write .env.vault ───→ │
- │←─ "Created" ────────┤                        │
- │                     ├─ prompt environment?   │
- │←─ "No, later" ──────┤                        │
- │                     │                        │
- ├─ vault env set ────→│                        │
- │  staging KEY=VAL    ├─ prompt password ──→   │
- │←─ enter password ───┤                        │
- │                     ├─ decrypt .env.vault    │
- │                     ├─ add environment       │
- │                     │   & version            │
- │                     ├─ re-encrypt            │
- │                     ├─ write .env.vault ───→ │
- │←─ "Set" ────────────┤                        │
+
+User CLI Filesystem
+│ │ │
+├─ vault env init ───→│ │
+│ ├─ prompt password ──→ │
+│←─ enter password ───┤ │
+│ ├─ generate salt │
+│ ├─ derive key │
+│ ├─ create empty payload │
+│ ├─ encrypt │
+│ ├─ write .env.vault ───→ │
+│←─ "Created" ────────┤ │
+│ ├─ prompt environment? │
+│←─ "No, later" ──────┤ │
+│ │ │
+├─ vault env set ────→│ │
+│ KEY VAL -e staging ├─ prompt password ──→ │
+│←─ enter password ───┤ │
+│ ├─ decrypt .env.vault │
+│ ├─ add environment │
+│ │ & version │
+│ ├─ re-encrypt │
+│ ├─ write .env.vault ───→ │
+│←─ "Set" ────────────┤ │
+
 ```
 
 ### 7.2 CLI Runner (clean mode)
 
 ```
-User                  CLI                    Child Process
- │                     │                        │
- ├─ vault env run ────→│                        │
- │  staging -- npm run │                        │
- │  build              │                        │
- │                     │                        │
- │←─ prompt password ──┤                        │
- ├─ enter ────────────→│                        │
- │                     ├─ decrypt .env.vault    │
- │                     ├─ resolve templates     │
- │                     ├─ validate required     │
- │                     ├─ build env object      │
- │                     │  { API_URL, API_KEY }  │
- │                     │  + allowlist: PATH,    │
- │                     │    HOME, USER, SHELL,  │
- │                     │    TMPDIR              │
- │                     │                        │
- │                     ├─ spawn ──────────────→│ npm run build
- │                     │  (env: merged)         │
- │                     │                        │
- │                     │←─ exit code ───────────┤
- │                     ├─ zero memory           │
- │←─ exit code ────────┤                        │
+
+User CLI Child Process
+│ │ │
+├─ vault env run ────→│ │
+│ staging -- npm run │ │
+│ build │ │
+│ │ │
+│←─ prompt password ──┤ │
+├─ enter ────────────→│ │
+│ ├─ decrypt .env.vault │
+│ ├─ resolve templates │
+│ ├─ validate required │
+│ ├─ build env object │
+│ │ { API_URL, API_KEY } │
+│ │ + allowlist: PATH, │
+│ │ HOME, USER, SHELL, │
+│ │ TMPDIR │
+│ │ │
+│ ├─ spawn ──────────────→│ npm run build
+│ │ (env: merged) │
+│ │ │
+│ │←─ exit code ───────────┤
+│ ├─ zero memory │
+│←─ exit code ────────┤ │
+
 ```
 
 ### 7.3 CLI Runner (file mode for build tools)
 
 ```
-User                  CLI                    Filesystem         Child Process
- │                     │                        │                    │
- ├─ vault env run ────→│                        │                    │
- │  staging --env-file │                        │                    │
- │  .env -- react-     │                        │                    │
- │  native run-ios     │                        │                    │
- │                     ├─ decrypt vault         │                    │
- │                     ├─ resolve templates     │                    │
- │                     ├─ write .env ──────────→│                    │
- │                     │  (chmod 600)           │                    │
- │                     │                        │                    │
- │                     ├─ set REACT_NATIVE_     │                    │
- │                     │   ENV_PATH=.env        │                    │
- │                     │                        │                    │
- │                     ├─ spawn ───────────────→│──── .env ─────────→│
- │                     │                        │                    │
- │                     │                        │←──── exit ─────────┤
- │                     ├─ secure delete .env ──→│                    │
- │                     │  (overwrite + unlink)  │                    │
- │←─ exit code ────────┤                        │                    │
+
+User CLI Filesystem Child Process
+│ │ │ │
+├─ vault env run ────→│ │ │
+│ staging --env-file │ │ │
+│ .env -- react- │ │ │
+│ native run-ios │ │ │
+│ ├─ decrypt vault │ │
+│ ├─ resolve templates │ │
+│ ├─ write .env ──────────→│ │
+│ │ (chmod 600) │ │
+│ │ │ │
+│ ├─ set REACT*NATIVE* │ │
+│ │ ENV_PATH=.env │ │
+│ │ │ │
+│ ├─ spawn ───────────────→│──── .env ─────────→│
+│ │ │ │
+│ │ │←──── exit ─────────┤
+│ ├─ secure delete .env ──→│ │
+│ │ (overwrite + unlink) │ │
+│←─ exit code ────────┤ │ │
+
 ```
 
 ### 7.4 Rollback
 
 ```
+
 vault env history staging
 
-  Version 1: API_URL=http://old.example.com
-  Version 2: API_URL=http://new.example.com   ← active
+Version 1: API_URL=http://old.example.com
+Version 2: API_URL=http://new.example.com ← active
 
-vault env rollback staging 1
+vault env rollback 1 -e staging
 
-  ── Creates Version 3, copying Version 1's vars ──
+── Creates Version 3, copying Version 1's vars ──
 
-  Version 1: API_URL=http://old.example.com
-  Version 2: API_URL=http://new.example.com
-  Version 3: API_URL=http://old.example.com    ← now active (copy of v1)
+Version 1: API_URL=http://old.example.com
+Version 2: API_URL=http://new.example.com
+Version 3: API_URL=http://old.example.com ← now active (copy of v1)
 
-vault env set staging API_URL=http://fixed.example.com
+vault env set API_URL http://fixed.example.com -e staging
 
-  Version 4: API_URL=http://fixed.example.com   ← now active
+Version 4: API_URL=http://fixed.example.com ← now active
+
 ```
 
 Rollback never destroys history. It creates a new version whose vars match the
@@ -920,14 +1022,16 @@ target version. This ensures all changes are auditable.
 ### 8.1 Grammar
 
 ```
+
 ref = '{{' source ':' path '}}'
 
-source = 'env'      ── references another env within the same vault
-       | 'vault'    ── references an entry in the main vault (v2+)
+source = 'env' ── references another env within the same vault
+| 'vault' ── references an entry in the main vault (v2+)
 
-path  = segment ('/' segment)*
+path = segment ('/' segment)\*
 
 segment = [a-zA-Z0-9._-]+
+
 ```
 
 ### 8.2 Reference Types
@@ -953,21 +1057,23 @@ segment = [a-zA-Z0-9._-]+
 ### 8.4 Reference Resolution Algorithm
 
 ```
+
 function resolve(input, environments, visited = new Set(), depth = 0):
-  if depth > 5: throw MaxDepthError
-  for each {{...}} match in input:
-    key = extract_ref(match)  // e.g., "env:staging/API_URL"
-    if key in visited: throw CycleError
-    visited.add(key)
-    source = parse(key)       // { type: "env", env: "staging", var: "API_URL" }
-    if type is "env":
-      target = environments[source.env]
-      value = target.getResolvedVar(source.var)
-      resolved = resolve(value, environments, visited, depth + 1)
-      input = input.replace(match, resolved)
-    if type is "vault":
-      // v2+: resolve from main vault
-  return input
+if depth > 5: throw MaxDepthError
+for each {{...}} match in input:
+key = extract_ref(match) // e.g., "env:staging/API_URL"
+if key in visited: throw CycleError
+visited.add(key)
+source = parse(key) // { type: "env", env: "staging", var: "API_URL" }
+if type is "env":
+target = environments[source.env]
+value = target.getResolvedVar(source.var)
+resolved = resolve(value, environments, visited, depth + 1)
+input = input.replace(match, resolved)
+if type is "vault":
+// v2+: resolve from main vault
+return input
+
 ```
 
 ---
@@ -979,17 +1085,21 @@ function resolve(input, environments, visited = new Set(), depth = 0):
 Each environment can define `extends: "<env-name>"` or `extends: null`.
 
 ```
+
 "staging": {
-  "extends": "base",
-  "versions": [...]
+"extends": "base",
+"versions": [...]
 }
+
 ```
 
 ### 9.2 Merge Semantics
 
 ```
+
 resolved(env) = merge( resolve(env.extends), env.activeVersion.vars )
-```
+
+````
 
 - Variables in `env` override those in `env.extends`.
 - Template refs are resolved **after** the merge.
@@ -1024,7 +1134,7 @@ resolved(env) = merge( resolve(env.extends), env.activeVersion.vars )
 //   PORT=3000            (from base)
 //   NODE_ENV=production  (overridden)
 //   API_URL=https://example.com  (from production)
-```
+````
 
 ### 9.4 Chained Extends
 
@@ -1234,7 +1344,7 @@ the vault, and `vault env get staging API_URL --clip` copies the value to clipbo
 | `vault env template`                 | `.env.example` export                                         |
 | `vault env validate`                 | Required keys check                                           |
 | `vault env diff`                     | Diff between two environments                                 |
-| `vault env password change`          | Re-encrypt with new password                                  |
+| `vault env change-password`          | Re-encrypt with new password                                  |
 | `vault env copy`                     | Duplicate an environment                                      |
 | `vault env rename`                   | Rename an environment                                         |
 | Temp file cleanup                    | Secure deletion (overwrite + unlink), orphan cleanup          |
@@ -1482,9 +1592,16 @@ end-to-end smoke test where `vault env set dev MY_KEY=hello` interpreted
 | (c) Accept both forms during a deprecation window | Implementation change + ongoing maintenance            | Lowest friction for current users; higher long-term cost.                                |
 
 **Recommended:** (b) — codify the split: env-level ops (`show`, `rename`,
-`copy`, `delete`, `rollback`, `diff`, `validate`, `export`, `template`,
-`history`) take env as positional; var-level ops (`set`, `get`, `rm`) use
-`-e <env>` with default `"default"`. Document the rationale.
+`copy`, `delete`, `diff`, `validate`, `export`, `template`, `history`) take env
+as positional; var-level ops (`set`, `get`, `rm`) plus the version ops
+(`rollback`, `squash`) use `-e <env>` with default `"default"`. Document the
+rationale.
+
+**RESOLVED** (option b) — §6.1 now documents the var-level vs env-level split
+with the rationale in §6.1.1, and every §6.3 detail block matches the registered
+command shapes. No CLI behavior changed. Note: `rollback` is `-e`-based (a
+version op), correcting this item's earlier draft which grouped it with the
+env-positional commands. Covers §16.1, §16.2, and §16.3.
 
 ### 16.2 `env get <key>` rejects a second positional
 
@@ -1663,7 +1780,8 @@ or — worse — makes the test pass against fs-extra while production drifts.
 
 ## Appendix C: Changelog
 
-| Date       | Revision | Author  | Changes                                                                                  |
-| ---------- | -------- | ------- | ---------------------------------------------------------------------------------------- |
-| 2026-05-30 | 1        | wbenzid | Initial draft                                                                            |
-| 2026-05-26 | 2        | wbenzid | Add §16 Known Issues & Pending Reconciliations (8 items from v0.1.0-rc.5 e2e validation) |
+| Date       | Revision | Author  | Changes                                                                                                                                                           |
+| ---------- | -------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-05-30 | 1        | wbenzid | Initial draft                                                                                                                                                     |
+| 2026-05-26 | 2        | wbenzid | Add §16 Known Issues & Pending Reconciliations (8 items from v0.1.0-rc.5 e2e validation)                                                                          |
+| 2026-06-06 | 3        | wbenzid | Codify var-level vs env-level command split (§6.1, §6.1.1); align all §6.3 usage/examples and §7 flows to the implementation; mark §16.1–16.3 RESOLVED (option b) |
