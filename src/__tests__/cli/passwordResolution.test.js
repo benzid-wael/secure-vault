@@ -1,7 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
-import fsExtra from 'fs-extra';
 import os from 'os';
 import path from 'path';
 
@@ -18,7 +17,7 @@ import {
   readPasswordStdin,
   hasNonInteractivePassword,
   resolvePassword,
-} from '../../../bin/commands/env.js';
+} from '../../utils/password.js';
 
 describe('stripTrailingNewline', () => {
   it('strips a single LF', () => {
@@ -233,13 +232,12 @@ describe('readPasswordStdin', () => {
 
   it('reads fd 0 and strips a single trailing newline', () => {
     // Stub fd-0 reads to deterministic content; readPasswordStdin reads stdin
-    // via fs.readFileSync(0, 'utf8').
-    const spy = vi
-      .spyOn(fsExtra, 'readFileSync')
-      .mockImplementation((target) => {
-        if (target === 0) return 'stdinpw\n';
-        throw new Error(`unexpected readFileSync target: ${target}`);
-      });
+    // via fs.readFileSync(0, 'utf8') — spy on the same `fs` module production
+    // imports (SPEC.md §16.8), not fs-extra.
+    const spy = vi.spyOn(fs, 'readFileSync').mockImplementation((target) => {
+      if (target === 0) return 'stdinpw\n';
+      throw new Error(`unexpected readFileSync target: ${target}`);
+    });
     try {
       expect(readPasswordStdin()).toBe('stdinpw');
       expect(spy).toHaveBeenCalledWith(0, 'utf8');
@@ -249,12 +247,10 @@ describe('readPasswordStdin', () => {
   });
 
   it('treats empty stdin as an empty string', () => {
-    const spy = vi
-      .spyOn(fsExtra, 'readFileSync')
-      .mockImplementation((target) => {
-        if (target === 0) return '';
-        throw new Error(`unexpected readFileSync target: ${target}`);
-      });
+    const spy = vi.spyOn(fs, 'readFileSync').mockImplementation((target) => {
+      if (target === 0) return '';
+      throw new Error(`unexpected readFileSync target: ${target}`);
+    });
     try {
       expect(readPasswordStdin()).toBe('');
     } finally {
