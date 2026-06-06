@@ -124,6 +124,34 @@ jobs:
           find artifacts -type f -exec cp {} release/ \;
           ls -la release
 
+      - name: Generate checksums
+        # SHA-256 for every artifact (all platforms) so users can verify
+        # integrity. This is the baseline; the GPG step below adds authenticity.
+        working-directory: release
+        run: |
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: GPG-sign checksums
+        # Authenticity for the checksum manifest. Skipped automatically when no
+        # signing key is configured, so the release never fails on its absence.
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        working-directory: release
+        run: |
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "GPG_PRIVATE_KEY not set — skipping GPG signature (checksums still attached)."
+            exit 0
+          fi
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          # Produce a detached, armored signature: SHA256SUMS.asc
+          gpg --batch --yes --pinentry-mode loopback \
+            ${GPG_PASSPHRASE:+--passphrase "$GPG_PASSPHRASE"} \
+            --armor --detach-sign --output SHA256SUMS.asc SHA256SUMS
+          gpg --verify SHA256SUMS.asc SHA256SUMS
+          echo "Signed SHA256SUMS -> SHA256SUMS.asc"
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:

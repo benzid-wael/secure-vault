@@ -1,12 +1,24 @@
 # Code Signing
 
-Releases currently ship **unsigned** (see the bypass steps in the README). This
-guide explains how to sign and notarize the builds so users no longer see
-"unidentified developer" / SmartScreen warnings.
+The release ships **SHA-256 checksums for every artifact by default** and, when
+a GPG key is configured, a **GPG signature** over those checksums — both free.
+The macOS GUI/installers and Windows installers still ship **unsigned** in the
+OS-trust sense (see the bypass steps in the README); this guide explains how to
+add the paid signing/notarization that removes the "unidentified developer" /
+SmartScreen warnings.
 
-Signing is **optional** and requires paid certificates. The release workflow
-works without any of this — it only signs when the relevant secrets are
-present. Set up one platform at a time; they are independent.
+> **There is no free way to remove the macOS Gatekeeper or Windows SmartScreen
+> warning.** Those warnings come from OS trust chains rooted in paid CAs (Apple
+> Developer Program; Windows OV/EV CAs). Free options — checksums, GPG, ad-hoc
+> codesign, self-signed certs — provide **integrity / authenticity** (proof the
+> file was not tampered with), never **trust** (the OS still warns). Anyone
+> claiming otherwise is wrong, and a self-signed Windows cert is _worse_ than
+> none — it reads as malware. Treat the warning as the cost of free
+> distribution, and give users checksums to verify integrity regardless.
+
+Paid signing is **optional**. The release workflow works without any of it — it
+only signs when the relevant secrets are present. Set up one platform at a time;
+they are independent.
 
 > The project uses `electron-builder` 24.13. All signing is driven by
 > environment variables / secrets — no plaintext credentials live in the repo.
@@ -15,11 +27,11 @@ present. Set up one platform at a time; they are independent.
 
 ## Overview
 
-| Platform | What you need                                    | Cost (approx.)  |
-| -------- | ------------------------------------------------ | --------------- |
-| macOS    | Apple Developer Program + Developer ID cert      | $99 / year      |
-| Windows  | OV or EV code-signing cert (on HSM/token)        | $200–600 / year |
-| Linux    | Nothing required; optionally GPG-sign / checksum | free            |
+| Platform | Free (default)                      | OS warning removed? | Paid upgrade                                                    | Cost (approx.)   |
+| -------- | ----------------------------------- | ------------------- | --------------------------------------------------------------- | ---------------- |
+| Linux    | checksums + GPG (default)           | n/a (no Gatekeeper) | —                                                               | free             |
+| macOS    | checksums; optional ad-hoc codesign | ❌ no               | Apple Developer Program + Developer ID + notarization           | $99 / year       |
+| Windows  | checksums                           | ❌ no               | OV or EV code-signing cert (HSM/token) or Azure Trusted Signing | ~$120–600 / year |
 
 Two distinct things get signed: the **GUI** (Electron, via electron-builder)
 and the **standalone CLI binaries** (Bun-compiled, signed manually). The CLI
@@ -32,6 +44,13 @@ section is at the end.
 Signing a Mac app for distribution outside the App Store needs a **Developer ID
 Application** certificate plus **notarization** (Apple scans the app and staples
 a ticket). electron-builder does both automatically when configured.
+
+> **Free ad-hoc alternative (does _not_ remove the warning).** `codesign -s -`
+> applies an ad-hoc signature with no identity. It gives the binary a stable
+> code signature — useful on Apple Silicon, where unsigned/modified binaries can
+> be killed as "damaged" — but Gatekeeper still shows "unidentified developer",
+> so users bypass it the same way. It is a robustness nicety, not a trust
+> solution. The genuine fix is the paid Developer ID path below.
 
 ### 1. Get the certificate
 
@@ -185,17 +204,65 @@ portable targets automatically when `CSC_LINK` is present.
 
 ---
 
-## Linux
+## Linux (default — checksums + GPG)
 
-`.AppImage` and `.deb` are not code-signed in the macOS/Windows sense. Common
-practice is to publish **SHA-256 checksums** alongside the artifacts and,
-optionally, **GPG-sign** them so users can verify integrity. To add checksums to
-the release, generate them in the `release` job before attaching files:
+Linux has no Gatekeeper/SmartScreen equivalent, so there is nothing to "sign
+away". The free, standard practice — and the project's **default** — is to ship
+a **SHA-256 checksum manifest** for every artifact and, when a key is available,
+a **detached GPG signature** over that manifest so users can verify both
+integrity and authenticity.
 
-```yaml
-- run: |
-    cd release
-    sha256sum * > SHA256SUMS
+Both are produced by the `release` job in
+[`.github/workflows/release.yml`](../.github/workflows/release.yml):
+
+- **`SHA256SUMS`** — always generated, covers every artifact (Linux, macOS, and
+  Windows alike).
+- **`SHA256SUMS.asc`** — a detached, armored GPG signature of `SHA256SUMS`.
+  Generated only when the signing secrets are present; the step skips cleanly
+  otherwise so the release never fails on a missing key.
+
+### Enable GPG signing
+
+1. Generate a signing key locally (skip if you already have one):
+
+   ```bash
+   gpg --batch --gen-key <<EOF
+   Key-Type: eddsa
+   Key-Curve: ed25519
+   Name-Real: Secure Vault Releases
+   Name-Email: releases@example.com
+   Expire-Date: 0
+   %no-protection
+   EOF
+   ```
+
+2. Export the **private** key and add it as the `GPG_PRIVATE_KEY` secret:
+
+   ```bash
+   gpg --armor --export-secret-keys releases@example.com   # paste into the secret
+   ```
+
+3. If the key has a passphrase, also set `GPG_PASSPHRASE`. (The example above
+   uses `%no-protection`, so no passphrase is needed.)
+
+4. Publish the **public** key (export with `gpg --armor --export`) somewhere
+   users can fetch it — the repo README, a keyserver, or the release notes — so
+   they can verify.
+
+| Secret            | Value                                        |
+| ----------------- | -------------------------------------------- |
+| `GPG_PRIVATE_KEY` | armored private key (`--export-secret-keys`) |
+| `GPG_PASSPHRASE`  | key passphrase _(only if the key has one)_   |
+
+### How users verify
+
+```bash
+# integrity (always available)
+sha256sum -c SHA256SUMS
+
+# authenticity (when SHA256SUMS.asc is present)
+gpg --import release-pubkey.asc          # one-time, from a trusted source
+gpg --verify SHA256SUMS.asc SHA256SUMS
 ```
 
 ---
@@ -219,7 +286,8 @@ the warnings are easy to bypass.
 
 ## Checklist
 
-- [ ] macOS: Developer ID cert exported, notarization creds, secrets set, `build.mac` updated, entitlements file added, workflow env wired, `CSC_IDENTITY_AUTO_DISCOVERY` removed.
-- [ ] Windows: signing method chosen (Trusted Signing / HSM / legacy pfx), secrets set, workflow wired.
-- [ ] Linux: checksums (and optional GPG signature) published.
+- [x] Linux (default): `SHA256SUMS` always published; `SHA256SUMS.asc` published when `GPG_PRIVATE_KEY` is set.
+- [ ] GPG signing: key generated, `GPG_PRIVATE_KEY` (+ `GPG_PASSPHRASE` if any) secrets set, public key published for users.
+- [ ] macOS (paid): Developer ID cert exported, notarization creds, secrets set, `build.mac` updated, entitlements file added, workflow env wired, `CSC_IDENTITY_AUTO_DISCOVERY` removed.
+- [ ] Windows (paid): signing method chosen (Trusted Signing / HSM / legacy pfx), secrets set, workflow wired.
 - [ ] CLI binaries: signed/notarized, or bypass documented (current state).
