@@ -458,13 +458,47 @@ positionals (`set <key> <value>`). Examples throughout this document and in
 
 ### 6.2 Global Flags
 
-| Flag             | Default         | Description                                                         |
-| ---------------- | --------------- | ------------------------------------------------------------------- |
-| `--vault <path>` | _(auto-detect)_ | Path to `.env.vault` file                                           |
-| `--name <name>`  | _(dirname)_     | Logical vault name (resolves to `<app-data>/envs/<name>.env.vault`) |
-| `--password`     | _(prompt)_      | Password string (non-interactive)                                   |
-| `--json`         | `false`         | Output as JSON instead of human-readable                            |
-| `--quiet`        | `false`         | Suppress non-error output                                           |
+| Flag                    | Default         | Description                                                         |
+| ----------------------- | --------------- | ------------------------------------------------------------------- |
+| `--vault <path>`, `-v`  | _(auto-detect)_ | Path to `.env.vault` file                                           |
+| `--name <name>`, `-n`   | _(dirname)_     | Logical vault name (resolves to `<app-data>/envs/<name>.env.vault`) |
+| `--password <password>` | _(prompt)_      | Password string (non-interactive)                                   |
+| `--password-file <path>`| _(prompt)_      | Read the password from a file (one trailing newline stripped)       |
+| `--password-stdin`      | `false`         | Read the password from stdin (one trailing newline stripped)        |
+| `--json`                | `false`         | Output as JSON instead of human-readable                            |
+| `--quiet`               | `false`         | Suppress non-error output                                           |
+
+#### 6.2.1 Password Resolution
+
+The master password is resolved from the first available source, in this
+precedence order:
+
+| # | Source                  | Notes                                                          |
+| - | ----------------------- | -------------------------------------------------------------- |
+| 1 | `--password <password>` | Highest precedence. An empty string (`--password ""`) counts as provided. |
+| 2 | `--password-file <path>`| File contents, with a single trailing `\n` or `\r\n` stripped. |
+| 3 | `--password-stdin`      | Reads fd 0, with a single trailing newline stripped.           |
+| 4 | `VAULT_ENV_PASSWORD`    | Environment variable. A fallback, **not** subject to the mutual-exclusion rule below. |
+| 5 | Interactive prompt      | Masked, no echo (`@inquirer/password`). Used only when nothing above is set. |
+
+**Mutual exclusion.** At most one of the three explicit flags (`--password`,
+`--password-file`, `--password-stdin`) may be supplied. Passing two or more is a
+usage error. `VAULT_ENV_PASSWORD` is exempt — it is only consulted when no
+explicit flag is present, so combining it with a flag is allowed (the flag
+wins).
+
+**Failure modes and exit codes.** All password-resolution failures exit `1` and
+print to stderr (see Appendix B for the codes):
+
+| Condition                                              | Exit | stderr message                                                            |
+| ------------------------------------------------------ | ---- | ------------------------------------------------------------------------- |
+| Two or more explicit flags supplied                    | 1    | `Error: choose only one of --password, --password-file, --password-stdin` |
+| `--password-file` points at a missing/unreadable file  | 1    | `Error: cannot read password file "<path>": <detail>`                     |
+| `--password-stdin` with closed/errored stdin           | 1    | `Error: cannot read password from stdin: <detail>`                        |
+| Password resolved but wrong for the vault              | 1    | `ENV_VAULT_DECRYPT_FAILED` (from vault load, not resolution)              |
+
+> Note: all four currently use exit `1`. Distinct numeric exit codes per
+> failure class are a possible CI-hardening follow-up (tracked in §16.5).
 
 ### 6.3 Command Details
 
@@ -1276,8 +1310,12 @@ When `--inject file` or `--env-file` is used:
 ### 12.5 Password Prompt
 
 - Passwords are read via `@inquirer/password` (masked input, no echo).
-- Non-interactive mode (`--password`) reads from a file descriptor or env var
-  `VAULT_ENV_PASSWORD`, which should be set and unset immediately.
+- Non-interactive sources — `--password`, `--password-file`, `--password-stdin`,
+  and the `VAULT_ENV_PASSWORD` env var — are resolved by precedence; see §6.2.1
+  for the full order, mutual-exclusion rule, and exit codes.
+- `VAULT_ENV_PASSWORD` and `--password` expose the secret to the process table /
+  shell history; prefer `--password-file` (mode `600`) or `--password-stdin` in
+  CI, and unset the env var immediately after use.
 - Password is not logged, stored, or retained after the command completes.
 
 ### 12.6 Child Process Security
@@ -1669,6 +1707,13 @@ Appendix B (e.g. `PASSWORD_SOURCE_CONFLICT`, `PASSWORD_FILE_UNREADABLE`,
 `PASSWORD_STDIN_FAILED`). All three currently use exit 1 — consider distinct
 codes once a CI-hardening pass lands.
 
+**RESOLVED (docs)** — §6.2 now lists all three flags; §6.2.1 documents the
+precedence order, the mutual-exclusion rule (and `VAULT_ENV_PASSWORD`'s
+exemption from it), and the exit-code table; §12.5 cross-references it; and the
+three `PASSWORD_*` codes are in Appendix B. **Open:** all four conditions still
+exit `1` with a plain stderr string — wiring distinct numeric exit codes /
+emitting the symbolic codes is a deferred CI-hardening follow-up, not a doc gap.
+
 ### 16.6 `.env.vault` auto-discovery: walk-up + git-root semantics not in spec
 
 **Where seen:** §5.2 (Discovery Priority) lists `./.env.vault` and
@@ -1775,6 +1820,15 @@ or — worse — makes the test pass against fs-extra while production drifts.
 | `INJECTION_FAILED`         | `Failed to spawn child process: <details>`                              |
 | `FILE_WRITE_FAILED`        | `Failed to write env file at <path>: <details>`                         |
 | `VAULT_LOCKED`             | `Environment vault is locked. Run 'vault env unlock' first.`            |
+| `PASSWORD_SOURCE_CONFLICT` | `choose only one of --password, --password-file, --password-stdin`      |
+| `PASSWORD_FILE_UNREADABLE` | `cannot read password file "<path>": <detail>`                          |
+| `PASSWORD_STDIN_FAILED`    | `cannot read password from stdin: <detail>`                             |
+
+> **Status:** these are the canonical code _names_ and message patterns. The
+> current implementation prints the message to stderr and exits `1`; it does not
+> yet emit the symbolic code or a per-class numeric exit. The three `PASSWORD_*`
+> rows are documented here per §6.2.1; wiring distinct exit codes is a tracked
+> follow-up (§16.5).
 
 ---
 
@@ -1785,3 +1839,4 @@ or — worse — makes the test pass against fs-extra while production drifts.
 | 2026-05-30 | 1        | wbenzid | Initial draft                                                                                                                                                     |
 | 2026-05-26 | 2        | wbenzid | Add §16 Known Issues & Pending Reconciliations (8 items from v0.1.0-rc.5 e2e validation)                                                                          |
 | 2026-06-06 | 3        | wbenzid | Codify var-level vs env-level command split (§6.1, §6.1.1); align all §6.3 usage/examples and §7 flows to the implementation; mark §16.1–16.3 RESOLVED (option b) |
+| 2026-06-06 | 4        | wbenzid | Document password resolution (§6.2.1: precedence, mutual exclusion, exit codes); update §12.5; add `PASSWORD_*` codes to Appendix B; mark §16.5 RESOLVED (docs)   |
