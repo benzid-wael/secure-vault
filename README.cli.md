@@ -48,6 +48,7 @@ commands take the **environment name** as the argument.
 vault env init                   # create an environment vault for this project
 vault env import dev .env        # import a .env file into the "dev" environment
 vault env set API_KEY s3cr3t -e dev   # set a variable in "dev"
+vault env set API_KEY -e dev          # no value: edit in $EDITOR (previous value shown commented)
 vault env get API_KEY -e dev          # read it back
 vault env show dev               # show all variables in an environment
 vault env list                   # list environments in the vault

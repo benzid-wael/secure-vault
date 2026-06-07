@@ -15,6 +15,11 @@ import {
   parseAllowlist,
   secureDelete,
 } from './envRunHelpers.js';
+import {
+  buildEditorTemplate,
+  parseEditorContent,
+  openInEditor,
+} from './envEditHelpers.js';
 // Password-resolution helpers live in src/utils/password.js so they can be unit
 // tested without importing the CLI entry tree (SPEC.md §16.7). Imported here for
 // internal use and re-exported below for the command layer / existing importers.
@@ -105,6 +110,36 @@ async function resolveVaultPath(options) {
   }
 
   return vaultPath;
+}
+
+/**
+ * Interactive value entry for `env set KEY` (no value argument): open the
+ * user's editor on a private temp file showing the previous value as
+ * comments (SPEC.md §16). Returns the new value, or null to abort.
+ * The temp file lives in a 0700 mkdtemp dir, is created 0600, and is
+ * securely deleted afterwards — same hygiene as `env run --inject file`.
+ */
+async function editValueInEditor(key, envName, previousValue) {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vault-env-'));
+  const tmpFile = path.join(tmpDir, `${key}.txt`);
+
+  try {
+    await fs.writeFile(
+      tmpFile,
+      buildEditorTemplate(key, envName, previousValue),
+      { mode: 0o600 }
+    );
+    await openInEditor(tmpFile);
+    const content = await fs.readFile(tmpFile, 'utf-8');
+    return parseEditorContent(content);
+  } finally {
+    secureDelete(tmpFile);
+    try {
+      fs.rmdirSync(tmpDir);
+    } catch {
+      // Best-effort cleanup; the dir is private (0700) and empty-ish.
+    }
+  }
 }
 
 async function loadVault(options) {
@@ -261,7 +296,10 @@ export function registerEnvCommand(program) {
     .command('set')
     .description('Set an environment variable')
     .argument('<key>', 'Variable name')
-    .argument('<value>', 'Variable value')
+    .argument(
+      '[value]',
+      'Variable value (omit to edit interactively in $EDITOR)'
+    )
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
@@ -273,8 +311,33 @@ export function registerEnvCommand(program) {
     .option('-m, --message <text>', 'Version message')
     .action(async (key, value, options) => {
       try {
-        const { vaultPath, vaultPassword } = await loadVault(options);
+        if (value === undefined && !process.stdin.isTTY) {
+          console.log(
+            chalk.red(
+              'No value provided. Pass a value argument when running non-interactively.'
+            )
+          );
+          process.exit(1);
+        }
+
+        const { vaultPath, vaultPassword, vault } = await loadVault(options);
         const envName = options.env || 'default';
+
+        if (value === undefined) {
+          let previousValue;
+          try {
+            previousValue = vault.getActiveVersion(envName)?.vars?.[key];
+          } catch {
+            // Environment doesn't exist yet — treat as "no previous value".
+          }
+
+          value = await editValueInEditor(key, envName, previousValue);
+
+          if (value === null) {
+            console.log(chalk.yellow('Empty value — nothing changed.'));
+            return;
+          }
+        }
 
         const spinner = ora(`Setting ${key}...`).start();
 
