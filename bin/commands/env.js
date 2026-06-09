@@ -101,11 +101,13 @@ async function resolveVaultPath(options) {
       .pop()
       .replace(/[^a-z0-9_-]/gi, '_')
       .toLowerCase();
-    console.log(chalk.red('No vault found.'));
-    console.log(
+    console.error(chalk.red('No vault found.'));
+    console.error(
       chalk.yellow(`  Create one:  vault env init --name ${cwdName}`)
     );
-    console.log(chalk.yellow(`  Specify:     --vault <path> or --name <name>`));
+    console.error(
+      chalk.yellow(`  Specify:     --vault <path> or --name <name>`)
+    );
     process.exit(1);
   }
 
@@ -151,7 +153,7 @@ async function loadVault(options) {
   );
 
   if (!result.success) {
-    console.log(chalk.red(result.error));
+    console.error(chalk.red(result.error));
     process.exit(1);
   }
 
@@ -188,7 +190,7 @@ export function registerEnvCommand(program) {
             mask: true,
           });
           if (vaultPassword !== confirm) {
-            console.log(chalk.red('Passwords do not match.'));
+            console.error(chalk.red('Passwords do not match.'));
             process.exit(1);
           }
         }
@@ -312,7 +314,7 @@ export function registerEnvCommand(program) {
     .action(async (key, value, options) => {
       try {
         if (value === undefined && !process.stdin.isTTY) {
-          console.log(
+          console.error(
             chalk.red(
               'No value provided. Pass a value argument when running non-interactively.'
             )
@@ -361,7 +363,7 @@ export function registerEnvCommand(program) {
 
         spinner.succeed(chalk.green(`Set ${key} in "${envName}".`));
       } catch (error) {
-        console.log(chalk.red(error.message));
+        console.error(chalk.red(error.message));
         process.exit(1);
       }
     });
@@ -391,7 +393,7 @@ export function registerEnvCommand(program) {
         );
 
         if (!result.success) {
-          console.log(chalk.red(result.error));
+          console.error(chalk.red(result.error));
           process.exit(1);
         }
 
@@ -405,7 +407,7 @@ export function registerEnvCommand(program) {
           console.log(result.data.value);
         }
       } catch (error) {
-        console.log(chalk.red(error.message));
+        console.error(chalk.red(error.message));
         process.exit(1);
       }
     });
@@ -432,7 +434,7 @@ export function registerEnvCommand(program) {
         );
 
         if (!result.success) {
-          console.log(chalk.red(result.error));
+          console.error(chalk.red(result.error));
           process.exit(1);
         }
 
@@ -458,7 +460,7 @@ export function registerEnvCommand(program) {
 
         console.log();
       } catch (error) {
-        console.log(chalk.red(error.message));
+        console.error(chalk.red(error.message));
         process.exit(1);
       }
     });
@@ -482,7 +484,7 @@ export function registerEnvCommand(program) {
         );
 
         if (!result.success) {
-          console.log(chalk.red(result.error));
+          console.error(chalk.red(result.error));
           process.exit(1);
         }
 
@@ -505,7 +507,7 @@ export function registerEnvCommand(program) {
         }
         console.log();
       } catch (error) {
-        console.log(chalk.red(error.message));
+        console.error(chalk.red(error.message));
         process.exit(1);
       }
     });
@@ -574,7 +576,7 @@ export function registerEnvCommand(program) {
         );
 
         if (!result.success) {
-          console.log(chalk.red(result.error));
+          console.error(chalk.red(result.error));
           process.exit(1);
         }
 
@@ -589,7 +591,7 @@ export function registerEnvCommand(program) {
           console.log(result.data);
         }
       } catch (error) {
-        console.log(chalk.red(error.message));
+        console.error(chalk.red(error.message));
         process.exit(1);
       }
     });
@@ -723,14 +725,14 @@ export function registerEnvCommand(program) {
         );
 
         if (!result.success) {
-          console.log(chalk.red(result.error));
+          console.error(chalk.red(result.error));
           process.exit(1);
         }
 
         console.log(result.data);
         if (options.clip) await copyToClipboard(result.data, 'template');
       } catch (error) {
-        console.log(chalk.red(error.message));
+        console.error(chalk.red(error.message));
         process.exit(1);
       }
     });
@@ -757,7 +759,7 @@ export function registerEnvCommand(program) {
         );
 
         if (!result.success) {
-          console.log(chalk.red(result.error));
+          console.error(chalk.red(result.error));
           process.exit(1);
         }
 
@@ -788,7 +790,7 @@ export function registerEnvCommand(program) {
           console.log();
         }
       } catch (error) {
-        console.log(chalk.red(error.message));
+        console.error(chalk.red(error.message));
         process.exit(1);
       }
     });
@@ -896,7 +898,7 @@ export function registerEnvCommand(program) {
         );
 
         if (!result.success) {
-          console.log(chalk.red(result.error));
+          console.error(chalk.red(result.error));
           process.exit(1);
         }
 
@@ -929,7 +931,7 @@ export function registerEnvCommand(program) {
 
         console.log();
       } catch (error) {
-        console.log(chalk.red(error.message));
+        console.error(chalk.red(error.message));
         process.exit(1);
       }
     });
@@ -957,7 +959,7 @@ export function registerEnvCommand(program) {
         );
 
         if (!result.success) {
-          console.log(chalk.red(result.error));
+          console.error(chalk.red(result.error));
           process.exit(1);
         }
 
@@ -982,7 +984,7 @@ export function registerEnvCommand(program) {
         if (errors.length > 0) process.exit(1);
         if (warnings.length > 0) process.exit(options.strict ? 1 : 2);
       } catch (error) {
-        console.log(chalk.red(error.message));
+        console.error(chalk.red(error.message));
         process.exit(1);
       }
     });
@@ -1009,7 +1011,7 @@ export function registerEnvCommand(program) {
     )
     .action(async (envName, command, options) => {
       if (!command || command.length === 0) {
-        console.log(
+        console.error(
           chalk.red('No command specified. Usage: vault env run <env> -- <cmd>')
         );
         process.exit(1);
@@ -1017,13 +1019,13 @@ export function registerEnvCommand(program) {
 
       const mode = options.inject;
       if (!INJECT_MODES.includes(mode)) {
-        console.log(
+        console.error(
           chalk.red(`Invalid --inject mode "${mode}" (clean|merge|file)`)
         );
         process.exit(1);
       }
       if (mode === 'file' && !options.outFile) {
-        console.log(
+        console.error(
           chalk.red('--out-file <path> is required for --inject file')
         );
         process.exit(1);
@@ -1039,7 +1041,7 @@ export function registerEnvCommand(program) {
           'json'
         );
         if (!exportResult.success) {
-          console.log(chalk.red(exportResult.error));
+          console.error(chalk.red(exportResult.error));
           process.exit(1);
         }
 
@@ -1076,7 +1078,7 @@ export function registerEnvCommand(program) {
             err.code === 'ENOENT'
               ? `Command not found: ${command[0]}`
               : `Failed to run command: ${err.message}`;
-          console.log(chalk.red(msg));
+          console.error(chalk.red(msg));
           process.exit(127);
         });
 
@@ -1088,7 +1090,7 @@ export function registerEnvCommand(program) {
           process.exit(signal ? 1 : (code ?? 0));
         });
       } catch (error) {
-        console.log(chalk.red(error.message));
+        console.error(chalk.red(error.message));
         process.exit(1);
       }
     });

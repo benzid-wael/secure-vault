@@ -72,7 +72,7 @@ export async function resolvePassword(options, promptMessage) {
   ].filter(Boolean).length;
 
   if (explicit > 1) {
-    console.log(
+    console.error(
       chalk.red(
         'Error: choose only one of --password, --password-file, --password-stdin'
       )
@@ -86,7 +86,7 @@ export async function resolvePassword(options, promptMessage) {
     try {
       return readPasswordFile(options.passwordFile);
     } catch (err) {
-      console.log(
+      console.error(
         chalk.red(
           `Error: cannot read password file "${options.passwordFile}": ${err.message}`
         )
@@ -99,7 +99,7 @@ export async function resolvePassword(options, promptMessage) {
     try {
       return readPasswordStdin();
     } catch (err) {
-      console.log(
+      console.error(
         chalk.red(`Error: cannot read password from stdin: ${err.message}`)
       );
       process.exit(1);

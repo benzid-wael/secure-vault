@@ -116,6 +116,7 @@ describe('resolvePassword precedence', () => {
   const ORIGINAL = process.env.VAULT_ENV_PASSWORD;
   let exitSpy;
   let logSpy;
+  let errSpy;
   let dir;
 
   beforeEach(() => {
@@ -128,11 +129,16 @@ describe('resolvePassword precedence', () => {
       throw new Error(`process.exit:${code}`);
     });
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    // Errors must go to stderr (console.error), not stdout — see SPEC.md and
+    // the CLI error-stream contract. Spy on it so the error-path tests below
+    // can assert against the correct stream.
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
     exitSpy.mockRestore();
     logSpy.mockRestore();
+    errSpy.mockRestore();
     fs.rmSync(dir, { recursive: true, force: true });
     if (ORIGINAL === undefined) delete process.env.VAULT_ENV_PASSWORD;
     else process.env.VAULT_ENV_PASSWORD = ORIGINAL;
@@ -187,9 +193,11 @@ describe('resolvePassword precedence', () => {
     await expect(
       resolvePassword({ passwordFile: missing }, 'Enter password:')
     ).rejects.toThrow('process.exit:1');
-    expect(logSpy.mock.calls.flat().join('\n')).toMatch(
+    expect(errSpy.mock.calls.flat().join('\n')).toMatch(
       /cannot read password file/i
     );
+    // Nothing should have been written to stdout.
+    expect(logSpy).not.toHaveBeenCalled();
   });
 
   it('errors and exits when more than one explicit source is given', async () => {
@@ -201,9 +209,10 @@ describe('resolvePassword precedence', () => {
         'Enter password:'
       )
     ).rejects.toThrow('process.exit:1');
-    expect(logSpy.mock.calls.flat().join('\n')).toMatch(
+    expect(errSpy.mock.calls.flat().join('\n')).toMatch(
       /choose only one of --password, --password-file, --password-stdin/
     );
+    expect(logSpy).not.toHaveBeenCalled();
     expect(password).not.toHaveBeenCalled();
   });
 
