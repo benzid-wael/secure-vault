@@ -71,7 +71,7 @@ describe('passwordGenerator', () => {
         if (/[A-Z]/.test(password)) hasUpper = true;
         if (/[a-z]/.test(password)) hasLower = true;
         if (/[0-9]/.test(password)) hasNumber = true;
-        if (/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)) hasSymbol = true;
+        if (/[!@#$%^&*()_+\-=[\]{}|;:,.<>?]/.test(password)) hasSymbol = true;
 
         // If we have all types, break early
         if (hasUpper && hasLower && hasNumber && hasSymbol) break;

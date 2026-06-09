@@ -1,0 +1,28 @@
+{
+  // Loose, no-emit config used only by the CI "type check" step
+  // (`tsc --noEmit`). The project is plain JS/JSX, so this type-checks via
+  // inference and JSDoc with `checkJs`. It is intentionally non-strict and the
+  // CI step is report-only — it surfaces likely type bugs without gating.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "types": ["node", "vitest/globals"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["src/**/*.js", "src/**/*.jsx", "bin/**/*.js", "scripts/**/*.js"],
+  "exclude": ["node_modules", "build", "dist", "coverage"]
+}

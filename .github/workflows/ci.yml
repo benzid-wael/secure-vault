@@ -1,0 +1,77 @@
+name: CI
+
+# Regression gate that runs on every branch (and PR) so problems surface
+# before release. The release workflow (release.yml) stays tag-triggered and
+# handles packaging/publishing; this one never releases.
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history so diff coverage can compare against the base branch.
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check (report-only)
+        # The project is plain JS/JSX; tsc --checkJs surfaces likely type bugs
+        # but is not a gate yet. continue-on-error keeps it non-blocking while
+        # still annotating findings in the run.
+        continue-on-error: true
+        run: npm run typecheck
+
+      - name: Unit tests with coverage
+        run: npm run test:coverage
+
+      - name: Set up Python (for diff coverage)
+        if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Diff coverage (changed lines vs base)
+        # Only meaningful on feature branches / PRs — main has no base to diff.
+        # Fails if coverage on changed lines drops below the threshold, so new
+        # code stays tested even while the overall suite is still catching up.
+        if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
+        env:
+          BASE_REF: ${{ github.base_ref || 'main' }}
+        run: |
+          python -m pip install --quiet "diff-cover>=9"
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          diff-cover coverage/lcov.info \
+            --compare-branch="origin/$BASE_REF" \
+            --fail-under=80 \
+            --markdown-report=diff-coverage.md
+          # Surface the report in the job summary.
+          cat diff-coverage.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Build (no release)
+        run: npm run build:all
