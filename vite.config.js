@@ -70,11 +70,16 @@ export default defineConfig({
         'src/**/__tests__/**',
         'src/**/*.test.{js,jsx,ts,tsx}',
       ],
+      // Recalibrated for vitest 4: its v8 provider switched to AST-aware
+      // remapping, which reports ~11 points lower than vitest 1's
+      // v8-to-istanbul mapping on the same tests. Coverage did not regress —
+      // the measurement got stricter. These values sit just below the current
+      // accurate numbers; raise them as real test coverage improves.
       thresholds: {
-        lines: 79,
-        functions: 55,
-        statements: 79,
-        branches: 70,
+        lines: 68,
+        functions: 60,
+        statements: 67,
+        branches: 64,
       },
     },
   },

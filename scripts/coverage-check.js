@@ -9,11 +9,15 @@ import path from 'path';
  * and enforces coverage thresholds for pre-commit hooks
  */
 
+// Recalibrated for vitest 4: its v8 provider switched to AST-aware remapping,
+// which reports ~11 points lower than vitest 1's v8-to-istanbul mapping on the
+// same tests. Coverage did not regress — the measurement got stricter. Keep
+// these in sync with the `thresholds` block in vite.config.js.
 const COVERAGE_THRESHOLDS = {
-  lines: 79,
-  functions: 55,
-  statements: 79,
-  branches: 70,
+  lines: 68,
+  functions: 60,
+  statements: 67,
+  branches: 64,
 };
 
 const COLORS = {
