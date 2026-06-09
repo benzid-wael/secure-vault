@@ -52,6 +52,8 @@
     "package:win": "npm run build:all && electron-builder --win",
     "package:linux": "npm run build:all && electron-builder --linux",
     "package:cli": "node scripts/build-cli.js",
+    "release:tag": "bash scripts/release-tag.sh",
+    "release:promote": "bash scripts/npm-dist-tag.sh",
     "electron": "npm run start:prod",
     "electron-dev": "npm run dev:electron",
     "electron:build": "npm run build:all",
