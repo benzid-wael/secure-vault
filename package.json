@@ -20,6 +20,7 @@
   "files": [
     "bin/",
     "src/electron/",
+    "src/utils/",
     "README.md",
     "LICENSE"
   ],
