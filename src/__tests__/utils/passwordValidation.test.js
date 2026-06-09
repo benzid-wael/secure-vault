@@ -2,7 +2,7 @@
 import {
   getPasswordStrength,
   validatePasswordStrength,
-  getPasswordRequirements
+  getPasswordRequirements,
 } from '../../utils/passwordValidation';
 
 describe('passwordValidation', () => {
@@ -12,7 +12,7 @@ describe('passwordValidation', () => {
       expect(result).toEqual({
         strength: 'weak',
         color: '#f44336',
-        width: '25%'
+        width: '25%',
       });
     });
 
@@ -21,7 +21,7 @@ describe('passwordValidation', () => {
       expect(result).toEqual({
         strength: 'weak',
         color: '#f44336',
-        width: '25%'
+        width: '25%',
       });
     });
 
@@ -30,7 +30,7 @@ describe('passwordValidation', () => {
       expect(result).toEqual({
         strength: 'fair',
         color: '#ff9800',
-        width: '50%'
+        width: '50%',
       });
     });
 
@@ -39,7 +39,7 @@ describe('passwordValidation', () => {
       expect(result).toEqual({
         strength: 'good',
         color: '#2196f3',
-        width: '75%'
+        width: '75%',
       });
     });
 
@@ -48,7 +48,7 @@ describe('passwordValidation', () => {
       expect(result).toEqual({
         strength: 'strong',
         color: '#4caf50',
-        width: '100%'
+        width: '100%',
       });
     });
 
@@ -57,7 +57,7 @@ describe('passwordValidation', () => {
       expect(result).toEqual({
         strength: 'strong',
         color: '#4caf50',
-        width: '100%'
+        width: '100%',
       });
     });
   });
@@ -81,7 +81,7 @@ describe('passwordValidation', () => {
     it('should return error for weak password', () => {
       const result = validatePasswordStrength('password');
       expect(result).toEqual([
-        'Password is too weak. Please include a mix of uppercase, lowercase, numbers, and special characters'
+        'Password is too weak. Please include a mix of uppercase, lowercase, numbers, and special characters',
       ]);
     });
 
@@ -104,7 +104,7 @@ describe('passwordValidation', () => {
         'Mix of uppercase and lowercase letters',
         'At least one number',
         'At least one special character',
-        'Avoid common passwords'
+        'Avoid common passwords',
       ]);
     });
 

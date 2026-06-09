@@ -8,14 +8,15 @@ export const useSearchAndFilter = (entries) => {
   const filteredEntries = useMemo(() => {
     if (!entries) return [];
 
-    return entries.filter(entry => {
-      const matchesSearch = !searchTerm || 
+    return entries.filter((entry) => {
+      const matchesSearch =
+        !searchTerm ||
         entry.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         entry.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         entry.url?.toLowerCase().includes(searchTerm.toLowerCase());
 
-      const matchesCategory = !selectedCategory || 
-        entry.category === selectedCategory;
+      const matchesCategory =
+        !selectedCategory || entry.category === selectedCategory;
 
       return matchesSearch && matchesCategory;
     });
@@ -32,6 +33,6 @@ export const useSearchAndFilter = (entries) => {
     selectedCategory,
     setSelectedCategory,
     filteredEntries,
-    clearFilters
+    clearFilters,
   };
 };

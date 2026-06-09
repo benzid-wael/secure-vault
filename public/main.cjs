@@ -8,7 +8,7 @@ const { pathToFileURL } = require('url');
 const mainModulePath = path.join(__dirname, 'main.js');
 const mainModuleURL = pathToFileURL(mainModulePath).href;
 
-import(mainModuleURL).catch(error => {
+import(mainModuleURL).catch((error) => {
   console.error('Failed to load main module:', error);
   process.exit(1);
 });

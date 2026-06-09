@@ -10,21 +10,25 @@ const mockVaultEntries = [
     title: 'Gmail Account',
     username: 'user@gmail.com',
     password: 'SecurePass123!',
-    category: 'email'
+    category: 'email',
   },
   {
     id: '2',
     title: 'Facebook',
     username: 'john.doe',
     password: 'MyFacebookPass456@',
-    category: 'website'
-  }
+    category: 'website',
+  },
 ];
 
-const createMockVaultResult = (success = true, data = { entries: mockVaultEntries }, error = null) => ({
+const createMockVaultResult = (
+  success = true,
+  data = { entries: mockVaultEntries },
+  error = null
+) => ({
   success,
   data,
-  error
+  error,
 });
 
 const createMockEntry = (overrides = {}) => ({
@@ -33,7 +37,7 @@ const createMockEntry = (overrides = {}) => ({
   username: 'testuser',
   password: 'TestPass123!',
   category: 'general',
-  ...overrides
+  ...overrides,
 });
 
 describe('useEntryManagement', () => {
@@ -43,13 +47,13 @@ describe('useEntryManagement', () => {
   beforeEach(() => {
     // Reset all mocks before each test
     vi.clearAllMocks();
-    
+
     // Set up global electronAPI mock
     global.window.electronAPI = {
       loadVault: vi.fn(),
       addEntry: vi.fn(),
       updateEntry: vi.fn(),
-      deleteEntry: vi.fn()
+      deleteEntry: vi.fn(),
     };
   });
 
@@ -58,7 +62,7 @@ describe('useEntryManagement', () => {
   });
 
   it('should initialize with default values', () => {
-    const { result } = renderHook(() => 
+    const { result } = renderHook(() =>
       useEntryManagement(mockVaultName, mockPassword)
     );
 
@@ -73,10 +77,12 @@ describe('useEntryManagement', () => {
 
   describe('loadEntries', () => {
     it('should load entries successfully', async () => {
-      const mockResult = createMockVaultResult(true, { entries: mockVaultEntries });
+      const mockResult = createMockVaultResult(true, {
+        entries: mockVaultEntries,
+      });
       global.window.electronAPI.loadVault.mockResolvedValue(mockResult);
 
-      const { result } = renderHook(() => 
+      const { result } = renderHook(() =>
         useEntryManagement(mockVaultName, mockPassword)
       );
 
@@ -87,14 +93,21 @@ describe('useEntryManagement', () => {
       expect(result.current.entries).toEqual(mockVaultEntries);
       expect(result.current.loading).toBe(false);
       expect(result.current.error).toBe(null);
-      expect(global.window.electronAPI.loadVault).toHaveBeenCalledWith(mockVaultName, mockPassword);
+      expect(global.window.electronAPI.loadVault).toHaveBeenCalledWith(
+        mockVaultName,
+        mockPassword
+      );
     });
 
     it('should handle loading error', async () => {
-      const mockResult = createMockVaultResult(false, null, 'Failed to load vault');
+      const mockResult = createMockVaultResult(
+        false,
+        null,
+        'Failed to load vault'
+      );
       global.window.electronAPI.loadVault.mockResolvedValue(mockResult);
 
-      const { result } = renderHook(() => 
+      const { result } = renderHook(() =>
         useEntryManagement(mockVaultName, mockPassword)
       );
 
@@ -108,9 +121,11 @@ describe('useEntryManagement', () => {
     });
 
     it('should handle API exception', async () => {
-      global.window.electronAPI.loadVault.mockRejectedValue(new Error('Network error'));
+      global.window.electronAPI.loadVault.mockRejectedValue(
+        new Error('Network error')
+      );
 
-      const { result } = renderHook(() => 
+      const { result } = renderHook(() =>
         useEntryManagement(mockVaultName, mockPassword)
       );
 
@@ -124,12 +139,15 @@ describe('useEntryManagement', () => {
     });
 
     it('should set loading state during operation', async () => {
-      const mockResult = createMockVaultResult(true, { entries: mockVaultEntries });
-      global.window.electronAPI.loadVault.mockImplementation(() => 
-        new Promise(resolve => setTimeout(() => resolve(mockResult), 100))
+      const mockResult = createMockVaultResult(true, {
+        entries: mockVaultEntries,
+      });
+      global.window.electronAPI.loadVault.mockImplementation(
+        () =>
+          new Promise((resolve) => setTimeout(() => resolve(mockResult), 100))
       );
 
-      const { result } = renderHook(() => 
+      const { result } = renderHook(() =>
         useEntryManagement(mockVaultName, mockPassword)
       );
 
@@ -145,9 +163,7 @@ describe('useEntryManagement', () => {
     });
 
     it('should not load when required params are missing', async () => {
-      const { result } = renderHook(() => 
-        useEntryManagement('', '')
-      );
+      const { result } = renderHook(() => useEntryManagement('', ''));
 
       await act(async () => {
         await result.current.loadEntries();
@@ -162,12 +178,14 @@ describe('useEntryManagement', () => {
     it('should add entry successfully', async () => {
       const newEntry = createMockEntry({ title: 'New Entry' });
       const mockAddResult = createMockVaultResult(true);
-      const mockLoadResult = createMockVaultResult(true, { entries: [...mockVaultEntries, newEntry] });
-      
+      const mockLoadResult = createMockVaultResult(true, {
+        entries: [...mockVaultEntries, newEntry],
+      });
+
       global.window.electronAPI.addEntry.mockResolvedValue(mockAddResult);
       global.window.electronAPI.loadVault.mockResolvedValue(mockLoadResult);
 
-      const { result } = renderHook(() => 
+      const { result } = renderHook(() =>
         useEntryManagement(mockVaultName, mockPassword)
       );
 
@@ -177,16 +195,24 @@ describe('useEntryManagement', () => {
       });
 
       expect(addResult.success).toBe(true);
-      expect(global.window.electronAPI.addEntry).toHaveBeenCalledWith(mockVaultName, mockPassword, newEntry);
+      expect(global.window.electronAPI.addEntry).toHaveBeenCalledWith(
+        mockVaultName,
+        mockPassword,
+        newEntry
+      );
       expect(global.window.electronAPI.loadVault).toHaveBeenCalled();
     });
 
     it('should handle add entry failure', async () => {
       const newEntry = createMockEntry();
-      const mockResult = createMockVaultResult(false, null, 'Failed to add entry');
+      const mockResult = createMockVaultResult(
+        false,
+        null,
+        'Failed to add entry'
+      );
       global.window.electronAPI.addEntry.mockResolvedValue(mockResult);
 
-      const { result } = renderHook(() => 
+      const { result } = renderHook(() =>
         useEntryManagement(mockVaultName, mockPassword)
       );
 
@@ -204,7 +230,7 @@ describe('useEntryManagement', () => {
       window.electronAPI = undefined;
       const newEntry = createMockEntry();
 
-      const { result } = renderHook(() => 
+      const { result } = renderHook(() =>
         useEntryManagement(mockVaultName, mockPassword)
       );
 
@@ -221,14 +247,19 @@ describe('useEntryManagement', () => {
   describe('updateEntry', () => {
     it('should update entry successfully', async () => {
       const entryId = '1';
-      const updatedEntry = createMockEntry({ id: entryId, title: 'Updated Entry' });
+      const updatedEntry = createMockEntry({
+        id: entryId,
+        title: 'Updated Entry',
+      });
       const mockUpdateResult = createMockVaultResult(true);
-      const mockLoadResult = createMockVaultResult(true, { entries: [updatedEntry] });
-      
+      const mockLoadResult = createMockVaultResult(true, {
+        entries: [updatedEntry],
+      });
+
       global.window.electronAPI.updateEntry.mockResolvedValue(mockUpdateResult);
       global.window.electronAPI.loadVault.mockResolvedValue(mockLoadResult);
 
-      const { result } = renderHook(() => 
+      const { result } = renderHook(() =>
         useEntryManagement(mockVaultName, mockPassword)
       );
 
@@ -239,9 +270,9 @@ describe('useEntryManagement', () => {
 
       expect(updateResult.success).toBe(true);
       expect(global.window.electronAPI.updateEntry).toHaveBeenCalledWith(
-        mockVaultName, 
-        mockPassword, 
-        entryId, 
+        mockVaultName,
+        mockPassword,
+        entryId,
         updatedEntry
       );
       expect(global.window.electronAPI.loadVault).toHaveBeenCalled();
@@ -250,10 +281,14 @@ describe('useEntryManagement', () => {
     it('should handle update entry failure', async () => {
       const entryId = '1';
       const updatedEntry = createMockEntry({ id: entryId });
-      const mockResult = createMockVaultResult(false, null, 'Failed to update entry');
+      const mockResult = createMockVaultResult(
+        false,
+        null,
+        'Failed to update entry'
+      );
       global.window.electronAPI.updateEntry.mockResolvedValue(mockResult);
 
-      const { result } = renderHook(() => 
+      const { result } = renderHook(() =>
         useEntryManagement(mockVaultName, mockPassword)
       );
 
@@ -272,11 +307,11 @@ describe('useEntryManagement', () => {
       const entryId = '1';
       const mockDeleteResult = createMockVaultResult(true);
       const mockLoadResult = createMockVaultResult(true, { entries: [] });
-      
+
       global.window.electronAPI.deleteEntry.mockResolvedValue(mockDeleteResult);
       global.window.electronAPI.loadVault.mockResolvedValue(mockLoadResult);
 
-      const { result } = renderHook(() => 
+      const { result } = renderHook(() =>
         useEntryManagement(mockVaultName, mockPassword)
       );
 
@@ -287,8 +322,8 @@ describe('useEntryManagement', () => {
 
       expect(deleteResult.success).toBe(true);
       expect(global.window.electronAPI.deleteEntry).toHaveBeenCalledWith(
-        mockVaultName, 
-        mockPassword, 
+        mockVaultName,
+        mockPassword,
         entryId
       );
       expect(global.window.electronAPI.loadVault).toHaveBeenCalled();
@@ -296,10 +331,14 @@ describe('useEntryManagement', () => {
 
     it('should handle delete entry failure', async () => {
       const entryId = '1';
-      const mockResult = createMockVaultResult(false, null, 'Failed to delete entry');
+      const mockResult = createMockVaultResult(
+        false,
+        null,
+        'Failed to delete entry'
+      );
       global.window.electronAPI.deleteEntry.mockResolvedValue(mockResult);
 
-      const { result } = renderHook(() => 
+      const { result } = renderHook(() =>
         useEntryManagement(mockVaultName, mockPassword)
       );
 

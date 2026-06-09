@@ -14,7 +14,7 @@ export const getPasswordStrength = (password) => {
   if (/[A-Z]/.test(password)) score++;
   if (/[0-9]/.test(password)) score++;
   if (/[^A-Za-z0-9]/.test(password)) score++;
-  
+
   if (score < 3) return { strength: 'weak', color: '#f44336', width: '25%' };
   if (score < 4) return { strength: 'fair', color: '#ff9800', width: '50%' };
   if (score < 5) return { strength: 'good', color: '#2196f3', width: '75%' };
@@ -28,21 +28,23 @@ export const getPasswordStrength = (password) => {
  */
 export const validatePasswordStrength = (password) => {
   const errors = [];
-  
+
   if (!password) {
     errors.push('Password is required');
     return errors;
   }
-  
+
   if (password.length < 8) {
     errors.push('Password must be at least 8 characters long');
   }
-  
+
   const strength = getPasswordStrength(password);
   if (strength.strength === 'weak') {
-    errors.push('Password is too weak. Please include a mix of uppercase, lowercase, numbers, and special characters');
+    errors.push(
+      'Password is too weak. Please include a mix of uppercase, lowercase, numbers, and special characters'
+    );
   }
-  
+
   return errors;
 };
 
@@ -56,7 +58,7 @@ export const getPasswordRequirements = () => {
     'Mix of uppercase and lowercase letters',
     'At least one number',
     'At least one special character',
-    'Avoid common passwords'
+    'Avoid common passwords',
   ];
 };
 
@@ -65,6 +67,6 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     getPasswordStrength,
     validatePasswordStrength,
-    getPasswordRequirements
+    getPasswordRequirements,
   };
 }

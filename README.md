@@ -29,10 +29,10 @@ No need to clone the repo or install Node.
 
 ### Desktop app (GUI)
 
-| OS          | Download                                  |
-| ----------- | ----------------------------------------- |
-| **macOS**   | `.dmg` (installer) or `.zip` (portable)   |
-| **Windows** | `*-Setup.exe` (installer) or portable `.exe` |
+| OS          | Download                                         |
+| ----------- | ------------------------------------------------ |
+| **macOS**   | `.dmg` (installer) or `.zip` (portable)          |
+| **Windows** | `*-Setup.exe` (installer) or portable `.exe`     |
 | **Linux**   | `.AppImage` (portable) or `.deb` (Debian/Ubuntu) |
 
 > **Unsigned builds.** The app is not yet code-signed, so your OS will warn that
@@ -83,6 +83,7 @@ The CLI and the desktop app share the same encrypted vaults on disk.
 ### Setup
 
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/benzid-wael/secure-vault.git
    cd secure-vault

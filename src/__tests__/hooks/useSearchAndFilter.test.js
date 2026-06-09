@@ -10,7 +10,7 @@ const testEntries = [
     username: 'user@gmail.com',
     password: 'SecurePass123!',
     url: 'https://gmail.com',
-    category: 'email'
+    category: 'email',
   },
   {
     id: '2',
@@ -18,7 +18,7 @@ const testEntries = [
     username: 'john.doe',
     password: 'MyFacebookPass456@',
     url: 'https://facebook.com',
-    category: 'website'
+    category: 'website',
   },
   {
     id: '3',
@@ -26,7 +26,7 @@ const testEntries = [
     username: 'admin',
     password: 'WorkDB789#',
     url: 'https://company-db.com',
-    category: 'work'
+    category: 'work',
   },
   {
     id: '4',
@@ -34,12 +34,11 @@ const testEntries = [
     username: 'customer123',
     password: 'BankSecure999$',
     url: 'https://mybank.com',
-    category: 'finance'
-  }
+    category: 'finance',
+  },
 ];
 
 describe('useSearchAndFilter', () => {
-
   it('should initialize with default values', () => {
     const { result } = renderHook(() => useSearchAndFilter(testEntries));
 
@@ -197,13 +196,16 @@ describe('useSearchAndFilter', () => {
 
     expect(result.current.filteredEntries).toHaveLength(1);
 
-    const newEntries = [...testEntries, {
-      id: '5',
-      title: 'Gmail Work',
-      username: 'work@gmail.com',
-      password: 'WorkPass123!',
-      category: 'work'
-    }];
+    const newEntries = [
+      ...testEntries,
+      {
+        id: '5',
+        title: 'Gmail Work',
+        username: 'work@gmail.com',
+        password: 'WorkPass123!',
+        category: 'work',
+      },
+    ];
 
     rerender({ entries: newEntries });
 

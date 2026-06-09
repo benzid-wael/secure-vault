@@ -2,7 +2,7 @@
 import {
   generatePassword,
   getPasswordGenerationOptions,
-  validatePasswordOptions
+  validatePasswordOptions,
 } from '../../utils/passwordGenerator';
 
 describe('passwordGenerator', () => {
@@ -23,7 +23,7 @@ describe('passwordGenerator', () => {
         includeUppercase: true,
         includeLowercase: false,
         includeNumbers: false,
-        includeSymbols: false
+        includeSymbols: false,
       });
       expect(password).toHaveLength(10);
       expect(password).toMatch(/^[A-Z]+$/);
@@ -34,7 +34,7 @@ describe('passwordGenerator', () => {
         includeUppercase: false,
         includeLowercase: true,
         includeNumbers: false,
-        includeSymbols: false
+        includeSymbols: false,
       });
       expect(password).toHaveLength(10);
       expect(password).toMatch(/^[a-z]+$/);
@@ -45,7 +45,7 @@ describe('passwordGenerator', () => {
         includeUppercase: false,
         includeLowercase: false,
         includeNumbers: true,
-        includeSymbols: false
+        includeSymbols: false,
       });
       expect(password).toHaveLength(10);
       expect(password).toMatch(/^[0-9]+$/);
@@ -53,27 +53,30 @@ describe('passwordGenerator', () => {
 
     it('should generate password with mixed character types', () => {
       // Test multiple times to ensure consistency
-      let hasUpper = false, hasLower = false, hasNumber = false, hasSymbol = false;
-      
+      let hasUpper = false,
+        hasLower = false,
+        hasNumber = false,
+        hasSymbol = false;
+
       for (let i = 0; i < 5; i++) {
         const password = generatePassword(50, {
           includeUppercase: true,
           includeLowercase: true,
           includeNumbers: true,
-          includeSymbols: true
+          includeSymbols: true,
         });
-        
+
         expect(password).toHaveLength(50);
-        
+
         if (/[A-Z]/.test(password)) hasUpper = true;
         if (/[a-z]/.test(password)) hasLower = true;
         if (/[0-9]/.test(password)) hasNumber = true;
         if (/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)) hasSymbol = true;
-        
+
         // If we have all types, break early
         if (hasUpper && hasLower && hasNumber && hasSymbol) break;
       }
-      
+
       // With 5 attempts at 50 characters each, we should have all character types
       expect(hasUpper).toBe(true);
       expect(hasLower).toBe(true);
@@ -87,7 +90,7 @@ describe('passwordGenerator', () => {
         includeLowercase: true,
         includeNumbers: true,
         includeSymbols: false,
-        excludeSimilar: true
+        excludeSimilar: true,
       });
       // Should not contain similar looking characters
       expect(password).not.toMatch(/[il1Lo0O]/);
@@ -99,7 +102,7 @@ describe('passwordGenerator', () => {
           includeUppercase: false,
           includeLowercase: false,
           includeNumbers: false,
-          includeSymbols: false
+          includeSymbols: false,
         });
       }).toThrow('At least one character type must be selected');
     });
@@ -120,7 +123,7 @@ describe('passwordGenerator', () => {
         includeLowercase: true,
         includeNumbers: true,
         includeSymbols: true,
-        excludeSimilar: true
+        excludeSimilar: true,
       });
     });
 
@@ -138,7 +141,7 @@ describe('passwordGenerator', () => {
         includeUppercase: true,
         includeLowercase: true,
         includeNumbers: true,
-        includeSymbols: true
+        includeSymbols: true,
       });
       expect(result).toEqual({ valid: true });
     });
@@ -149,11 +152,11 @@ describe('passwordGenerator', () => {
         includeUppercase: false,
         includeLowercase: false,
         includeNumbers: false,
-        includeSymbols: false
+        includeSymbols: false,
       });
       expect(result).toEqual({
         valid: false,
-        error: 'At least one character type must be selected'
+        error: 'At least one character type must be selected',
       });
     });
 
@@ -163,11 +166,11 @@ describe('passwordGenerator', () => {
         includeUppercase: true,
         includeLowercase: true,
         includeNumbers: true,
-        includeSymbols: true
+        includeSymbols: true,
       });
       expect(result).toEqual({
         valid: false,
-        error: 'Password length must be between 4 and 128 characters'
+        error: 'Password length must be between 4 and 128 characters',
       });
     });
 
@@ -177,11 +180,11 @@ describe('passwordGenerator', () => {
         includeUppercase: true,
         includeLowercase: true,
         includeNumbers: true,
-        includeSymbols: true
+        includeSymbols: true,
       });
       expect(result).toEqual({
         valid: false,
-        error: 'Password length must be between 4 and 128 characters'
+        error: 'Password length must be between 4 and 128 characters',
       });
     });
 
@@ -191,7 +194,7 @@ describe('passwordGenerator', () => {
         includeUppercase: true,
         includeLowercase: false,
         includeNumbers: false,
-        includeSymbols: false
+        includeSymbols: false,
       });
       expect(result).toEqual({ valid: true });
     });
@@ -202,7 +205,7 @@ describe('passwordGenerator', () => {
         includeUppercase: true,
         includeLowercase: false,
         includeNumbers: false,
-        includeSymbols: false
+        includeSymbols: false,
       });
       expect(result).toEqual({ valid: true });
     });
