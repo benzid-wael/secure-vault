@@ -3,7 +3,7 @@
 > Feature: Securely manage, version, and inject environment variables from an encrypted
 > `.env.vault` file into development tools, build processes, and CI/CD pipelines.
 >
-> Status: **Draft** · Revision 1
+> Status: **v1.5 delivered** · Revision 6
 
 ---
 
@@ -1364,10 +1364,15 @@ Foundation  Developer     Composition    Agent & Mount   Integration     North S
                      MVP            Power User                       Vision
 ```
 
+> **Legend:** ✅ delivered · ◑ partial (see note) · ☐ not started. Status
+> reflects the current implementation as of Revision 6.
+
 ### 13.2 v0.5 — Foundation
 
 > **Goal**: Prove the encrypted env vault works. Basic CRUD, import from existing
 > `.env` files, clipboard copy.
+
+**Status:** ✅ Delivered.
 
 | Deliverable                            | Description                                                             |
 | -------------------------------------- | ----------------------------------------------------------------------- |
@@ -1396,22 +1401,22 @@ the vault, and `vault env get staging API_URL --clip` copies the value to clipbo
 > **Goal**: The primary workflow — `vault env run` — works. Versioning is reliable.
 > This is the first version suitable for daily use.
 
-| Deliverable                          | Description                                                   |
-| ------------------------------------ | ------------------------------------------------------------- | ----- | ---------------------------------------- |
-| `vault env run` with `--inject clean | merge                                                         | file` | Full CLI runner with all injection modes |
-| `--env-file` flag                    | Temp file creation and secure cleanup                         |
-| Environment versioning               | Multiple versions per env; `history`, `rollback`              |
-| `vault env squash`                   | Compress version history with `--keep`                        |
-| `vault env template`                 | `.env.example` export                                         |
-| `vault env validate`                 | Required keys check                                           |
-| `vault env diff`                     | Diff between two environments                                 |
-| `vault env change-password`          | Re-encrypt with new password                                  |
-| `vault env copy`                     | Duplicate an environment                                      |
-| `vault env rename`                   | Rename an environment                                         |
-| Temp file cleanup                    | Secure deletion (overwrite + unlink), orphan cleanup          |
-| Discovery                            | App-data-first, `--name` / `--vault` resolution               |
-| `--json` flag                        | Machine-readable output for `show`, `list`, `history`, `diff` |
-| Error messages                       | Clear messages for wrong password, missing env, missing key   |
+**Status:** ✅ Delivered, with two hardening follow-ups (◑ below).
+
+| Deliverable                               | Description                                                                                                                     |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| ✅ `vault env run` (`clean\|merge\|file`) | Full CLI runner with all injection modes (`--env-file` exposed as `--out-file`)                                                 |
+| ✅ Environment versioning                 | Multiple versions per env; `history`, `rollback`                                                                                |
+| ✅ `vault env squash`                     | Compress version history with `--keep`                                                                                          |
+| ✅ `vault env template`                   | `.env.example` export                                                                                                           |
+| ✅ `vault env validate`                   | Required keys check (expanded in v1.5)                                                                                          |
+| ✅ `vault env diff`                       | Diff between two environments                                                                                                   |
+| ✅ `vault env change-password`            | Re-encrypt with new password                                                                                                    |
+| ✅ `vault env copy` / `rename`            | Duplicate / rename an environment                                                                                               |
+| ◑ Temp file cleanup                       | Secure deletion done, but single-pass overwrite and **no orphan-scan** (SPEC §12.3 wants 3 passes + cleanup)                    |
+| ✅ Discovery                              | App-data-first, walk-up, `--name` / `--vault` resolution                                                                        |
+| ✅ `--json` flag                          | Machine-readable output for `show`, `list`, `history`, `diff`                                                                   |
+| ◑ Error messages                          | Missing env/key clear; **wrong-password vs corrupted not distinguished** and symbolic/numeric codes unwired (§16.5, Appendix B) |
 
 **Dependencies**: v0.5
 
@@ -1423,25 +1428,36 @@ the vault, and `vault env get staging API_URL --clip` copies the value to clipbo
 
 > **Goal**: Power-user features for complex projects with multiple environments.
 
-| Deliverable                      | Description                                                  |
-| -------------------------------- | ------------------------------------------------------------ |
-| `extends` / environment layering | `staging extends base` merge                                 |
-| Template refs `{{env:name/KEY}}` | Cross-environment references within the vault                |
-| Full validation engine           | Template resolution, cycle detection, extends validation     |
-| `vault env validate --strict`    | Warnings promoted to errors                                  |
-| App-data fallback path           | Auto-discovery to `~/.secure-vault/envs/<dirname>.env.vault` |
-| Environment `description` field  | Human-readable labels                                        |
-| `--message` on `set`             | Version messages for history clarity                         |
+**Status:** ✅ Delivered (`EnvironmentResolver` + backup safety net).
+
+| Deliverable                         | Description                                                                                                |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| ✅ `extends` / environment layering | `staging extends base` merge; set via `vault env extends`, `--extends` on `set`/`init`. `self` is reserved |
+| ✅ Template refs `{{env:name/KEY}}` | Cross-environment + `{{env:self/KEY}}` references, resolved on read by `run`/`export`/`get`/`diff`         |
+| ✅ Full validation engine           | Template resolution, cycle detection (template + extends), depth cap, aggregated `required`, secret-scan   |
+| ✅ `vault env validate --strict`    | Warnings promoted to errors (exit 0/1/2 per §10.2)                                                         |
+| ✅ App-data fallback path           | Auto-discovery to `<app-data>/envs/<dirname>.env.vault`                                                    |
+| ✅ Environment `description` field  | Human-readable labels                                                                                      |
+| ✅ `--message` on `set`             | Version messages for history clarity                                                                       |
 
 **Dependencies**: v1.0
 
-**Exit criteria**: A team can define `base → staging → production` with template refs and layering, validate all three, and run any of them.
+**Also delivered here (beyond the original scope):** write-time `<vault>.bak` +
+atomic rename so an interrupted save cannot corrupt the vault, a
+`<vault>.deleted.<ts>` snapshot on environment deletion (§5.4), and a fix for
+`export --format json` emitting `util.inspect` output instead of valid JSON.
+Deferred: rotating "keep last 5" backups (§15 Q4) and a `vault env restore`
+command (recovery is currently a manual `cp <vault>.bak <vault>`).
+
+**Exit criteria**: A team can define `base → staging → production` with template refs and layering, validate all three, and run any of them. ✅ Verified end-to-end.
 
 ---
 
 ### 13.5 v2.0 — Agent & Mount
 
 > **Goal**: Long-running dev server support with persistent file mounts.
+
+**Status:** ☐ Not started.
 
 | Deliverable                           | Description                                               |
 | ------------------------------------- | --------------------------------------------------------- |
@@ -1464,6 +1480,8 @@ the vault, and `vault env get staging API_URL --clip` copies the value to clipbo
 
 > **Goal**: Connect the env vault to the main vault and to external systems.
 
+**Status:** ☐ Not started.
+
 | Deliverable                      | Description                                                              |
 | -------------------------------- | ------------------------------------------------------------------------ |
 | `{{vault:...}}` cross-vault refs | Reference entries in the main password vault                             |
@@ -1482,6 +1500,8 @@ the vault, and `vault env get staging API_URL --clip` copies the value to clipbo
 ### 13.7 v3.0 — North Star (Vision)
 
 > **Goal**: Zero-overhead, zero-trust secrets management for the entire development lifecycle.
+
+**Status:** ☐ Not started.
 
 | Deliverable                    | Description                                                                 |
 | ------------------------------ | --------------------------------------------------------------------------- |
@@ -1604,6 +1624,13 @@ Questions that need resolution before implementation:
 | 4   | Backup strategy for `.env.vault`?                     | Timestamped backups on write, keep last N    | Keep last 5 backups            |
 | 5   | Should `vault env export` include comments?           | (a) No (b) Yes, from description fields      | (b) — useful for documentation |
 | 6   | Allowlist defaults: which system vars?                | `PATH`, `HOME`, `SHELL`, `USER`, `TMPDIR`    | As listed                      |
+
+> **Resolved by implementation (Rev 6):** Q2 → (a) — `required` is aggregated
+> across the extends chain (§9.5). Q4 → partial — writes keep a single
+> previous-good `.bak` with atomic rename, plus a `.deleted.<ts>` snapshot on
+> environment deletion; rotating "keep last N" is deferred. Q3/Q6 match the
+> implemented limits/allowlist. **Still open:** Q1 (multi-env `run`) and Q5
+> (`export` comments from `description`).
 
 ---
 
@@ -1863,10 +1890,11 @@ or — worse — makes the test pass against fs-extra while production drifts.
 
 ## Appendix C: Changelog
 
-| Date       | Revision | Author  | Changes                                                                                                                                                           |
-| ---------- | -------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-05-30 | 1        | wbenzid | Initial draft                                                                                                                                                     |
-| 2026-05-26 | 2        | wbenzid | Add §16 Known Issues & Pending Reconciliations (8 items from v0.1.0-rc.5 e2e validation)                                                                          |
-| 2026-06-06 | 3        | wbenzid | Codify var-level vs env-level command split (§6.1, §6.1.1); align all §6.3 usage/examples and §7 flows to the implementation; mark §16.1–16.3 RESOLVED (option b) |
-| 2026-06-06 | 4        | wbenzid | Document password resolution (§6.2.1: precedence, mutual exclusion, exit codes); update §12.5; add `PASSWORD_*` codes to Appendix B; mark §16.5 RESOLVED (docs)   |
-| 2026-06-06 | 5        | wbenzid | Document walk-up + git-root vault discovery (§5.2/§5.3); mark §16.6 RESOLVED. Fix duplicate §6.1 heading (now §6.1.1/6.1.2/6.1.3) and stale cross-refs            |
+| Date       | Revision | Author  | Changes                                                                                                                                                                                                                                                                                                   |
+| ---------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-05-30 | 1        | wbenzid | Initial draft                                                                                                                                                                                                                                                                                             |
+| 2026-05-26 | 2        | wbenzid | Add §16 Known Issues & Pending Reconciliations (8 items from v0.1.0-rc.5 e2e validation)                                                                                                                                                                                                                  |
+| 2026-06-06 | 3        | wbenzid | Codify var-level vs env-level command split (§6.1, §6.1.1); align all §6.3 usage/examples and §7 flows to the implementation; mark §16.1–16.3 RESOLVED (option b)                                                                                                                                         |
+| 2026-06-06 | 4        | wbenzid | Document password resolution (§6.2.1: precedence, mutual exclusion, exit codes); update §12.5; add `PASSWORD_*` codes to Appendix B; mark §16.5 RESOLVED (docs)                                                                                                                                           |
+| 2026-06-06 | 5        | wbenzid | Document walk-up + git-root vault discovery (§5.2/§5.3); mark §16.6 RESOLVED. Fix duplicate §6.1 heading (now §6.1.1/6.1.2/6.1.3) and stale cross-refs                                                                                                                                                    |
+| 2026-06-11 | 6        | wbenzid | Mark v1.5 Composition delivered (resolver: `extends` layering + `{{env:name/KEY}}`/`{{env:self/KEY}}` refs + full validation engine); add `.bak`/atomic-write + `.deleted.<ts>` (§5.4); reserve `self` env name (§4.5/§8); add milestone status legend + v0.5/v1.0/v2.x markers; note Q1/Q4 status in §15 |
