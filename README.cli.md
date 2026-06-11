@@ -60,8 +60,50 @@ vault env rollback 3 -e dev      # restore a previous version of "dev"
 vault env run dev -- npm start   # run a command with the env injected
 ```
 
-Other commands: `rm`, `delete`, `rename`, `squash`, `change-password`. Run
-`vault env <command> --help` for the full options of any command.
+#### Layering & template references
+
+Environments can **extend** a parent so shared variables live in one place, and
+values can **reference** another variable with `{{env:<name>/<KEY>}}` (use
+`_self` for the same environment). Both are resolved on read — by `export`,
+`run`, `get`, `diff`, and `validate` — so the stored value keeps its reference
+and re-resolves whenever the source changes.
+
+```bash
+# Shared defaults in a "base" environment
+vault env set LOG_LEVEL info -e base --public
+vault env set PORT 3000 -e base --public --required
+
+# "staging" inherits base, then overrides. Any `set` creates the environment;
+# `extends` wires the parent (which must already exist; --none clears it).
+vault env set API_URL https://staging.example.com -e staging --public
+vault env extends staging base
+vault env set PORT 8080 -e staging --public           # override an inherited value
+
+# Reference another environment, or your own keys with _self.
+# --extends sets the parent in the same step as the write.
+vault env set --extends base DB_URL '{{env:staging/API_URL}}' -e dev
+vault env set ENDPOINT 'localhost:{{env:_self/PORT}}' -e dev   # PORT inherited from base
+
+vault env export staging --format json   # base keys merged in (PORT shows 8080)
+vault env validate dev                   # required keys aggregated across the chain; all refs must resolve
+```
+
+Layering and references support chains up to 5 deep; circular `extends`,
+circular references, and missing keys are reported as validation errors.
+
+Wire layering up front at import time (import every environment in the chain):
+
+```bash
+vault env init --env base:.env.base --env staging:.env.staging --extends staging:base
+```
+
+Other commands: `rm`, `delete`, `rename`, `copy`, `squash`, `extends`,
+`change-password`. Run `vault env <command> --help` for the full options of any
+command.
+
+> **Safety:** every write keeps a `<vault>.bak` of the previous good state and
+> writes atomically, so an interrupted save can never corrupt the vault.
+> Deleting an environment also leaves a timestamped `<vault>.deleted.<ts>` copy.
 
 ## Where data is stored
 
