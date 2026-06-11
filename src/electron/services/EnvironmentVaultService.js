@@ -2,7 +2,15 @@ import fs from 'fs-extra';
 import path from 'path';
 
 import { CryptographyService } from './CryptographyService.js';
+import { EnvironmentResolver } from './EnvironmentResolver.js';
 import { EnvironmentVault } from '../models/EnvironmentVault.js';
+
+/**
+ * Heuristic patterns for values that look like secrets accidentally left in a
+ * non-required (and likely non-sensitive) variable (SPEC §10.1). Warning-only.
+ */
+const SUSPICIOUS_VALUE_RE =
+  /-----BEGIN |sk_live_|AKIA[0-9A-Z]{16}|[0-9a-f]{64,}/;
 import { validatePasswordStrength } from '../utils/passwordValidation.js';
 import { getAppDataPath, getEnvsDir } from '../utils/appPaths.js';
 
@@ -25,8 +33,8 @@ export class EnvironmentVaultService {
     return resolvePath(this.getEnvsDir(), `${name}.env.vault`);
   }
 
-  static getBackupPath(name) {
-    return resolvePath(this.getEnvsDir(), `${name}.env.vault.bak`);
+  static getBackupPath(vaultPath) {
+    return `${vaultPath}.bak`;
   }
 
   static findGitRoot(startDir) {
@@ -204,7 +212,20 @@ export class EnvironmentVaultService {
       };
 
       await fs.ensureDir(path.dirname(vaultPath));
-      await fs.writeJSON(vaultPath, vaultFile, { spaces: 2 });
+
+      // Preserve the previous good state, then write atomically: the new
+      // content lands in a temp file and is renamed over the target only once
+      // fully written, so a crash mid-write can never corrupt the vault, and
+      // `<path>.bak` always holds the last good copy for manual recovery.
+      if (await fs.pathExists(vaultPath)) {
+        await fs.copy(vaultPath, this.getBackupPath(vaultPath), {
+          overwrite: true,
+        });
+      }
+
+      const tmpPath = `${vaultPath}.tmp`;
+      await fs.writeJSON(tmpPath, vaultFile, { spaces: 2 });
+      await fs.move(tmpPath, vaultPath, { overwrite: true });
 
       return { success: true };
     } catch (error) {
@@ -305,23 +326,12 @@ export class EnvironmentVaultService {
 
     try {
       const vault = loadResult.data;
-      const activeVersion = vault.getActiveVersion(envName);
+      const resolver = new EnvironmentResolver(vault);
+      // Resolves layering + template refs; throws if the key is absent (after
+      // inheritance) or a reference cannot be resolved.
+      const value = resolver.resolveValue(envName, key);
 
-      if (!activeVersion) {
-        return {
-          success: false,
-          error: `Environment '${envName}' has no versions`,
-        };
-      }
-
-      if (!(key in activeVersion.vars)) {
-        return {
-          success: false,
-          error: `Key '${key}' not found in environment '${envName}'`,
-        };
-      }
-
-      return { success: true, data: { key, value: activeVersion.vars[key] } };
+      return { success: true, data: { key, value } };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -430,7 +440,30 @@ export class EnvironmentVaultService {
 
     try {
       const vault = loadResult.data;
-      vault.removeEnvironment(envName);
+      vault.removeEnvironment(envName); // throws if the environment is missing
+
+      // Deleting an environment discards its entire version history, so keep a
+      // timestamped snapshot of the pre-delete vault alongside the rolling .bak.
+      if (await fs.pathExists(vaultPath)) {
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        await fs.copy(vaultPath, `${vaultPath}.deleted.${stamp}`, {
+          overwrite: true,
+        });
+      }
+
+      return this.saveVault(vaultPath, password, vault);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  static async setExtends(vaultPath, password, envName, parent) {
+    const loadResult = await this.loadVault(vaultPath, password);
+    if (!loadResult.success) return loadResult;
+
+    try {
+      const vault = loadResult.data;
+      vault.setExtends(envName, parent);
       return this.saveVault(vaultPath, password, vault);
     } catch (error) {
       return { success: false, error: error.message };
@@ -485,8 +518,12 @@ export class EnvironmentVaultService {
     try {
       const vault = loadResult.data;
       const activeVersion = vault.getActiveVersion(envName);
+      const resolver = new EnvironmentResolver(vault);
+      // Resolve layering + template refs; a broken reference throws and is
+      // surfaced as an error below (also covers `run`, which calls this).
+      const vars = resolver.resolveEnvironment(envName);
 
-      if (!activeVersion) {
+      if (!activeVersion && Object.keys(vars).length === 0) {
         return {
           success: false,
           error: `Environment '${envName}' has no versions`,
@@ -494,10 +531,10 @@ export class EnvironmentVaultService {
       }
 
       if (format === 'json') {
-        return { success: true, data: activeVersion.vars };
+        return { success: true, data: vars };
       }
 
-      const lines = Object.entries(activeVersion.vars).map(
+      const lines = Object.entries(vars).map(
         ([key, value]) => `${key}=${value}`
       );
 
@@ -613,16 +650,21 @@ export class EnvironmentVaultService {
         };
       }
 
-      const keysA = new Set(Object.keys(versionA.vars));
-      const keysB = new Set(Object.keys(versionB.vars));
+      // Compare the resolved (layered + template-resolved) views (SPEC §6.3).
+      const resolver = new EnvironmentResolver(vault);
+      const varsA = resolver.resolveEnvironment(envA);
+      const varsB = resolver.resolveEnvironment(envB);
+
+      const keysA = new Set(Object.keys(varsA));
+      const keysB = new Set(Object.keys(varsB));
 
       const added = [...keysB].filter((k) => !keysA.has(k));
       const removed = [...keysA].filter((k) => !keysB.has(k));
       const changed = [...keysA].filter(
-        (k) => keysB.has(k) && versionA.vars[k] !== versionB.vars[k]
+        (k) => keysB.has(k) && varsA[k] !== varsB[k]
       );
       const unchanged = [...keysA].filter(
-        (k) => keysB.has(k) && versionA.vars[k] === versionB.vars[k]
+        (k) => keysB.has(k) && varsA[k] === varsB[k]
       );
 
       return {
@@ -640,19 +682,34 @@ export class EnvironmentVaultService {
 
     try {
       const vault = loadResult.data;
-      // Throws if the environment does not exist; null if it has no versions.
+      // Throws if the environment does not exist.
       const activeVersion = vault.getActiveVersion(envName);
-      const vars = activeVersion ? activeVersion.vars : {};
-      const required = activeVersion ? activeVersion.required : [];
 
       const errors = [];
       const warnings = [];
 
-      for (const key of required) {
-        if (!(key in vars)) {
-          errors.push(`Missing required key: ${key}`);
-        } else if (vars[key] === '' || vars[key] == null) {
-          errors.push(`Required key is empty: ${key}`);
+      // Resolve layering + template refs first. Any resolution failure
+      // (missing ref, cycle, depth overflow, broken extends) is recorded as a
+      // validation error instead of crashing the command.
+      const resolver = new EnvironmentResolver(vault);
+      let vars = activeVersion ? activeVersion.vars : {};
+      let required = [];
+      let resolved = false;
+      try {
+        vars = resolver.resolveEnvironment(envName);
+        required = resolver.aggregateRequired(envName);
+        resolved = true;
+      } catch (err) {
+        errors.push(err.message);
+      }
+
+      if (resolved) {
+        for (const key of required) {
+          if (!(key in vars)) {
+            errors.push(`Missing required key: ${key}`);
+          } else if (vars[key] === '' || vars[key] == null) {
+            errors.push(`Required key is empty: ${key}`);
+          }
         }
       }
 
@@ -663,6 +720,15 @@ export class EnvironmentVaultService {
         if (!/^[A-Z_][A-Z0-9_]*$/.test(key)) {
           warnings.push(
             `Non-standard key name: "${key}" (expected UPPER_CASE)`
+          );
+        }
+        if (
+          typeof value === 'string' &&
+          !required.includes(key) &&
+          SUSPICIOUS_VALUE_RE.test(value)
+        ) {
+          warnings.push(
+            `Possible secret in non-required key "${key}" (looks like a private key or live token)`
           );
         }
       }

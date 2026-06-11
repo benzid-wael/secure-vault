@@ -82,6 +82,26 @@ export class EnvironmentVault {
     this.updated = new Date().toISOString();
   }
 
+  setExtends(name, parent) {
+    const env = this.#getEnv(name);
+
+    if (parent === null || parent === undefined) {
+      env.extends = null;
+      this.updated = new Date().toISOString();
+      return;
+    }
+
+    if (parent === name) {
+      throw new Error(`Environment '${name}' cannot extend itself`);
+    }
+    if (!this.environments[parent]) {
+      throw new Error(`Environment '${parent}' not found`);
+    }
+
+    env.extends = parent;
+    this.updated = new Date().toISOString();
+  }
+
   #getEnv(name) {
     const env = this.environments[name];
     if (!env) {
