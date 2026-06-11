@@ -314,6 +314,7 @@ v2 (or vice versa).
 ### 4.5 Naming Constraints
 
 - Environment names: `[a-z0-9][a-z0-9_-]*` (lowercase, no leading/trailing hyphens)
+- Reserved environment names (case-insensitive): `self` — collides with the `{{env:self/KEY}}` self-reference keyword (§8.2)
 - Key names: `[A-Z_][A-Z0-9_]*` (uppercase convention, enforced by validation)
 - Max environments per vault: 100
 - Max versions per environment: 1000 (squash to compress)
@@ -1095,7 +1096,7 @@ segment = [a-zA-Z0-9._-]+
 | Pattern                          | Resolution Target                         | Scope |
 | -------------------------------- | ----------------------------------------- | ----- |
 | `{{env:name/VAR_NAME}}`          | Another environment's resolved `VAR_NAME` | v1    |
-| `{{env:_self/VAR_NAME}}`         | Same environment's resolved `VAR_NAME`    | v1    |
+| `{{env:self/VAR_NAME}}`          | Same environment's resolved `VAR_NAME`    | v1    |
 | `{{vault:entries/<id>/<field>}}` | Main vault entry's field                  | v2+   |
 | `{{vault:meta/username}}`        | Vault metadata                            | v2+   |
 
@@ -1106,7 +1107,7 @@ segment = [a-zA-Z0-9._-]+
 3. **Recursion**: Values are scanned for `{{...}}` patterns. If a resolved value itself contains a ref, resolve again (max depth = 5).
 4. **Cycle detection**: A cycle (A → B → A) is detected and reported as an error.
 5. **Forward refs**: Allowed. Environment B can reference environment A even if A is defined after B in the file.
-6. **Self-refs**: `{{env:_self/KEY}}` allows aliasing within the same env. Forms a trivial cycle if KEY references itself — this is detected and blocked.
+6. **Self-refs**: `{{env:self/KEY}}` allows aliasing within the same env. Forms a trivial cycle if KEY references itself — this is detected and blocked. `self` is a reserved environment name (see §4.5) so it can never be shadowed by a real environment.
 7. **Missing source**: If `{{env:MISSING/KEY}}` references a non-existent environment, fail with `"Environment 'MISSING' not found"`.
 8. **Missing key**: If `{{env:staging/MISSING}}` references a key not in staging, fail with `"Key 'MISSING' not found in environment 'staging'"`.
 

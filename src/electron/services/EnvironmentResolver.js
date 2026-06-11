@@ -10,7 +10,7 @@
  * when a value is consumed (`run`, `export`, `get`, `diff`, `validate`).
  */
 
-/** `{{env:SRC/KEY}}` where SRC is an env name or `_self`. Segments per §8.1. */
+/** `{{env:SRC/KEY}}` where SRC is an env name or `self`. Segments per §8.1. */
 const REF_RE = /\{\{\s*env:([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)\s*\}\}/g;
 
 /** Max `extends` chain length (§9.2) and max template recursion depth (§8.3). */
@@ -67,7 +67,7 @@ export class EnvironmentResolver {
 
   /**
    * Resolve every `{{env:.../...}}` in a single value string. `selfEnv` is the
-   * environment the value belongs to (the target of `_self`). `visited` holds
+   * environment the value belongs to (the target of `self`). `visited` holds
    * the ref keys currently on the resolution stack for cycle detection.
    */
   #resolveString(value, selfEnv, visited, depth) {
@@ -79,7 +79,7 @@ export class EnvironmentResolver {
     }
 
     return value.replace(REF_RE, (_match, src, key) => {
-      const targetEnv = src === '_self' ? selfEnv : src;
+      const targetEnv = src === 'self' ? selfEnv : src;
       const refKey = `env:${targetEnv}/${key}`;
 
       if (visited.has(refKey)) {

@@ -64,7 +64,7 @@ vault env run dev -- npm start   # run a command with the env injected
 
 Environments can **extend** a parent so shared variables live in one place, and
 values can **reference** another variable with `{{env:<name>/<KEY>}}` (use
-`_self` for the same environment). Both are resolved on read — by `export`,
+`self` for the same environment). Both are resolved on read — by `export`,
 `run`, `get`, `diff`, and `validate` — so the stored value keeps its reference
 and re-resolves whenever the source changes.
 
@@ -79,10 +79,10 @@ vault env set API_URL https://staging.example.com -e staging --public
 vault env extends staging base
 vault env set PORT 8080 -e staging --public           # override an inherited value
 
-# Reference another environment, or your own keys with _self.
+# Reference another environment, or your own keys with self.
 # --extends sets the parent in the same step as the write.
 vault env set --extends base DB_URL '{{env:staging/API_URL}}' -e dev
-vault env set ENDPOINT 'localhost:{{env:_self/PORT}}' -e dev   # PORT inherited from base
+vault env set ENDPOINT 'localhost:{{env:self/PORT}}' -e dev   # PORT inherited from base
 
 vault env export staging --format json   # base keys merged in (PORT shows 8080)
 vault env validate dev                   # required keys aggregated across the chain; all refs must resolve

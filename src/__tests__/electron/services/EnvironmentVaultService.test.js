@@ -466,6 +466,46 @@ describe('EnvironmentVaultService', () => {
     });
   });
 
+  describe('reserved environment names', () => {
+    it('rejects creating an environment named "self"', () => {
+      const vault = new EnvironmentVault();
+      expect(() => vault.addEnvironment('self')).toThrow(/reserved/i);
+    });
+
+    it('rejects "self" case-insensitively', () => {
+      const vault = new EnvironmentVault();
+      expect(() => vault.addEnvironment('SELF')).toThrow(/reserved/i);
+    });
+
+    it('rejects renaming an environment to "self"', () => {
+      const vault = new EnvironmentVault();
+      vault.addEnvironment('dev');
+      vault.addVersion('dev', { A: '1' });
+      expect(() => vault.renameEnvironment('dev', 'self')).toThrow(/reserved/i);
+    });
+
+    it('blocks a "self" environment through the service (setEnv auto-create)', async () => {
+      await EnvironmentVaultService.createVault(
+        testVaultPath,
+        testPassword,
+        new EnvironmentVault().toJSON()
+      );
+      const written = fsMock.writeJSON.mock.calls[0][1];
+      fsMock.pathExists.mockResolvedValue(true);
+      fsMock.readJSON.mockResolvedValue(written);
+
+      const result = await EnvironmentVaultService.setEnv(
+        testVaultPath,
+        testPassword,
+        'self',
+        'KEY',
+        'val'
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/reserved/i);
+    });
+  });
+
   describe('init', () => {
     it('should initialize empty vault when no environments provided', async () => {
       const result = await EnvironmentVaultService.init({

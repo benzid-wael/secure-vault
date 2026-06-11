@@ -288,36 +288,44 @@ export class EnvironmentVaultService {
     const loadResult = await this.loadVault(vaultPath, password);
     if (!loadResult.success) return loadResult;
 
-    const vault = loadResult.data;
+    try {
+      const vault = loadResult.data;
 
-    if (!vault.listEnvironmentNames().includes(envName)) {
-      vault.addEnvironment(envName);
+      if (!vault.listEnvironmentNames().includes(envName)) {
+        vault.addEnvironment(envName); // throws on a reserved name
+      }
+
+      const activeVersion = vault.getActiveVersion(envName);
+
+      const nonSensitive = activeVersion ? [...activeVersion.nonSensitive] : [];
+      const required = activeVersion ? [...activeVersion.required] : [];
+
+      if (isPublic && !nonSensitive.includes(key)) {
+        nonSensitive.push(key);
+      } else if (!isPublic) {
+        const idx = nonSensitive.indexOf(key);
+        if (idx !== -1) nonSensitive.splice(idx, 1);
+      }
+
+      // --required is additive: marking a key required persists it, and updating
+      // the value later (without the flag) does not silently un-require it.
+      if (isRequired && !required.includes(key)) {
+        required.push(key);
+      }
+
+      const currentVars = activeVersion ? { ...activeVersion.vars } : {};
+      currentVars[key] = value;
+
+      vault.addVersion(envName, currentVars, {
+        nonSensitive,
+        required,
+        message,
+      });
+
+      return this.saveVault(vaultPath, password, vault);
+    } catch (error) {
+      return { success: false, error: error.message };
     }
-
-    const activeVersion = vault.getActiveVersion(envName);
-
-    const nonSensitive = activeVersion ? [...activeVersion.nonSensitive] : [];
-    const required = activeVersion ? [...activeVersion.required] : [];
-
-    if (isPublic && !nonSensitive.includes(key)) {
-      nonSensitive.push(key);
-    } else if (!isPublic) {
-      const idx = nonSensitive.indexOf(key);
-      if (idx !== -1) nonSensitive.splice(idx, 1);
-    }
-
-    // --required is additive: marking a key required persists it, and updating
-    // the value later (without the flag) does not silently un-require it.
-    if (isRequired && !required.includes(key)) {
-      required.push(key);
-    }
-
-    const currentVars = activeVersion ? { ...activeVersion.vars } : {};
-    currentVars[key] = value;
-
-    vault.addVersion(envName, currentVars, { nonSensitive, required, message });
-
-    return this.saveVault(vaultPath, password, vault);
   }
 
   static async getEnv(vaultPath, password, envName, key) {

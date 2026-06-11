@@ -70,12 +70,12 @@ describe('EnvironmentResolver', () => {
       );
     });
 
-    it('resolves a {{env:_self/KEY}} ref against the layered map', () => {
+    it('resolves a {{env:self/KEY}} ref against the layered map', () => {
       const vault = buildVault((v) => {
         v.addEnvironment('dev');
         v.addVersion('dev', {
           API_URL: 'http://localhost',
-          ALIAS: '{{env:_self/API_URL}}',
+          ALIAS: '{{env:self/API_URL}}',
         });
       });
       const resolver = new EnvironmentResolver(vault);
@@ -85,7 +85,7 @@ describe('EnvironmentResolver', () => {
     it('resolves a ref that points at an inherited key', () => {
       const vault = layeredVault();
       // dev references PORT, which it inherits from base via staging.
-      vault.addVersion('dev', { ECHO: '{{env:_self/PORT}}' });
+      vault.addVersion('dev', { ECHO: '{{env:self/PORT}}' });
       const resolver = new EnvironmentResolver(vault);
       expect(resolver.resolveEnvironment('dev').ECHO).toBe('3000');
     });
@@ -124,7 +124,7 @@ describe('EnvironmentResolver', () => {
     it('detects a trivial self-reference cycle', () => {
       const vault = buildVault((v) => {
         v.addEnvironment('a');
-        v.addVersion('a', { X: '{{env:_self/X}}' });
+        v.addVersion('a', { X: '{{env:self/X}}' });
       });
       const resolver = new EnvironmentResolver(vault);
       expect(() => resolver.resolveEnvironment('a')).toThrow(/circular/i);
