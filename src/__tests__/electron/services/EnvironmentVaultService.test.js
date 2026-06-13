@@ -354,6 +354,158 @@ describe('EnvironmentVaultService', () => {
     });
   });
 
+  describe('saveVault backup + atomic write', () => {
+    it('backs up the previous file then writes via a temp file + rename', async () => {
+      fsMock.pathExists.mockResolvedValue(true); // an existing vault to preserve
+      const vault = createPopulatedVault(testEnvName, { KEY: 'value' });
+
+      const result = await EnvironmentVaultService.saveVault(
+        testVaultPath,
+        testPassword,
+        vault
+      );
+
+      expect(result.success).toBe(true);
+      expect(fsMock.copy).toHaveBeenCalledWith(
+        testVaultPath,
+        `${testVaultPath}.bak`,
+        { overwrite: true }
+      );
+      expect(fsMock.writeJSON).toHaveBeenCalledWith(
+        `${testVaultPath}.tmp`,
+        expect.objectContaining({ type: 'environment-vault' }),
+        { spaces: 2 }
+      );
+      expect(fsMock.move).toHaveBeenCalledWith(
+        `${testVaultPath}.tmp`,
+        testVaultPath,
+        { overwrite: true }
+      );
+    });
+
+    it('skips the backup when no vault exists yet', async () => {
+      fsMock.pathExists.mockResolvedValue(false);
+
+      const result = await EnvironmentVaultService.saveVault(
+        testVaultPath,
+        testPassword,
+        new EnvironmentVault()
+      );
+
+      expect(result.success).toBe(true);
+      expect(fsMock.copy).not.toHaveBeenCalled();
+    });
+
+    it('leaves the original intact when the atomic write fails', async () => {
+      fsMock.pathExists.mockResolvedValue(true);
+      fsMock.writeJSON.mockRejectedValue(new Error('Disk full'));
+
+      const result = await EnvironmentVaultService.saveVault(
+        testVaultPath,
+        testPassword,
+        new EnvironmentVault()
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Disk full');
+      // The temp file never finished, so it was never renamed over the target.
+      expect(fsMock.move).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('setExtends', () => {
+    async function seed(vault) {
+      await EnvironmentVaultService.createVault(
+        testVaultPath,
+        testPassword,
+        vault.toJSON()
+      );
+      const written = fsMock.writeJSON.mock.calls[0][1];
+      fsMock.pathExists.mockResolvedValue(true);
+      fsMock.readJSON.mockResolvedValue(written);
+    }
+
+    it('sets and persists the parent of an environment', async () => {
+      const vault = new EnvironmentVault();
+      vault.addEnvironment('base');
+      vault.addVersion('base', { PORT: '3000' });
+      vault.addEnvironment('staging');
+      vault.addVersion('staging', { API_URL: 'x' });
+      await seed(vault);
+
+      const result = await EnvironmentVaultService.setExtends(
+        testVaultPath,
+        testPassword,
+        'staging',
+        'base'
+      );
+      expect(result.success).toBe(true);
+
+      fsMock.readJSON.mockResolvedValue(fsMock.writeJSON.mock.calls[1][1]);
+      const load = await EnvironmentVaultService.loadVault(
+        testVaultPath,
+        testPassword
+      );
+      expect(load.data.environments.staging.extends).toBe('base');
+    });
+
+    it('fails when the parent does not exist', async () => {
+      const vault = new EnvironmentVault();
+      vault.addEnvironment('staging');
+      vault.addVersion('staging', { API_URL: 'x' });
+      await seed(vault);
+
+      const result = await EnvironmentVaultService.setExtends(
+        testVaultPath,
+        testPassword,
+        'staging',
+        'ghost'
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/not found/i);
+    });
+  });
+
+  describe('reserved environment names', () => {
+    it('rejects creating an environment named "self"', () => {
+      const vault = new EnvironmentVault();
+      expect(() => vault.addEnvironment('self')).toThrow(/reserved/i);
+    });
+
+    it('rejects "self" case-insensitively', () => {
+      const vault = new EnvironmentVault();
+      expect(() => vault.addEnvironment('SELF')).toThrow(/reserved/i);
+    });
+
+    it('rejects renaming an environment to "self"', () => {
+      const vault = new EnvironmentVault();
+      vault.addEnvironment('dev');
+      vault.addVersion('dev', { A: '1' });
+      expect(() => vault.renameEnvironment('dev', 'self')).toThrow(/reserved/i);
+    });
+
+    it('blocks a "self" environment through the service (setEnv auto-create)', async () => {
+      await EnvironmentVaultService.createVault(
+        testVaultPath,
+        testPassword,
+        new EnvironmentVault().toJSON()
+      );
+      const written = fsMock.writeJSON.mock.calls[0][1];
+      fsMock.pathExists.mockResolvedValue(true);
+      fsMock.readJSON.mockResolvedValue(written);
+
+      const result = await EnvironmentVaultService.setEnv(
+        testVaultPath,
+        testPassword,
+        'self',
+        'KEY',
+        'val'
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/reserved/i);
+    });
+  });
+
   describe('init', () => {
     it('should initialize empty vault when no environments provided', async () => {
       const result = await EnvironmentVaultService.init({
@@ -1187,6 +1339,75 @@ describe('EnvironmentVaultService', () => {
       );
 
       expect(result.success).toBe(false);
+    });
+
+    it('aggregates required keys across the extends chain', async () => {
+      const vault = new EnvironmentVault();
+      vault.addEnvironment('base');
+      vault.addVersion('base', { PORT: '3000' }, { required: ['PORT'] });
+      vault.addEnvironment('dev');
+      vault.addVersion('dev', { API_URL: 'x' }, { required: ['API_URL'] });
+      vault.setExtends('dev', 'base');
+      await seed(vault);
+
+      const result = await EnvironmentVaultService.validateEnv(
+        testVaultPath,
+        testPassword,
+        'dev'
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.data.requiredCount).toBe(2); // PORT (base) + API_URL (dev)
+      expect(result.data.errors).toEqual([]); // both present after layering
+    });
+
+    it('errors when an inherited required key is missing', async () => {
+      const vault = new EnvironmentVault();
+      vault.addEnvironment('base');
+      vault.addVersion('base', { LOG: 'info' }, { required: ['DB_URL'] });
+      vault.addEnvironment('dev');
+      vault.addVersion('dev', { API_URL: 'x' });
+      vault.setExtends('dev', 'base');
+      await seed(vault);
+
+      const result = await EnvironmentVaultService.validateEnv(
+        testVaultPath,
+        testPassword,
+        'dev'
+      );
+
+      expect(result.data.errors).toContain('Missing required key: DB_URL');
+    });
+
+    it('reports an unresolved template reference as an error', async () => {
+      await seed(createPopulatedVault(testEnvName, { X: '{{env:ghost/Y}}' }));
+
+      const result = await EnvironmentVaultService.validateEnv(
+        testVaultPath,
+        testPassword,
+        testEnvName
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.data.errors.some((e) => /not found/i.test(e))).toBe(true);
+    });
+
+    it('warns on a secret-looking value in a non-required key', async () => {
+      await seed(
+        createPopulatedVault(testEnvName, {
+          TOKEN: 'sk_live_abcdef0123456789',
+        })
+      );
+
+      const result = await EnvironmentVaultService.validateEnv(
+        testVaultPath,
+        testPassword,
+        testEnvName
+      );
+
+      expect(
+        result.data.warnings.some((w) => /secret|private key|token/i.test(w))
+      ).toBe(true);
     });
   });
 });
