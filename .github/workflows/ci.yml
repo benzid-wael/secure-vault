@@ -65,11 +65,11 @@ jobs:
           BASE_REF: ${{ github.base_ref || 'main' }}
         run: |
           python -m pip install --quiet "diff-cover>=9"
-          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          git fetch --no-tags origin "$BASE_REF"
           diff-cover coverage/lcov.info \
             --compare-branch="origin/$BASE_REF" \
             --fail-under=80 \
-            --markdown-report=diff-coverage.md
+            --format markdown:diff-coverage.md
           # Surface the report in the job summary.
           cat diff-coverage.md >> "$GITHUB_STEP_SUMMARY" || true
 
