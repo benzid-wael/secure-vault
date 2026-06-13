@@ -54,6 +54,23 @@ async function copyToClipboard(text, label) {
   }
 }
 
+function parseExtendsOption(val) {
+  const entries = {};
+  for (const pair of val.split(',')) {
+    const sep = pair.includes('=') ? '=' : ':';
+    const idx = pair.indexOf(sep);
+    const child = idx === -1 ? '' : pair.slice(0, idx).trim();
+    const parent = idx === -1 ? '' : pair.slice(idx + 1).trim();
+    if (!child || !parent) {
+      throw new Error(
+        `Invalid --extends format: "${pair}". Expected envName:parentName`
+      );
+    }
+    entries[child] = parent;
+  }
+  return entries;
+}
+
 function parseEnvOption(val) {
   const entries = {};
   for (const pair of val.split(',')) {
@@ -177,6 +194,12 @@ export function registerEnvCommand(program) {
       (val, prev = {}) => ({ ...prev, ...parseEnvOption(val) }),
       {}
     )
+    .option(
+      '--extends <pairs>',
+      'Set layering: envName:parentName (repeatable, comma-separated)',
+      (val, prev = {}) => ({ ...prev, ...parseExtendsOption(val) }),
+      {}
+    )
     .action(async (options) => {
       try {
         const vaultPassword = await resolvePassword(
@@ -221,6 +244,16 @@ export function registerEnvCommand(program) {
             message: 'Initial import',
           });
           step.succeed(`Imported ${chalk.bold(envName)} (${count} variables)`);
+        }
+
+        // Apply --extends layering once all environments exist in the model.
+        for (const [child, parent] of Object.entries(options.extends || {})) {
+          try {
+            vaultModel.setExtends(child, parent);
+          } catch (err) {
+            console.error(chalk.red(err.message));
+            process.exit(1);
+          }
         }
 
         const step = ora('Encrypting vault…').start();
@@ -310,6 +343,7 @@ export function registerEnvCommand(program) {
     .option('-e, --env <name>', 'Environment name (defaults to "default")')
     .option('--public', 'Mark variable as non-sensitive')
     .option('--required', 'Mark variable as required (checked by validate)')
+    .option('--extends <parent>', 'Set this environment to extend <parent>')
     .option('-m, --message <text>', 'Version message')
     .action(async (key, value, options) => {
       try {
@@ -359,6 +393,21 @@ export function registerEnvCommand(program) {
         if (!result.success) {
           spinner.fail(chalk.red(result.error));
           process.exit(1);
+        }
+
+        // Apply --extends after the write so the environment is guaranteed to
+        // exist (setEnv auto-creates it on first use).
+        if (options.extends) {
+          const extendsResult = await EnvironmentVaultService.setExtends(
+            vaultPath,
+            vaultPassword,
+            envName,
+            options.extends
+          );
+          if (!extendsResult.success) {
+            spinner.fail(chalk.red(extendsResult.error));
+            process.exit(1);
+          }
         }
 
         spinner.succeed(chalk.green(`Set ${key} in "${envName}".`));
@@ -580,16 +629,17 @@ export function registerEnvCommand(program) {
           process.exit(1);
         }
 
+        // JSON format returns an object; emit valid JSON (not util.inspect)
+        // so the output can be piped, e.g. into `docker compose --env-file`.
+        const text =
+          typeof result.data === 'string'
+            ? result.data
+            : JSON.stringify(result.data, null, 2);
+
         if (options.clip) {
-          const text =
-            typeof result.data === 'string'
-              ? result.data
-              : JSON.stringify(result.data, null, 2);
           await copyToClipboard(text, 'export');
-          console.log(text);
-        } else {
-          console.log(result.data);
         }
+        console.log(text);
       } catch (error) {
         console.error(chalk.red(error.message));
         process.exit(1);
@@ -658,6 +708,64 @@ export function registerEnvCommand(program) {
         }
 
         spinner.succeed(chalk.green(`Renamed "${oldName}" to "${newName}".`));
+      } catch (error) {
+        spinner.fail(chalk.red(error.message));
+        process.exit(1);
+      }
+    });
+
+  env
+    .command('extends')
+    .description('Set or clear the parent an environment extends (layering)')
+    .argument('<envName>', 'Environment to configure')
+    .argument('[parent]', 'Parent environment to extend (omit with --none)')
+    .option('-n, --name <name>', 'Vault name')
+    .option('-v, --vault <path>', 'Exact vault file path')
+    .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
+    .option('--none', 'Clear the parent (stop extending)')
+    .action(async (envName, parent, options) => {
+      if (!options.none && !parent) {
+        console.error(
+          chalk.red('Specify a <parent> environment, or pass --none to clear.')
+        );
+        process.exit(1);
+      }
+      if (options.none && parent) {
+        console.error(chalk.red('Pass either a <parent> or --none, not both.'));
+        process.exit(1);
+      }
+
+      const target = options.none ? null : parent;
+      const spinner = ora(
+        target
+          ? `Setting "${envName}" to extend "${target}"...`
+          : `Clearing parent of "${envName}"...`
+      ).start();
+
+      try {
+        const { vaultPath, vaultPassword } = await loadVault(options);
+
+        const result = await EnvironmentVaultService.setExtends(
+          vaultPath,
+          vaultPassword,
+          envName,
+          target
+        );
+
+        if (!result.success) {
+          spinner.fail(chalk.red(result.error));
+          process.exit(1);
+        }
+
+        spinner.succeed(
+          chalk.green(
+            target
+              ? `"${envName}" now extends "${target}".`
+              : `"${envName}" no longer extends a parent.`
+          )
+        );
       } catch (error) {
         spinner.fail(chalk.red(error.message));
         process.exit(1);

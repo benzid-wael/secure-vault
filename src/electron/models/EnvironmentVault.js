@@ -1,3 +1,17 @@
+/**
+ * Environment names that cannot be used because they collide with reserved
+ * template-reference keywords. `{{env:self/KEY}}` always means "this
+ * environment", so an environment literally named `self` would be
+ * unreferenceable. Compared case-insensitively.
+ */
+const RESERVED_ENV_NAMES = new Set(['self']);
+
+function assertNameAllowed(name) {
+  if (RESERVED_ENV_NAMES.has(String(name).toLowerCase())) {
+    throw new Error(`Environment name '${name}' is reserved`);
+  }
+}
+
 export class EnvironmentVault {
   constructor({
     vaultVersion = 1,
@@ -48,6 +62,7 @@ export class EnvironmentVault {
   }
 
   addEnvironment(name, { description = '' } = {}) {
+    assertNameAllowed(name);
     if (this.environments[name]) {
       throw new Error(`Environment '${name}' already exists`);
     }
@@ -72,6 +87,7 @@ export class EnvironmentVault {
     if (!this.environments[oldName]) {
       throw new Error(`Environment '${oldName}' not found`);
     }
+    assertNameAllowed(newName);
     if (this.environments[newName]) {
       throw new Error(`Environment '${newName}' already exists`);
     }
@@ -79,6 +95,26 @@ export class EnvironmentVault {
 
     this.environments[newName] = this.environments[oldName];
     delete this.environments[oldName];
+    this.updated = new Date().toISOString();
+  }
+
+  setExtends(name, parent) {
+    const env = this.#getEnv(name);
+
+    if (parent === null || parent === undefined) {
+      env.extends = null;
+      this.updated = new Date().toISOString();
+      return;
+    }
+
+    if (parent === name) {
+      throw new Error(`Environment '${name}' cannot extend itself`);
+    }
+    if (!this.environments[parent]) {
+      throw new Error(`Environment '${parent}' not found`);
+    }
+
+    env.extends = parent;
     this.updated = new Date().toISOString();
   }
 
