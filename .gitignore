@@ -1,34 +1,63 @@
 ### react ###
+
 .DS_*
+
 *.log
+
 logs
+
 **/*.backup.*
+
 **/*.back.*
+
+
 
 .claude/
 
+
+
 # VS Code
+
 .history/
 
+
+
 # node
+
 node_modules
+
 bower_components
+
+
 
 *.sublime*
 
+
+
 psd
+
 thumb
+
 sketch
 
+
+
 # coverage
+
 coverage
 
+
+
 # build
+
 build/
+
 dist/
+
 dist-cli/
+
 config.bat
+
 
 # agents configs
 .agentsrc
-
