@@ -167,15 +167,24 @@ async function resolveVaultPath(options) {
   });
 
   if (!vaultPath) {
-    const cwdName = process
-      .cwd()
-      .split(/[/\\]/)
-      .pop()
+    const cwd = process.cwd();
+    const cwdName = path
+      .basename(cwd)
       .replace(/[^a-z0-9_-]/gi, '_')
       .toLowerCase();
+    const gitRoot = EnvironmentVaultService.findGitRoot(cwd);
+    const stopDir = gitRoot || cwd;
+    const appDataPath = EnvironmentVaultService.getEnvVaultPath(cwdName);
+
     fail(
       EXIT.ENV_VAULT_NOT_FOUND,
-      `No vault found. Create one: vault env init --name ${cwdName}`
+      `No vault found.\n` +
+        `Searched:\n` +
+        `  - .env.vault in ${cwd} (and parents up to ${stopDir})\n` +
+        `  - config/.env.vault (in ${cwd})\n` +
+        `  - ${appDataPath}\n` +
+        `\n` +
+        `Create one: vault env init --name ${cwdName}`
     );
   }
 
@@ -213,6 +222,12 @@ async function editValueInEditor(key, envName, previousValue) {
 }
 
 async function loadVault(options) {
+  const vaultPath = await resolveVaultPath(options);
+
+  if (!(await EnvironmentVaultService.vaultExists(vaultPath))) {
+    fail(EXIT.ENV_VAULT_NOT_FOUND, `Vault file does not exist at ${vaultPath}`);
+  }
+
   const vaultPassword = await resolvePassword(
     options,
     'Enter vault password:',
@@ -220,7 +235,7 @@ async function loadVault(options) {
       failFn: passwordFailFn,
     }
   );
-  const vaultPath = await resolveVaultPath(options);
+
   const result = await EnvironmentVaultService.loadVault(
     vaultPath,
     vaultPassword
