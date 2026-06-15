@@ -1401,22 +1401,22 @@ the vault, and `vault env get staging API_URL --clip` copies the value to clipbo
 > **Goal**: The primary workflow — `vault env run` — works. Versioning is reliable.
 > This is the first version suitable for daily use.
 
-**Status:** ✅ Delivered, with two hardening follow-ups (◑ below).
+**Status:** ✅ Delivered.
 
-| Deliverable                               | Description                                                                                                                     |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| ✅ `vault env run` (`clean\|merge\|file`) | Full CLI runner with all injection modes (`--env-file` exposed as `--out-file`)                                                 |
-| ✅ Environment versioning                 | Multiple versions per env; `history`, `rollback`                                                                                |
-| ✅ `vault env squash`                     | Compress version history with `--keep`                                                                                          |
-| ✅ `vault env template`                   | `.env.example` export                                                                                                           |
-| ✅ `vault env validate`                   | Required keys check (expanded in v1.5)                                                                                          |
-| ✅ `vault env diff`                       | Diff between two environments                                                                                                   |
-| ✅ `vault env change-password`            | Re-encrypt with new password                                                                                                    |
-| ✅ `vault env copy` / `rename`            | Duplicate / rename an environment                                                                                               |
-| ◑ Temp file cleanup                       | Secure deletion done, but single-pass overwrite and **no orphan-scan** (SPEC §12.3 wants 3 passes + cleanup)                    |
-| ✅ Discovery                              | App-data-first, walk-up, `--name` / `--vault` resolution                                                                        |
-| ✅ `--json` flag                          | Machine-readable output for `show`, `list`, `history`, `diff`                                                                   |
-| ◑ Error messages                          | Missing env/key clear; **wrong-password vs corrupted not distinguished** and symbolic/numeric codes unwired (§16.5, Appendix B) |
+| Deliverable                               | Description                                                                                                            |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| ✅ `vault env run` (`clean\|merge\|file`) | Full CLI runner with all injection modes (`--env-file` exposed as `--out-file`)                                        |
+| ✅ Environment versioning                 | Multiple versions per env; `history`, `rollback`                                                                       |
+| ✅ `vault env squash`                     | Compress version history with `--keep`                                                                                 |
+| ✅ `vault env template`                   | `.env.example` export                                                                                                  |
+| ✅ `vault env validate`                   | Required keys check (expanded in v1.5)                                                                                 |
+| ✅ `vault env diff`                       | Diff between two environments                                                                                          |
+| ✅ `vault env change-password`            | Re-encrypt with new password                                                                                           |
+| ✅ `vault env copy` / `rename`            | Duplicate / rename an environment                                                                                      |
+| ✅ Temp file cleanup                      | 3-pass overwrite (0xFF, 0x00, random) with orphan temp dir scan on startup                                             |
+| ✅ Discovery                              | App-data-first, walk-up, `--name` / `--vault` resolution                                                               |
+| ✅ `--json` flag                          | Machine-readable output for `show`, `list`, `history`, `diff`                                                          |
+| ✅ Error messages                         | Distinct exit codes (2–14) with symbolic emission (`[ENV_VAULT_NOT_FOUND]`, `[VALIDATION_ERROR]`, etc.) per Appendix B |
 
 **Dependencies**: v0.5
 
@@ -1444,8 +1444,12 @@ the vault, and `vault env get staging API_URL --clip` copies the value to clipbo
 
 **Also delivered here (beyond the original scope):** write-time `<vault>.bak` +
 atomic rename so an interrupted save cannot corrupt the vault, a
-`<vault>.deleted.<ts>` snapshot on environment deletion (§5.4), and a fix for
-`export --format json` emitting `util.inspect` output instead of valid JSON.
+`<vault>.deleted.<ts>` snapshot on environment deletion (§5.4), a fix for
+`export --format json` emitting `util.inspect` output instead of valid JSON,
+`--description` on `init`/`set`, `--quiet` global flag, spec-limit enforcement
+(§4.5), `show` description/created/updated/extends display, `diff` old→new value
+display, `history` table format with date column, 3-pass `secureDelete` + orphan
+temp dir cleanup, and distinct error codes with symbolic emission (Appendix B).
 Deferred: rotating "keep last 5" backups (§15 Q4) and a `vault env restore`
 command (recovery is currently a manual `cp <vault>.bak <vault>`).
 
@@ -1757,12 +1761,11 @@ Appendix B (e.g. `PASSWORD_SOURCE_CONFLICT`, `PASSWORD_FILE_UNREADABLE`,
 `PASSWORD_STDIN_FAILED`). All three currently use exit 1 — consider distinct
 codes once a CI-hardening pass lands.
 
-**RESOLVED (docs)** — §6.2 now lists all three flags; §6.2.1 documents the
-precedence order, the mutual-exclusion rule (and `VAULT_ENV_PASSWORD`'s
-exemption from it), and the exit-code table; §12.5 cross-references it; and the
-three `PASSWORD_*` codes are in Appendix B. **Open:** all four conditions still
-exit `1` with a plain stderr string — wiring distinct numeric exit codes /
-emitting the symbolic codes is a deferred CI-hardening follow-up, not a doc gap.
+**RESOLVED (docs + implementation)** — §6.2 now lists all three flags; §6.2.1
+documents the precedence order, the mutual-exclusion rule (and
+`VAULT_ENV_PASSWORD`'s exemption from it), and the exit-code table; §12.5
+cross-references it; and the `PASSWORD_*` plus all other codes are wired with
+distinct numeric exit codes (2–14) and symbolic emission in Appendix B.
 
 ### 16.6 `.env.vault` auto-discovery: walk-up + git-root semantics not in spec
 
@@ -1862,39 +1865,39 @@ or — worse — makes the test pass against fs-extra while production drifts.
 
 ## Appendix B: Error Codes
 
-| Code                       | Message Pattern                                                         |
-| -------------------------- | ----------------------------------------------------------------------- |
-| `ENV_VAULT_NOT_FOUND`      | `Environment vault not found at <path>`                                 |
-| `ENV_VAULT_DECRYPT_FAILED` | `Failed to decrypt environment vault: wrong password or corrupted file` |
-| `ENV_NOT_FOUND`            | `Environment '<name>' not found`                                        |
-| `ENV_ALREADY_EXISTS`       | `Environment '<name>' already exists`                                   |
-| `KEY_NOT_FOUND`            | `Key '<key>' not found in environment '<env>'`                          |
-| `REFERENCE_CYCLE`          | `Circular reference detected: <path>`                                   |
-| `REFERENCE_NOT_FOUND`      | `Reference '{{<ref>}}' could not be resolved: <details>`                |
-| `VALIDATION_ERROR`         | `Validation failed: <details>`                                          |
-| `MAX_DEPTH_EXCEEDED`       | `Template reference resolution exceeded max depth of 5`                 |
-| `INJECTION_FAILED`         | `Failed to spawn child process: <details>`                              |
-| `FILE_WRITE_FAILED`        | `Failed to write env file at <path>: <details>`                         |
-| `VAULT_LOCKED`             | `Environment vault is locked. Run 'vault env unlock' first.`            |
-| `PASSWORD_SOURCE_CONFLICT` | `choose only one of --password, --password-file, --password-stdin`      |
-| `PASSWORD_FILE_UNREADABLE` | `cannot read password file "<path>": <detail>`                          |
-| `PASSWORD_STDIN_FAILED`    | `cannot read password from stdin: <detail>`                             |
+| Exit | Code                       | Message Pattern                                                         |
+| ---- | -------------------------- | ----------------------------------------------------------------------- |
+| 2    | `PASSWORD_SOURCE_CONFLICT` | `choose only one of --password, --password-file, --password-stdin`      |
+| 3    | `PASSWORD_FILE_UNREADABLE` | `cannot read password file "<path>": <detail>`                          |
+| 4    | `PASSWORD_STDIN_FAILED`    | `cannot read password from stdin: <detail>`                             |
+| 5    | `ENV_VAULT_NOT_FOUND`      | `Environment vault not found at <path>`                                 |
+| 6    | `ENV_VAULT_DECRYPT_FAILED` | `Failed to decrypt environment vault: wrong password or corrupted file` |
+| 7    | `ENV_NOT_FOUND`            | `Environment '<name>' not found`                                        |
+| 8    | `ENV_ALREADY_EXISTS`       | `Environment '<name>' already exists`                                   |
+| 9    | `KEY_NOT_FOUND`            | `Key '<key>' not found in environment '<env>'`                          |
+| 10   | `REFERENCE_CYCLE`          | `Circular reference detected: <path>`                                   |
+| 11   | `REFERENCE_NOT_FOUND`      | `Reference '{{<ref>}}' could not be resolved: <details>`                |
+| 12   | `VALIDATION_ERROR`         | `Validation failed: <details>`                                          |
+| 13   | `MAX_DEPTH_EXCEEDED`       | `Template reference resolution exceeded max depth of 5`                 |
+| 14   | `INJECTION_FAILED`         | `Failed to spawn child process: <details>`                              |
+| -    | `FILE_WRITE_FAILED`        | `Failed to write env file at <path>: <details>`                         |
+| -    | `VAULT_LOCKED`             | `Environment vault is locked. Run 'vault env unlock' first.`            |
 
-> **Status:** these are the canonical code _names_ and message patterns. The
-> current implementation prints the message to stderr and exits `1`; it does not
-> yet emit the symbolic code or a per-class numeric exit. The three `PASSWORD_*`
-> rows are documented here per §6.2.1; wiring distinct exit codes is a tracked
-> follow-up (§16.5).
+> **Status:** exit codes 2–14 are wired and emit the symbolic code on stderr
+> (e.g. `[ENV_VAULT_NOT_FOUND] No vault found...`). `FILE_WRITE_FAILED` and
+> `VAULT_LOCKED` are documented for future use (agent mode, v2.0+) but not yet
+> wired.
 
 ---
 
 ## Appendix C: Changelog
 
-| Date       | Revision | Author  | Changes                                                                                                                                                                                                                                                                                                   |
-| ---------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-05-30 | 1        | wbenzid | Initial draft                                                                                                                                                                                                                                                                                             |
-| 2026-05-26 | 2        | wbenzid | Add §16 Known Issues & Pending Reconciliations (8 items from v0.1.0-rc.5 e2e validation)                                                                                                                                                                                                                  |
-| 2026-06-06 | 3        | wbenzid | Codify var-level vs env-level command split (§6.1, §6.1.1); align all §6.3 usage/examples and §7 flows to the implementation; mark §16.1–16.3 RESOLVED (option b)                                                                                                                                         |
-| 2026-06-06 | 4        | wbenzid | Document password resolution (§6.2.1: precedence, mutual exclusion, exit codes); update §12.5; add `PASSWORD_*` codes to Appendix B; mark §16.5 RESOLVED (docs)                                                                                                                                           |
-| 2026-06-06 | 5        | wbenzid | Document walk-up + git-root vault discovery (§5.2/§5.3); mark §16.6 RESOLVED. Fix duplicate §6.1 heading (now §6.1.1/6.1.2/6.1.3) and stale cross-refs                                                                                                                                                    |
-| 2026-06-11 | 6        | wbenzid | Mark v1.5 Composition delivered (resolver: `extends` layering + `{{env:name/KEY}}`/`{{env:self/KEY}}` refs + full validation engine); add `.bak`/atomic-write + `.deleted.<ts>` (§5.4); reserve `self` env name (§4.5/§8); add milestone status legend + v0.5/v1.0/v2.x markers; note Q1/Q4 status in §15 |
+| Date       | Revision | Author  | Changes                                                                                                                                                                                                                                                                                                                                       |
+| ---------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-05-30 | 1        | wbenzid | Initial draft                                                                                                                                                                                                                                                                                                                                 |
+| 2026-05-26 | 2        | wbenzid | Add §16 Known Issues & Pending Reconciliations (8 items from v0.1.0-rc.5 e2e validation)                                                                                                                                                                                                                                                      |
+| 2026-06-06 | 3        | wbenzid | Codify var-level vs env-level command split (§6.1, §6.1.1); align all §6.3 usage/examples and §7 flows to the implementation; mark §16.1–16.3 RESOLVED (option b)                                                                                                                                                                             |
+| 2026-06-06 | 4        | wbenzid | Document password resolution (§6.2.1: precedence, mutual exclusion, exit codes); update §12.5; add `PASSWORD_*` codes to Appendix B; mark §16.5 RESOLVED (docs)                                                                                                                                                                               |
+| 2026-06-06 | 5        | wbenzid | Document walk-up + git-root vault discovery (§5.2/§5.3); mark §16.6 RESOLVED. Fix duplicate §6.1 heading (now §6.1.1/6.1.2/6.1.3) and stale cross-refs                                                                                                                                                                                        |
+| 2026-06-11 | 6        | wbenzid | Mark v1.5 Composition delivered (resolver: `extends` layering + `{{env:name/KEY}}`/`{{env:self/KEY}}` refs + full validation engine); add `.bak`/atomic-write + `.deleted.<ts>` (§5.4); reserve `self` env name (§4.5/§8); add milestone status legend + v0.5/v1.0/v2.x markers; note Q1/Q4 status in §15                                     |
+| 2026-06-15 | 7        | wbenzid | Mark v1.0 hardening complete in §13.3 (3-pass temp cleanup, orphan scan, distinct error codes 2–14 with symbolic emission); add `show` fields, `diff` old→new, `history` date col, spec limit enforcement, `--description`, `--quiet` to §13.4 delivered; close §16.5 (error codes); add numeric exit code column + status note to Appendix B |
