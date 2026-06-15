@@ -14,6 +14,7 @@ import {
   toDotenv,
   parseAllowlist,
   secureDelete,
+  cleanupOrphanTempDirs,
 } from './envRunHelpers.js';
 import {
   buildEditorTemplate,
@@ -48,10 +49,64 @@ function clipboardWrite(text) {
 async function copyToClipboard(text, label) {
   try {
     await clipboardWrite(text);
-    console.log(chalk.gray(`  Copied ${label} to clipboard`));
+    log(chalk.gray(`  Copied ${label} to clipboard`));
   } catch {
-    console.log(chalk.yellow('  Clipboard not available on this system'));
+    log(chalk.yellow('  Clipboard not available on this system'));
   }
+}
+
+let isQuiet = false;
+
+const EXIT = {
+  PASSWORD_SOURCE_CONFLICT: { code: 2, symbol: 'PASSWORD_SOURCE_CONFLICT' },
+  PASSWORD_FILE_UNREADABLE: { code: 3, symbol: 'PASSWORD_FILE_UNREADABLE' },
+  PASSWORD_STDIN_FAILED: { code: 4, symbol: 'PASSWORD_STDIN_FAILED' },
+  ENV_VAULT_NOT_FOUND: { code: 5, symbol: 'ENV_VAULT_NOT_FOUND' },
+  ENV_VAULT_DECRYPT_FAILED: { code: 6, symbol: 'ENV_VAULT_DECRYPT_FAILED' },
+  ENV_NOT_FOUND: { code: 7, symbol: 'ENV_NOT_FOUND' },
+  KEY_NOT_FOUND: { code: 8, symbol: 'KEY_NOT_FOUND' },
+  REFERENCE_CYCLE: { code: 9, symbol: 'REFERENCE_CYCLE' },
+  REFERENCE_NOT_FOUND: { code: 10, symbol: 'REFERENCE_NOT_FOUND' },
+  MAX_DEPTH_EXCEEDED: { code: 11, symbol: 'MAX_DEPTH_EXCEEDED' },
+  VALIDATION_ERROR: { code: 12, symbol: 'VALIDATION_ERROR' },
+  FILE_WRITE_FAILED: { code: 13, symbol: 'FILE_WRITE_FAILED' },
+  INJECTION_FAILED: { code: 14, symbol: 'INJECTION_FAILED' },
+};
+
+function fail(spec, message) {
+  console.error(`[${spec.symbol}] ${message}`);
+  process.exit(spec.code);
+}
+
+const EXIT_BY_SYMBOL = Object.fromEntries(
+  Object.values(EXIT).map((e) => [e.symbol, e])
+);
+
+function passwordFailFn(symbol, message) {
+  const spec = EXIT_BY_SYMBOL[symbol];
+  console.error(`[${spec.symbol}] ${message}`);
+  process.exit(spec.code);
+}
+
+function log(...args) {
+  if (!isQuiet) console.log(...args);
+}
+
+function oraQuiet(text) {
+  if (isQuiet) {
+    return {
+      start: () => {},
+      succeed: () => {},
+      fail: (msg) => {
+        if (msg) console.error(msg);
+      },
+      get text() {
+        return '';
+      },
+      set text(_v) {},
+    };
+  }
+  return ora(text);
 }
 
 function parseExtendsOption(val) {
@@ -118,14 +173,10 @@ async function resolveVaultPath(options) {
       .pop()
       .replace(/[^a-z0-9_-]/gi, '_')
       .toLowerCase();
-    console.error(chalk.red('No vault found.'));
-    console.error(
-      chalk.yellow(`  Create one:  vault env init --name ${cwdName}`)
+    fail(
+      EXIT.ENV_VAULT_NOT_FOUND,
+      `No vault found. Create one: vault env init --name ${cwdName}`
     );
-    console.error(
-      chalk.yellow(`  Specify:     --vault <path> or --name <name>`)
-    );
-    process.exit(1);
   }
 
   return vaultPath;
@@ -162,7 +213,13 @@ async function editValueInEditor(key, envName, previousValue) {
 }
 
 async function loadVault(options) {
-  const vaultPassword = await resolvePassword(options, 'Enter vault password:');
+  const vaultPassword = await resolvePassword(
+    options,
+    'Enter vault password:',
+    {
+      failFn: passwordFailFn,
+    }
+  );
   const vaultPath = await resolveVaultPath(options);
   const result = await EnvironmentVaultService.loadVault(
     vaultPath,
@@ -170,15 +227,26 @@ async function loadVault(options) {
   );
 
   if (!result.success) {
-    console.error(chalk.red(result.error));
-    process.exit(1);
+    const spec = result.error.includes('not found')
+      ? EXIT.ENV_VAULT_NOT_FOUND
+      : EXIT.ENV_VAULT_DECRYPT_FAILED;
+    fail(spec, result.error);
   }
 
   return { vaultPath, vaultPassword, vault: result.data };
 }
 
 export function registerEnvCommand(program) {
-  const env = program.command('env').description('Manage environment vaults');
+  cleanupOrphanTempDirs();
+
+  const env = program
+    .command('env')
+    .description('Manage environment vaults')
+    .option('--quiet', 'Suppress non-error output');
+
+  env.hook('preAction', (thisCmd) => {
+    isQuiet = !!thisCmd.opts().quiet;
+  });
 
   env
     .command('init')
@@ -200,11 +268,16 @@ export function registerEnvCommand(program) {
       (val, prev = {}) => ({ ...prev, ...parseExtendsOption(val) }),
       {}
     )
+    .option(
+      '--description <text>',
+      'Optional description for the vault environments'
+    )
     .action(async (options) => {
       try {
         const vaultPassword = await resolvePassword(
           options,
-          'Enter vault password:'
+          'Enter vault password:',
+          { failFn: passwordFailFn }
         );
 
         if (!hasNonInteractivePassword(options)) {
@@ -228,7 +301,7 @@ export function registerEnvCommand(program) {
         const envs = options.env || {};
 
         for (const [envName, envFile] of Object.entries(envs)) {
-          const step = ora(
+          const step = oraQuiet(
             `Reading ${chalk.cyan(envName)} from ${chalk.gray(envFile)}`
           ).start();
           let content;
@@ -243,6 +316,9 @@ export function registerEnvCommand(program) {
           vaultModel.importFromEnvFile(envName, content, {
             message: 'Initial import',
           });
+          if (options.description && vaultModel.environments[envName]) {
+            vaultModel.environments[envName].description = options.description;
+          }
           step.succeed(`Imported ${chalk.bold(envName)} (${count} variables)`);
         }
 
@@ -256,7 +332,7 @@ export function registerEnvCommand(program) {
           }
         }
 
-        const step = ora('Encrypting vault…').start();
+        const step = oraQuiet('Encrypting vault…').start();
         const result = await EnvironmentVaultService.createVault(
           vaultPath,
           vaultPassword,
@@ -288,12 +364,13 @@ export function registerEnvCommand(program) {
     .option('--password-file <path>', 'Read vault password from a file')
     .option('--password-stdin', 'Read vault password from stdin')
     .action(async (envName, files, options) => {
-      const spinner = ora('Importing .env files...').start();
+      const spinner = oraQuiet('Importing .env files...').start();
 
       try {
         const vaultPassword = await resolvePassword(
           options,
-          'Enter vault password:'
+          'Enter vault password:',
+          { failFn: passwordFailFn }
         );
         const vaultPath = await resolveVaultPath(options);
 
@@ -345,6 +422,7 @@ export function registerEnvCommand(program) {
     .option('--required', 'Mark variable as required (checked by validate)')
     .option('--extends <parent>', 'Set this environment to extend <parent>')
     .option('-m, --message <text>', 'Version message')
+    .option('--description <text>', 'Set environment description')
     .action(async (key, value, options) => {
       try {
         if (value === undefined && !process.stdin.isTTY) {
@@ -370,12 +448,12 @@ export function registerEnvCommand(program) {
           value = await editValueInEditor(key, envName, previousValue);
 
           if (value === null) {
-            console.log(chalk.yellow('Empty value — nothing changed.'));
+            log(chalk.yellow('Empty value — nothing changed.'));
             return;
           }
         }
 
-        const spinner = ora(`Setting ${key}...`).start();
+        const spinner = oraQuiet(`Setting ${key}...`).start();
 
         const result = await EnvironmentVaultService.setEnv(
           vaultPath,
@@ -406,6 +484,19 @@ export function registerEnvCommand(program) {
           );
           if (!extendsResult.success) {
             spinner.fail(chalk.red(extendsResult.error));
+            process.exit(1);
+          }
+        }
+
+        if (options.description !== undefined) {
+          const descResult = await EnvironmentVaultService.setEnvDescription(
+            vaultPath,
+            vaultPassword,
+            envName,
+            options.description
+          );
+          if (!descResult.success) {
+            spinner.fail(chalk.red(descResult.error));
             process.exit(1);
           }
         }
@@ -494,17 +585,32 @@ export function registerEnvCommand(program) {
 
         const { data } = result;
         console.log(chalk.bold(`\nEnvironment: ${data.name}`));
+        console.log(chalk.gray(`  Description: ${data.description}`));
         console.log(
           chalk.gray(
             `  Active version: v${data.activeVersion} of ${data.totalVersions}`
           )
         );
+        console.log(
+          chalk.gray(
+            `  Created: ${new Date(data.created).toLocaleDateString()}`
+          )
+        );
+        console.log(
+          chalk.gray(
+            `  Updated: ${new Date(data.updated).toLocaleDateString()}`
+          )
+        );
+        console.log(chalk.gray(`  Extends: ${data.extends}`));
         console.log(chalk.gray(`  Variables: ${data.keyCount}\n`));
 
         for (const k of data.keys) {
-          const icon = k.sensitive ? chalk.red('🔒') : chalk.green('🔓');
-          const display = k.sensitive ? chalk.gray('***') : k.value;
-          console.log(`  ${icon} ${chalk.cyan(k.key)} = ${display}`);
+          const display = k.sensitive
+            ? k.value.length > 8
+              ? k.value.slice(0, 4) + '****' + k.value.slice(-4)
+              : '****'
+            : k.value;
+          console.log(`  ${chalk.cyan(k.key)} = ${display}`);
         }
 
         console.log();
@@ -543,7 +649,7 @@ export function registerEnvCommand(program) {
         }
 
         if (result.data.length === 0) {
-          console.log(chalk.yellow('\n  No environments in this vault.\n'));
+          log(chalk.yellow('\n  No environments in this vault.\n'));
           return;
         }
 
@@ -572,7 +678,7 @@ export function registerEnvCommand(program) {
     .option('--password-stdin', 'Read vault password from stdin')
     .option('-e, --env <name>', 'Environment name (defaults to "default")')
     .action(async (key, options) => {
-      const spinner = ora(`Removing ${key}...`).start();
+      const spinner = oraQuiet(`Removing ${key}...`).start();
 
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
@@ -656,7 +762,7 @@ export function registerEnvCommand(program) {
     .option('--password-file <path>', 'Read vault password from a file')
     .option('--password-stdin', 'Read vault password from stdin')
     .action(async (envName, options) => {
-      const spinner = ora(`Deleting environment "${envName}"...`).start();
+      const spinner = oraQuiet(`Deleting environment "${envName}"...`).start();
 
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
@@ -690,7 +796,9 @@ export function registerEnvCommand(program) {
     .option('--password-file <path>', 'Read vault password from a file')
     .option('--password-stdin', 'Read vault password from stdin')
     .action(async (oldName, newName, options) => {
-      const spinner = ora(`Renaming "${oldName}" to "${newName}"...`).start();
+      const spinner = oraQuiet(
+        `Renaming "${oldName}" to "${newName}"...`
+      ).start();
 
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
@@ -738,7 +846,7 @@ export function registerEnvCommand(program) {
       }
 
       const target = options.none ? null : parent;
-      const spinner = ora(
+      const spinner = oraQuiet(
         target
           ? `Setting "${envName}" to extend "${target}"...`
           : `Clearing parent of "${envName}"...`
@@ -783,7 +891,7 @@ export function registerEnvCommand(program) {
     .option('--password-file <path>', 'Read vault password from a file')
     .option('--password-stdin', 'Read vault password from stdin')
     .action(async (sourceName, destName, options) => {
-      const spinner = ora(
+      const spinner = oraQuiet(
         `Copying "${sourceName}" to "${destName}"...`
       ).start();
 
@@ -877,7 +985,7 @@ export function registerEnvCommand(program) {
         }
 
         if (result.data.length === 0) {
-          console.log(chalk.yellow('\n  No history for this environment.\n'));
+          log(chalk.yellow('\n  No history for this environment.\n'));
           return;
         }
 
@@ -888,15 +996,19 @@ export function registerEnvCommand(program) {
         );
 
         for (const v of result.data) {
-          const active = v.active ? chalk.green(' (active)') : '';
-          const msg = v.message ? ` - ${v.message}` : '';
-          console.log(`  v${v.n}${active}${chalk.gray(msg)}`);
-          for (const [key, val] of Object.entries(v.vars)) {
-            const icon = v.nonSensitive?.includes(key) ? '🔓' : '🔒';
-            console.log(`    ${icon} ${chalk.cyan(key)}=${val}`);
-          }
-          console.log();
+          const date = new Date(v.created).toLocaleString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+          const active = v.isActive ? chalk.green(' (active)') : '';
+          const msg = v.message ? v.message : '(unlabeled)';
+          console.log(
+            `  v${String(v.n).padStart(2)}  ${chalk.gray(date)}  ${msg}${active}`
+          );
         }
+        console.log();
       } catch (error) {
         console.error(chalk.red(error.message));
         process.exit(1);
@@ -914,7 +1026,7 @@ export function registerEnvCommand(program) {
     .option('--password-stdin', 'Read vault password from stdin')
     .option('-e, --env <name>', 'Environment name (defaults to "default")')
     .action(async (versionN, options) => {
-      const spinner = ora(`Rolling back to v${versionN}...`).start();
+      const spinner = oraQuiet(`Rolling back to v${versionN}...`).start();
 
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
@@ -952,7 +1064,7 @@ export function registerEnvCommand(program) {
     .option('-e, --env <name>', 'Environment name (defaults to "default")')
     .option('-k, --keep <count>', 'Number of versions to keep', Number, 1)
     .action(async (options) => {
-      const spinner = ora(
+      const spinner = oraQuiet(
         `Squashing history (keeping ${options.keep})...`
       ).start();
 
@@ -1027,9 +1139,15 @@ export function registerEnvCommand(program) {
           console.log(chalk.red('  Removed:'));
           for (const k of data.removed) console.log(`    - ${chalk.cyan(k)}`);
         }
-        if (data.changed.length > 0) {
+        if (data.changedDetails.length > 0) {
           console.log(chalk.yellow('  Changed:'));
-          for (const k of data.changed) console.log(`    ~ ${chalk.cyan(k)}`);
+          for (const c of data.changedDetails) {
+            const valA = c.sensitiveA ? '[masked]' : c.valueA;
+            const valB = c.sensitiveB ? '[masked]' : c.valueB;
+            console.log(
+              `    ${chalk.cyan(c.key)} ${valA}  ${chalk.gray('→')}  ${valB}`
+            );
+          }
         }
         if (data.unchanged.length > 0) {
           console.log(
@@ -1089,8 +1207,19 @@ export function registerEnvCommand(program) {
 
         // Exit codes: 0 = pass, 1 = errors (or warnings under --strict),
         // 2 = passed with warnings.
-        if (errors.length > 0) process.exit(1);
-        if (warnings.length > 0) process.exit(options.strict ? 1 : 2);
+        if (errors.length > 0) {
+          console.error(`[VALIDATION_ERROR] ${errors.length} error(s) found`);
+          process.exit(1);
+        }
+        if (warnings.length > 0) {
+          if (options.strict) {
+            console.error(
+              `[VALIDATION_ERROR] ${warnings.length} warning(s) found (strict mode)`
+            );
+            process.exit(1);
+          }
+          process.exit(2);
+        }
       } catch (error) {
         console.error(chalk.red(error.message));
         process.exit(1);
@@ -1212,13 +1341,14 @@ export function registerEnvCommand(program) {
     .option('--password-file <path>', 'Read vault password from a file')
     .option('--password-stdin', 'Read vault password from stdin')
     .action(async (options) => {
-      const spinner = ora('Changing vault password...').start();
+      const spinner = oraQuiet('Changing vault password...').start();
 
       try {
         const vaultPath = await resolveVaultPath(options);
         const currentPassword = await resolvePassword(
           options,
-          'Enter current password:'
+          'Enter current password:',
+          { failFn: passwordFailFn }
         );
         const newPassword = await password({
           message: 'Enter new password:',

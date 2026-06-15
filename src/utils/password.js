@@ -64,7 +64,7 @@ export function hasNonInteractivePassword(options) {
  * Only one of the explicit sources (flag/file/stdin) may be provided; supplying
  * more than one is a usage error.
  */
-export async function resolvePassword(options, promptMessage) {
+export async function resolvePassword(options, promptMessage, { failFn } = {}) {
   const explicit = [
     options.password != null,
     !!options.passwordFile,
@@ -72,12 +72,14 @@ export async function resolvePassword(options, promptMessage) {
   ].filter(Boolean).length;
 
   if (explicit > 1) {
-    console.error(
-      chalk.red(
-        'Error: choose only one of --password, --password-file, --password-stdin'
-      )
-    );
-    process.exit(1);
+    const msg =
+      'choose only one of --password, --password-file, --password-stdin';
+    if (failFn) {
+      failFn('PASSWORD_SOURCE_CONFLICT', msg);
+    } else {
+      console.error(chalk.red(`Error: ${msg}`));
+      process.exit(1);
+    }
   }
 
   if (options.password != null) return options.password;
@@ -86,12 +88,13 @@ export async function resolvePassword(options, promptMessage) {
     try {
       return readPasswordFile(options.passwordFile);
     } catch (err) {
-      console.error(
-        chalk.red(
-          `Error: cannot read password file "${options.passwordFile}": ${err.message}`
-        )
-      );
-      process.exit(1);
+      const msg = `cannot read password file "${options.passwordFile}": ${err.message}`;
+      if (failFn) {
+        failFn('PASSWORD_FILE_UNREADABLE', msg);
+      } else {
+        console.error(chalk.red(`Error: ${msg}`));
+        process.exit(1);
+      }
     }
   }
 
@@ -99,10 +102,13 @@ export async function resolvePassword(options, promptMessage) {
     try {
       return readPasswordStdin();
     } catch (err) {
-      console.error(
-        chalk.red(`Error: cannot read password from stdin: ${err.message}`)
-      );
-      process.exit(1);
+      const msg = `cannot read password from stdin: ${err.message}`;
+      if (failFn) {
+        failFn('PASSWORD_STDIN_FAILED', msg);
+      } else {
+        console.error(chalk.red(`Error: ${msg}`));
+        process.exit(1);
+      }
     }
   }
 

@@ -6,6 +6,12 @@
  */
 const RESERVED_ENV_NAMES = new Set(['self']);
 
+const MAX_ENVIRONMENTS = 100;
+const MAX_VERSIONS = 1000;
+const MAX_VARS = 500;
+const MAX_KEY_LENGTH = 1024;
+const MAX_VALUE_LENGTH = 65536;
+
 function assertNameAllowed(name) {
   if (RESERVED_ENV_NAMES.has(String(name).toLowerCase())) {
     throw new Error(`Environment name '${name}' is reserved`);
@@ -65,6 +71,11 @@ export class EnvironmentVault {
     assertNameAllowed(name);
     if (this.environments[name]) {
       throw new Error(`Environment '${name}' already exists`);
+    }
+    if (Object.keys(this.environments).length >= MAX_ENVIRONMENTS) {
+      throw new Error(
+        `Cannot add environment: maximum of ${MAX_ENVIRONMENTS} environments reached`
+      );
     }
     this.environments[name] = {
       description,
@@ -140,6 +151,32 @@ export class EnvironmentVault {
     { required = [], nonSensitive = [], message = null } = {}
   ) {
     const env = this.#getEnv(name);
+
+    if (env.versions.length >= MAX_VERSIONS) {
+      throw new Error(
+        `Cannot add version: maximum of ${MAX_VERSIONS} versions per environment reached`
+      );
+    }
+
+    const varEntries = Object.entries(vars);
+    if (varEntries.length > MAX_VARS) {
+      throw new Error(
+        `Cannot add version: maximum of ${MAX_VARS} variables per environment exceeded (${varEntries.length})`
+      );
+    }
+    for (const [key, value] of varEntries) {
+      if (key.length > MAX_KEY_LENGTH) {
+        throw new Error(
+          `Key '${key.slice(0, 20)}...' exceeds maximum length of ${MAX_KEY_LENGTH} characters`
+        );
+      }
+      if (typeof value === 'string' && value.length > MAX_VALUE_LENGTH) {
+        throw new Error(
+          `Value for '${key}' exceeds maximum length of ${MAX_VALUE_LENGTH} characters`
+        );
+      }
+    }
+
     const nextN =
       env.versions.length > 0 ? env.versions[env.versions.length - 1].n + 1 : 1;
 

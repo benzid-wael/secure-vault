@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import os from 'os';
+import path from 'path';
 import fs from 'fs-extra';
 
 // System variables passed through in `clean` mode so the spawned command can
@@ -56,18 +58,50 @@ export function parseAllowlist(value) {
 }
 
 /**
- * Best-effort secure deletion: overwrite the file's bytes with random data
- * before unlinking so the plaintext secrets don't linger on disk.
+ * Best-effort secure deletion: overwrite the file with 3 passes (0xFF, 0x00,
+ * random) before unlinking, per SPEC §12.3.
  */
 export function secureDelete(filePath) {
   try {
     if (!filePath || !fs.existsSync(filePath)) return;
     const { size } = fs.statSync(filePath);
     if (size > 0) {
+      const buf = Buffer.alloc(size);
+      buf.fill(0xff);
+      fs.writeFileSync(filePath, buf);
+      buf.fill(0x00);
+      fs.writeFileSync(filePath, buf);
       fs.writeFileSync(filePath, crypto.randomBytes(size));
     }
     fs.unlinkSync(filePath);
   } catch {
     // Cleanup is best-effort; never throw from teardown.
+  }
+}
+
+/**
+ * Scan for orphaned temp directories left by a prior crash and remove them.
+ * Looks for `vault-env-*` directories under the OS temp dir.
+ */
+export function cleanupOrphanTempDirs() {
+  try {
+    const tmpDir = os.tmpdir();
+    const entries = fs.readdirSync(tmpDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory() && entry.name.startsWith('vault-env-')) {
+        const dirPath = path.join(tmpDir, entry.name);
+        try {
+          const files = fs.readdirSync(dirPath);
+          for (const f of files) {
+            secureDelete(path.join(dirPath, f));
+          }
+          fs.rmdirSync(dirPath);
+        } catch {
+          // Best-effort.
+        }
+      }
+    }
+  } catch {
+    // Best-effort.
   }
 }

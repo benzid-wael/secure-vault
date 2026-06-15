@@ -62,7 +62,7 @@ describe('CLI error output goes to stderr, not stdout', () => {
     const r = cli(['list', '-v', vaultPath, '--password-stdin'], {
       input: 'wrong-password',
     });
-    expect(r.status).toBe(1);
+    expect(r.status).toBe(6); // ENV_VAULT_DECRYPT_FAILED
     expect(r.stdout).toBe('');
     expect(r.stderr).toMatch(/decrypt|wrong password/i);
   });
@@ -76,7 +76,7 @@ describe('CLI error output goes to stderr, not stdout', () => {
       cwd: emptyDir,
       input: PASSWORD,
     });
-    expect(r.status).toBe(1);
+    expect(r.status).toBe(5); // ENV_VAULT_NOT_FOUND
     expect(r.stdout).toBe('');
     expect(r.stderr).toMatch(/No vault found/i);
   });
@@ -94,7 +94,7 @@ describe('CLI error output goes to stderr, not stdout', () => {
       ],
       { input: 'wrong-password' }
     );
-    expect(r.status).toBe(1);
+    expect(r.status).toBe(6); // ENV_VAULT_DECRYPT_FAILED
     // Critical: stdout would have been redirected into the .env file.
     expect(r.stdout).toBe('');
     expect(r.stderr).toMatch(/decrypt|wrong password/i);

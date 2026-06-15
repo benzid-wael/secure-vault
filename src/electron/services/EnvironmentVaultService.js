@@ -351,26 +351,33 @@ export class EnvironmentVaultService {
 
     try {
       const vault = loadResult.data;
-      const activeVersion = vault.getActiveVersion(envName);
-
-      if (!activeVersion) {
+      const env = vault.environments[envName];
+      if (!env) {
         return {
           success: false,
-          error: `Environment '${envName}' has no versions`,
+          error: `Environment '${envName}' not found`,
         };
       }
 
-      const keys = Object.entries(activeVersion.vars).map(([key, value]) => ({
-        key,
-        value,
-        sensitive: !activeVersion.nonSensitive.includes(key),
-      }));
+      const activeVersion = vault.getActiveVersion(envName);
+
+      const keys = activeVersion
+        ? Object.entries(activeVersion.vars).map(([key, value]) => ({
+            key,
+            value,
+            sensitive: !activeVersion.nonSensitive.includes(key),
+          }))
+        : [];
 
       return {
         success: true,
         data: {
           name: envName,
-          activeVersion: activeVersion.n,
+          description: env.description || '(none)',
+          created: vault.created,
+          updated: vault.updated,
+          extends: env.extends || '(none)',
+          activeVersion: activeVersion ? activeVersion.n : null,
           totalVersions: vault.getHistory(envName).length,
           keyCount: keys.length,
           keys,
@@ -472,6 +479,25 @@ export class EnvironmentVaultService {
     try {
       const vault = loadResult.data;
       vault.setExtends(envName, parent);
+      return this.saveVault(vaultPath, password, vault);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  static async setEnvDescription(vaultPath, password, envName, description) {
+    const loadResult = await this.loadVault(vaultPath, password);
+    if (!loadResult.success) return loadResult;
+
+    try {
+      const vault = loadResult.data;
+      if (!vault.environments[envName]) {
+        return {
+          success: false,
+          error: `Environment '${envName}' not found`,
+        };
+      }
+      vault.environments[envName].description = description || '';
       return this.saveVault(vaultPath, password, vault);
     } catch (error) {
       return { success: false, error: error.message };
@@ -674,10 +700,17 @@ export class EnvironmentVaultService {
       const unchanged = [...keysA].filter(
         (k) => keysB.has(k) && varsA[k] === varsB[k]
       );
+      const changedDetails = changed.map((k) => ({
+        key: k,
+        valueA: varsA[k],
+        valueB: varsB[k],
+        sensitiveA: !versionA.nonSensitive?.includes(k),
+        sensitiveB: !versionB.nonSensitive?.includes(k),
+      }));
 
       return {
         success: true,
-        data: { added, removed, changed, unchanged },
+        data: { added, removed, changed, unchanged, changedDetails },
       };
     } catch (error) {
       return { success: false, error: error.message };
