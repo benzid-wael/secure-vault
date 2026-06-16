@@ -95,7 +95,7 @@
     "@vitejs/plugin-react": "^6.0.0",
     "@vitest/coverage-v8": "^4.1.8",
     "@vitest/ui": "^4.1.8",
-    "concurrently": "^8.2.2",
+    "concurrently": "^10.0.3",
     "cross-env": "^7.0.3",
     "electron": "^42.3.3",
     "electron-builder": "^26.15.2",
