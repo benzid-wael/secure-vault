@@ -14,6 +14,7 @@ import {
   readAllowlistFile,
   loadProjectConfig,
   applyProjectConfig,
+  injectVaultEnvArg,
 } from '../../../bin/commands/envRunHelpers.js';
 
 describe('buildChildEnv', () => {
@@ -238,8 +239,125 @@ describe('applyProjectConfig', () => {
     expect(cmd.opts().inject).toBe('file');
   });
 
+  it('overrides an env-var-set option (.vaultrc beats VAULT_* env vars)', () => {
+    const cmd = makeCmd();
+    cmd.setOptionValueWithSource('inject', 'merge', 'env');
+    applyProjectConfig(cmd, { inject: 'file' });
+    expect(cmd.opts().inject).toBe('file');
+  });
+
   it('ignores unknown keys in config', () => {
     const cmd = makeCmd();
     expect(() => applyProjectConfig(cmd, { unknown: 'value' })).not.toThrow();
+  });
+});
+
+describe('injectVaultEnvArg', () => {
+  const BASE = ['node', 'cli'];
+
+  it('injects VAULT_ENV before -- when no envName is present', () => {
+    const argv = [
+      ...BASE,
+      'env',
+      'run',
+      '-v',
+      '/vault',
+      '--',
+      'node',
+      'server.js',
+    ];
+    expect(injectVaultEnvArg(argv, 'staging')).toEqual([
+      'node',
+      'cli',
+      'env',
+      'run',
+      '-v',
+      '/vault',
+      'staging',
+      '--',
+      'node',
+      'server.js',
+    ]);
+  });
+
+  it('does not inject when envName is already provided before --', () => {
+    const argv = [
+      ...BASE,
+      'env',
+      'run',
+      '-v',
+      '/vault',
+      'dev',
+      '--',
+      'node',
+      's.js',
+    ];
+    expect(injectVaultEnvArg(argv, 'staging')).toBe(argv);
+  });
+
+  it('does not inject when vaultEnv is falsy', () => {
+    const argv = [...BASE, 'env', 'run', '--', 'node', 's.js'];
+    expect(injectVaultEnvArg(argv, undefined)).toBe(argv);
+    expect(injectVaultEnvArg(argv, '')).toBe(argv);
+  });
+
+  it('does not inject when there is no -- separator', () => {
+    const argv = [...BASE, 'env', 'run', '-v', '/vault'];
+    expect(injectVaultEnvArg(argv, 'staging')).toBe(argv);
+  });
+
+  it('does not inject when env run is not in argv', () => {
+    const argv = [...BASE, 'env', 'show', '--', 'extra'];
+    expect(injectVaultEnvArg(argv, 'staging')).toBe(argv);
+  });
+
+  it('correctly skips boolean flags before --', () => {
+    const argv = [
+      ...BASE,
+      'env',
+      'run',
+      '--password-stdin',
+      '--',
+      'node',
+      's.js',
+    ];
+    expect(injectVaultEnvArg(argv, 'dev')).toEqual([
+      'node',
+      'cli',
+      'env',
+      'run',
+      '--password-stdin',
+      'dev',
+      '--',
+      'node',
+      's.js',
+    ]);
+  });
+
+  it('correctly skips flags-with-value pairs before --', () => {
+    const argv = [
+      ...BASE,
+      'env',
+      'run',
+      '--inject',
+      'merge',
+      '-v',
+      '/v',
+      '--',
+      'cmd',
+    ];
+    expect(injectVaultEnvArg(argv, 'prod')).toEqual([
+      'node',
+      'cli',
+      'env',
+      'run',
+      '--inject',
+      'merge',
+      '-v',
+      '/v',
+      'prod',
+      '--',
+      'cmd',
+    ]);
   });
 });

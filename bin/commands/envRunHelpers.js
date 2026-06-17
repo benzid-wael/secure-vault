@@ -81,6 +81,66 @@ export function readAllowlistFile(filePath, { mustExist = false } = {}) {
 
 export const VAULTRC_FILENAME = '.vaultrc';
 
+// Flags on `vault env run` that consume the next argument as their value.
+const RUN_FLAGS_WITH_VALUE = new Set([
+  '-n',
+  '--name',
+  '-v',
+  '--vault',
+  '--password',
+  '--password-file',
+  '--inject',
+  '--out-file',
+  '--allowlist',
+  '--allowlist-file',
+]);
+
+/**
+ * Inject VAULT_ENV into argv before the `--` separator when `vault env run`
+ * is invoked without an explicit envName positional argument. This lets
+ * Commander see the env name as a proper positional rather than consuming
+ * the first command argument after `--` as the env name.
+ *
+ * Does nothing when VAULT_ENV is not set, when `env run` is not in argv,
+ * when there is no `--` separator, or when an envName is already present.
+ */
+export function injectVaultEnvArg(argv, vaultEnv = process.env.VAULT_ENV) {
+  if (!vaultEnv) return argv;
+
+  // Locate 'env run' in the argument list.
+  let runPos = -1;
+  for (let i = 0; i < argv.length - 1; i++) {
+    if (argv[i] === 'env' && argv[i + 1] === 'run') {
+      runPos = i + 1;
+      break;
+    }
+  }
+  if (runPos === -1) return argv;
+
+  // Find the `--` separator after `run`.
+  const ddPos = argv.indexOf('--', runPos + 1);
+  if (ddPos === -1) return argv;
+
+  // Walk the slice between `run` and `--`, skipping known option/value pairs.
+  // If any non-option, non-value arg is found, the user already supplied envName.
+  let i = runPos + 1;
+  while (i < ddPos) {
+    const arg = argv[i];
+    if (RUN_FLAGS_WITH_VALUE.has(arg)) {
+      i += 2; // skip flag + its value
+    } else if (arg.startsWith('-')) {
+      i += 1; // boolean flag
+    } else {
+      return argv; // positional envName already present
+    }
+  }
+
+  // No envName found before `--`: inject VAULT_ENV there.
+  const result = [...argv];
+  result.splice(ddPos, 0, vaultEnv);
+  return result;
+}
+
 // Keys in .vaultrc and the Commander option name they map to.
 const VAULTRC_KEYS = ['inject', 'env', 'name', 'vault', 'allowlistFile'];
 
@@ -116,17 +176,17 @@ export function loadProjectConfig(startDir = process.cwd()) {
 }
 
 /**
- * Apply .vaultrc defaults to a Commander options object. Only keys whose
- * current source is 'default' (i.e. not set by the user on the CLI) are
- * overwritten, so CLI flags always win.
+ * Apply .vaultrc defaults to a Commander options object.
+ * Precedence: CLI flag ('cli') > .vaultrc ('config') > env var ('env') > default.
+ * Only overwrites options whose source is 'default' or 'env'.
  */
 export function applyProjectConfig(cmd, config) {
   for (const key of VAULTRC_KEYS) {
-    if (
-      config[key] !== undefined &&
-      cmd.getOptionValueSource(key) === 'default'
-    ) {
-      cmd.setOptionValueWithSource(key, config[key], 'config');
+    if (config[key] !== undefined) {
+      const src = cmd.getOptionValueSource(key);
+      if (src === 'default' || src === 'env') {
+        cmd.setOptionValueWithSource(key, config[key], 'config');
+      }
     }
   }
 }

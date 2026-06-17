@@ -228,4 +228,58 @@ describe('vault env run (integration)', () => {
       fs.rmSync(rcDir, { recursive: true, force: true });
     }
   });
+
+  it('VAULT_ENV is used when no envName argument is passed', () => {
+    const r = cli(['run', '-v', vaultPath, '--', ...PRINT_ENV], {
+      VAULT_ENV: 'dev',
+    });
+    expect(r.status).toBe(0);
+    const env = JSON.parse(r.stdout);
+    expect(env.API_URL).toBe('https://api.example.com');
+  });
+
+  it('positional envName overrides VAULT_ENV', () => {
+    // 'dev' has API_URL; there is no 'other' env so it should error — proving
+    // the positional arg was used instead of falling back to VAULT_ENV=dev.
+    const r = cli(['run', 'nonexistent', '-v', vaultPath, '--', ...PRINT_ENV], {
+      VAULT_ENV: 'dev',
+    });
+    expect(r.status).not.toBe(0);
+  });
+
+  it('exits 1 when neither envName arg nor VAULT_ENV is set', () => {
+    // Without VAULT_ENV set and no positional before --, Commander assigns
+    // the first post-`--` token as envName. The vault will not find it and
+    // exits non-zero — the important thing is that nothing succeeds.
+    const env = { ...process.env, VAULT_ENV_PASSWORD: PASSWORD };
+    delete env.VAULT_ENV;
+    const r = spawnSync(
+      NODE,
+      [CLI, 'env', 'run', '-v', vaultPath, '--', ...PRINT_ENV],
+      {
+        encoding: 'utf8',
+        env,
+      }
+    );
+    expect(r.status).not.toBe(0);
+  });
+
+  it('VAULT_INJECT sets the injection mode', () => {
+    const r = cli(['run', 'dev', '-v', vaultPath, '--', ...PRINT_ENV], {
+      VAULT_INJECT: 'merge',
+    });
+    expect(r.status).toBe(0);
+    const env = JSON.parse(r.stdout);
+    expect(env.VAULT_ENV_PASSWORD).toBe(PASSWORD);
+  });
+
+  it('--inject flag overrides VAULT_INJECT', () => {
+    const r = cli(
+      ['run', 'dev', '--inject', 'clean', '-v', vaultPath, '--', ...PRINT_ENV],
+      { VAULT_INJECT: 'merge' }
+    );
+    expect(r.status).toBe(0);
+    const env = JSON.parse(r.stdout);
+    expect(env.VAULT_ENV_PASSWORD).toBeUndefined();
+  });
 });

@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import ora from 'ora';
 import { spawn } from 'child_process';
+import { Option } from 'commander';
 import os from 'os';
 import path from 'path';
 import fs from 'fs-extra';
@@ -1248,14 +1249,18 @@ export function registerEnvCommand(program) {
   env
     .command('run')
     .description('Run a command with the environment injected (no plaintext)')
-    .argument('<envName>', 'Environment name')
+    .argument('[envName]', 'Environment name (overrides VAULT_ENV)')
     .argument('[command...]', 'Command to run (use -- before it)')
-    .option('-n, --name <name>', 'Vault name')
+    .addOption(new Option('-n, --name <name>', 'Vault name').env('VAULT_NAME'))
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
     .option('--password-file <path>', 'Read vault password from a file')
     .option('--password-stdin', 'Read vault password from stdin')
-    .option('--inject <mode>', 'Injection mode: clean | merge | file', 'clean')
+    .addOption(
+      new Option('--inject <mode>', 'Injection mode: clean | merge | file')
+        .default('clean')
+        .env('VAULT_INJECT')
+    )
     .option(
       '--out-file <path>',
       'Temp .env path to write (required for --inject file). Named --out-file ' +
@@ -1270,7 +1275,7 @@ export function registerEnvCommand(program) {
       `File of vars to pass through in clean mode (one per line, # comments). ` +
         `Defaults to ${DEFAULT_ALLOWLIST_FILE} in CWD if present.`
     )
-    .action(async (envName, command, options, cmd) => {
+    .action(async (envNameArg, command, options, cmd) => {
       if (!command || command.length === 0) {
         console.error(
           chalk.red('No command specified. Usage: vault env run <env> -- <cmd>')
@@ -1283,6 +1288,17 @@ export function registerEnvCommand(program) {
         applyProjectConfig(cmd, rc);
       } catch (err) {
         console.error(chalk.red(err.message));
+        process.exit(1);
+      }
+
+      // Resolve environment name: positional arg > VAULT_ENV > error.
+      const envName = envNameArg || process.env.VAULT_ENV;
+      if (!envName) {
+        console.error(
+          chalk.red(
+            'No environment specified. Pass it as an argument or set VAULT_ENV.'
+          )
+        );
         process.exit(1);
       }
 
