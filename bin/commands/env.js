@@ -1275,8 +1275,12 @@ export function registerEnvCommand(program) {
       `File of vars to pass through in clean mode (one per line, # comments). ` +
         `Defaults to ${DEFAULT_ALLOWLIST_FILE} in CWD if present.`
     )
+    .option(
+      '--dry-run',
+      'Print the resolved environment without running the command'
+    )
     .action(async (envNameArg, command, options, cmd) => {
-      if (!command || command.length === 0) {
+      if (!options.dryRun && (!command || command.length === 0)) {
         console.error(
           chalk.red('No command specified. Usage: vault env run <env> -- <cmd>')
         );
@@ -1346,6 +1350,47 @@ export function registerEnvCommand(program) {
           parentEnv: process.env,
           allowlist: [...parseAllowlist(options.allowlist), ...fileAllowlist],
         });
+
+        if (options.dryRun) {
+          // Build a sensitivity map from showEnv; inherited vars default to sensitive.
+          const showResult = await EnvironmentVaultService.showEnv(
+            vaultPath,
+            vaultPassword,
+            envName
+          );
+          const sensitiveMap = {};
+          if (showResult.success) {
+            for (const { key, sensitive } of showResult.data.keys) {
+              sensitiveMap[key] = sensitive;
+            }
+          }
+
+          const modeLabel =
+            mode === 'file'
+              ? `${mode} (vars written to ${options.outFile ?? '<out-file>'})`
+              : mode;
+          log(
+            chalk.bold(
+              `\nDry run — env: ${chalk.cyan(envName)}  mode: ${chalk.cyan(modeLabel)}\n`
+            )
+          );
+
+          for (const [key, value] of Object.entries(childEnv)) {
+            const isVaultVar = key in vars;
+            const isSensitive = sensitiveMap[key] ?? true; // unknown → sensitive
+            const display =
+              isVaultVar && isSensitive ? chalk.gray('****') : value;
+            const prefix = isVaultVar ? chalk.green('+') : chalk.gray(' ');
+            log(`  ${prefix} ${chalk.cyan(key)}=${display}`);
+          }
+
+          log(
+            chalk.gray(
+              `\n  ${chalk.green('+')} = from vault   (others inherited from parent env)\n`
+            )
+          );
+          return;
+        }
 
         let envFilePath = null;
         if (mode === 'file') {

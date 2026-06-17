@@ -282,4 +282,49 @@ describe('vault env run (integration)', () => {
     const env = JSON.parse(r.stdout);
     expect(env.VAULT_ENV_PASSWORD).toBeUndefined();
   });
+
+  it('--dry-run prints vault vars without spawning the command', () => {
+    const r = cli(['run', 'dev', '--dry-run', '-v', vaultPath]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/API_URL/);
+    // Sensitive vars must be masked
+    expect(r.stdout).not.toMatch(/sekret/);
+    expect(r.stdout).toMatch(/\*\*\*\*/);
+  });
+
+  it('--dry-run does not require a command argument', () => {
+    const r = cli(['run', 'dev', '--dry-run', '-v', vaultPath]);
+    expect(r.status).toBe(0);
+  });
+
+  it('--dry-run shows public vars in full', () => {
+    // Mark API_URL as public first
+    cli([
+      'set',
+      'API_URL',
+      'https://api.example.com',
+      '-e',
+      'dev',
+      '-v',
+      vaultPath,
+      '--public',
+    ]);
+    const r = cli(['run', 'dev', '--dry-run', '-v', vaultPath]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/API_URL=https:\/\/api\.example\.com/);
+  });
+
+  it('--dry-run shows mode in header', () => {
+    const r = cli([
+      'run',
+      'dev',
+      '--dry-run',
+      '--inject',
+      'merge',
+      '-v',
+      vaultPath,
+    ]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/merge/i);
+  });
 });
