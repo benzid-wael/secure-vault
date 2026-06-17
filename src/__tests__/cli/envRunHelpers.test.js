@@ -1,11 +1,16 @@
 // @vitest-environment node
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'fs-extra';
+import os from 'os';
+import path from 'path';
 
 import {
   CLEAN_ALLOWLIST,
+  DEFAULT_ALLOWLIST_FILE,
   buildChildEnv,
   toDotenv,
   parseAllowlist,
+  readAllowlistFile,
 } from '../../../bin/commands/envRunHelpers.js';
 
 describe('buildChildEnv', () => {
@@ -89,5 +94,61 @@ describe('parseAllowlist', () => {
   it('returns [] for undefined/empty', () => {
     expect(parseAllowlist(undefined)).toEqual([]);
     expect(parseAllowlist('')).toEqual([]);
+  });
+});
+
+describe('DEFAULT_ALLOWLIST_FILE', () => {
+  it('is .vault-allowlist', () => {
+    expect(DEFAULT_ALLOWLIST_FILE).toBe('.vault-allowlist');
+  });
+});
+
+describe('readAllowlistFile', () => {
+  let tmpDir;
+  let tmpFile;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vault-test-'));
+    tmpFile = path.join(tmpDir, 'allowlist.txt');
+  });
+
+  afterEach(async () => {
+    await fs.remove(tmpDir);
+  });
+
+  it('parses one var per line', async () => {
+    await fs.writeFile(tmpFile, 'LANG\nTERM\nNODE_PATH\n');
+    expect(readAllowlistFile(tmpFile)).toEqual(['LANG', 'TERM', 'NODE_PATH']);
+  });
+
+  it('strips # comments and blank lines', async () => {
+    await fs.writeFile(
+      tmpFile,
+      '# this is a comment\nLANG\n\n# another\nTERM\n'
+    );
+    expect(readAllowlistFile(tmpFile)).toEqual(['LANG', 'TERM']);
+  });
+
+  it('strips inline comments', async () => {
+    await fs.writeFile(tmpFile, 'LANG # locale\nTERM\n');
+    expect(readAllowlistFile(tmpFile)).toEqual(['LANG', 'TERM']);
+  });
+
+  it('returns [] for a falsy path', () => {
+    expect(readAllowlistFile(null)).toEqual([]);
+    expect(readAllowlistFile('')).toEqual([]);
+    expect(readAllowlistFile(undefined)).toEqual([]);
+  });
+
+  it('returns [] when file is absent and mustExist is false', () => {
+    expect(readAllowlistFile('/nonexistent/path/.vault-allowlist')).toEqual([]);
+  });
+
+  it('throws when file is absent and mustExist is true', () => {
+    expect(() =>
+      readAllowlistFile('/nonexistent/path/.vault-allowlist', {
+        mustExist: true,
+      })
+    ).toThrow(/Cannot read allowlist file/);
   });
 });

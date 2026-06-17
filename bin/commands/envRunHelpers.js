@@ -3,6 +3,8 @@ import os from 'os';
 import path from 'path';
 import fs from 'fs-extra';
 
+export const DEFAULT_ALLOWLIST_FILE = '.vault-allowlist';
+
 // System variables passed through in `clean` mode so the spawned command can
 // still find its interpreter, home dir, etc. without inheriting the full env.
 export const CLEAN_ALLOWLIST = ['PATH', 'HOME', 'SHELL', 'USER', 'TMPDIR'];
@@ -54,6 +56,26 @@ export function parseAllowlist(value) {
   return value
     .split(',')
     .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Read variable names from an allowlist file (one per line, # comments).
+ * Returns an empty array if filePath is falsy or the file doesn't exist and
+ * mustExist is false. Throws if mustExist is true and the file is unreadable.
+ */
+export function readAllowlistFile(filePath, { mustExist = false } = {}) {
+  if (!filePath) return [];
+  let content;
+  try {
+    content = fs.readFileSync(filePath, 'utf-8');
+  } catch (err) {
+    if (!mustExist && err.code === 'ENOENT') return [];
+    throw new Error(`Cannot read allowlist file "${filePath}": ${err.message}`);
+  }
+  return content
+    .split('\n')
+    .map((line) => line.replace(/#.*$/, '').trim())
     .filter(Boolean);
 }
 

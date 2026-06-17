@@ -10,9 +10,11 @@ import { EnvironmentVaultService } from '../../src/electron/services/Environment
 import { EnvironmentVault } from '../../src/electron/models/EnvironmentVault.js';
 import {
   INJECT_MODES,
+  DEFAULT_ALLOWLIST_FILE,
   buildChildEnv,
   toDotenv,
   parseAllowlist,
+  readAllowlistFile,
   secureDelete,
   cleanupOrphanTempDirs,
 } from './envRunHelpers.js';
@@ -1261,6 +1263,11 @@ export function registerEnvCommand(program) {
       '--allowlist <vars>',
       'Extra system vars to pass through in clean mode (comma-separated)'
     )
+    .option(
+      '--allowlist-file <path>',
+      `File of vars to pass through in clean mode (one per line, # comments). ` +
+        `Defaults to ${DEFAULT_ALLOWLIST_FILE} in CWD if present.`
+    )
     .action(async (envName, command, options) => {
       if (!command || command.length === 0) {
         console.error(
@@ -1298,11 +1305,20 @@ export function registerEnvCommand(program) {
         }
 
         const vars = exportResult.data;
+
+        // Resolve allowlist file: explicit flag (must exist) or CWD default (optional).
+        const allowlistFilePath = options.allowlistFile
+          ? path.resolve(options.allowlistFile)
+          : path.resolve(DEFAULT_ALLOWLIST_FILE);
+        const fileAllowlist = readAllowlistFile(allowlistFilePath, {
+          mustExist: !!options.allowlistFile,
+        });
+
         const childEnv = buildChildEnv({
           mode,
           vars,
           parentEnv: process.env,
-          allowlist: parseAllowlist(options.allowlist),
+          allowlist: [...parseAllowlist(options.allowlist), ...fileAllowlist],
         });
 
         let envFilePath = null;
