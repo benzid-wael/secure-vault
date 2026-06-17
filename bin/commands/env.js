@@ -1435,6 +1435,124 @@ export function registerEnvCommand(program) {
     });
 
   env
+    .command('shell')
+    .description('Open an interactive shell with vault vars loaded')
+    .argument('[envName]', 'Environment name (overrides VAULT_ENV)')
+    .addOption(new Option('-n, --name <name>', 'Vault name').env('VAULT_NAME'))
+    .option('-v, --vault <path>', 'Exact vault file path')
+    .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
+    .addOption(
+      new Option('--inject <mode>', 'Injection mode: clean | merge')
+        .default('clean')
+        .env('VAULT_INJECT')
+    )
+    .option(
+      '--allowlist <vars>',
+      'Extra system vars to pass through in clean mode (comma-separated)'
+    )
+    .option(
+      '--allowlist-file <path>',
+      `File of vars to pass through in clean mode (one per line, # comments). ` +
+        `Defaults to ${DEFAULT_ALLOWLIST_FILE} in CWD if present.`
+    )
+    .action(async (envNameArg, options, cmd) => {
+      try {
+        const rc = loadProjectConfig();
+        applyProjectConfig(cmd, rc);
+      } catch (err) {
+        console.error(chalk.red(err.message));
+        process.exit(1);
+      }
+
+      const envName = envNameArg || process.env.VAULT_ENV;
+      if (!envName) {
+        console.error(
+          chalk.red(
+            'No environment specified. Pass it as an argument or set VAULT_ENV.'
+          )
+        );
+        process.exit(1);
+      }
+
+      const mode = options.inject;
+      if (!['clean', 'merge'].includes(mode)) {
+        console.error(
+          chalk.red(`Invalid --inject mode "${mode}" for shell (clean|merge)`)
+        );
+        process.exit(1);
+      }
+
+      try {
+        const { vaultPath, vaultPassword } = await loadVault(options);
+
+        const exportResult = await EnvironmentVaultService.exportEnv(
+          vaultPath,
+          vaultPassword,
+          envName,
+          'json'
+        );
+        if (!exportResult.success) {
+          console.error(chalk.red(exportResult.error));
+          process.exit(1);
+        }
+
+        const vars = exportResult.data;
+
+        const allowlistFilePath = options.allowlistFile
+          ? path.resolve(options.allowlistFile)
+          : path.resolve(DEFAULT_ALLOWLIST_FILE);
+        const fileAllowlist = readAllowlistFile(allowlistFilePath, {
+          mustExist: !!options.allowlistFile,
+        });
+
+        const childEnv = buildChildEnv({
+          mode,
+          vars,
+          parentEnv: process.env,
+          allowlist: [...parseAllowlist(options.allowlist), ...fileAllowlist],
+        });
+
+        // Let prompts (starship, oh-my-zsh, etc.) detect the active vault context.
+        childEnv.VAULT_SHELL = '1';
+        childEnv.VAULT_SHELL_ENV = envName;
+
+        const shell = process.env.SHELL || '/bin/sh';
+        log(
+          chalk.bold(
+            `\nOpening ${chalk.cyan(mode)} shell for env ${chalk.cyan(envName)} (${chalk.gray(shell)})\n` +
+              chalk.gray(`  Type 'exit' or press Ctrl-D to return.\n`)
+          )
+        );
+
+        const child = spawn(shell, [], { stdio: 'inherit', env: childEnv });
+
+        const forward = (signal) => child.kill(signal);
+        process.on('SIGINT', forward);
+        process.on('SIGTERM', forward);
+
+        child.on('error', (err) => {
+          const msg =
+            err.code === 'ENOENT'
+              ? `Shell not found: ${shell}`
+              : `Failed to open shell: ${err.message}`;
+          console.error(chalk.red(msg));
+          process.exit(127);
+        });
+
+        child.on('exit', (code, signal) => {
+          process.removeListener('SIGINT', forward);
+          process.removeListener('SIGTERM', forward);
+          process.exit(signal ? 1 : (code ?? 0));
+        });
+      } catch (error) {
+        console.error(chalk.red(error.message));
+        process.exit(1);
+      }
+    });
+
+  env
     .command('change-password')
     .description('Change the vault password')
     .option('-n, --name <name>', 'Vault name')
