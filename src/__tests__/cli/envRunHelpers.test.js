@@ -7,10 +7,13 @@ import path from 'path';
 import {
   CLEAN_ALLOWLIST,
   DEFAULT_ALLOWLIST_FILE,
+  VAULTRC_FILENAME,
   buildChildEnv,
   toDotenv,
   parseAllowlist,
   readAllowlistFile,
+  loadProjectConfig,
+  applyProjectConfig,
 } from '../../../bin/commands/envRunHelpers.js';
 
 describe('buildChildEnv', () => {
@@ -150,5 +153,93 @@ describe('readAllowlistFile', () => {
         mustExist: true,
       })
     ).toThrow(/Cannot read allowlist file/);
+  });
+});
+
+describe('VAULTRC_FILENAME', () => {
+  it('is .vaultrc', () => {
+    expect(VAULTRC_FILENAME).toBe('.vaultrc');
+  });
+});
+
+describe('loadProjectConfig', () => {
+  let tmpDir;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vault-rc-'));
+  });
+
+  afterEach(async () => {
+    await fs.remove(tmpDir);
+  });
+
+  it('returns {} when no .vaultrc exists', () => {
+    expect(loadProjectConfig(tmpDir)).toEqual({});
+  });
+
+  it('parses a valid .vaultrc in the start dir', async () => {
+    await fs.writeJson(path.join(tmpDir, '.vaultrc'), {
+      inject: 'merge',
+      env: 'staging',
+    });
+    expect(loadProjectConfig(tmpDir)).toEqual({
+      inject: 'merge',
+      env: 'staging',
+    });
+  });
+
+  it('walks up to find .vaultrc in a parent dir', async () => {
+    await fs.writeJson(path.join(tmpDir, '.vaultrc'), { inject: 'merge' });
+    const child = path.join(tmpDir, 'sub', 'dir');
+    await fs.mkdirp(child);
+    expect(loadProjectConfig(child)).toEqual({ inject: 'merge' });
+  });
+
+  it('stops walking at a .git boundary', async () => {
+    // .vaultrc lives above the git root — should NOT be found.
+    await fs.writeJson(path.join(tmpDir, '.vaultrc'), { inject: 'merge' });
+    const gitRoot = path.join(tmpDir, 'project');
+    await fs.mkdirp(path.join(gitRoot, '.git'));
+    expect(loadProjectConfig(gitRoot)).toEqual({});
+  });
+
+  it('throws on invalid JSON', async () => {
+    await fs.writeFile(path.join(tmpDir, '.vaultrc'), '{ bad json }');
+    expect(() => loadProjectConfig(tmpDir)).toThrow(/Invalid JSON/);
+  });
+});
+
+describe('applyProjectConfig', () => {
+  function makeCmd(defaults = {}) {
+    // Minimal Commander-like stub with option value source tracking.
+    const sources = {};
+    const values = { inject: 'clean', ...defaults };
+    for (const k of Object.keys(values)) sources[k] = 'default';
+    return {
+      getOptionValueSource: (k) => sources[k] ?? 'default',
+      setOptionValueWithSource: (k, v, src) => {
+        values[k] = v;
+        sources[k] = src;
+      },
+      opts: () => values,
+    };
+  }
+
+  it('sets a default option from config', () => {
+    const cmd = makeCmd();
+    applyProjectConfig(cmd, { inject: 'merge' });
+    expect(cmd.opts().inject).toBe('merge');
+  });
+
+  it('does not override a CLI-set option', () => {
+    const cmd = makeCmd();
+    cmd.setOptionValueWithSource('inject', 'file', 'cli');
+    applyProjectConfig(cmd, { inject: 'merge' });
+    expect(cmd.opts().inject).toBe('file');
+  });
+
+  it('ignores unknown keys in config', () => {
+    const cmd = makeCmd();
+    expect(() => applyProjectConfig(cmd, { unknown: 'value' })).not.toThrow();
   });
 });

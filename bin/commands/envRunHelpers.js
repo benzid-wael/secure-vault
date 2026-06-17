@@ -79,6 +79,58 @@ export function readAllowlistFile(filePath, { mustExist = false } = {}) {
     .filter(Boolean);
 }
 
+export const VAULTRC_FILENAME = '.vaultrc';
+
+// Keys in .vaultrc and the Commander option name they map to.
+const VAULTRC_KEYS = ['inject', 'env', 'name', 'vault', 'allowlistFile'];
+
+/**
+ * Walk from startDir upward looking for a .vaultrc file, stopping at a git
+ * root (presence of .git) or the filesystem root. Returns the parsed config
+ * object, or {} if no file is found. Throws on JSON parse errors.
+ */
+export function loadProjectConfig(startDir = process.cwd()) {
+  let dir = path.resolve(startDir);
+  while (true) {
+    const candidate = path.join(dir, VAULTRC_FILENAME);
+    if (fs.existsSync(candidate)) {
+      let raw;
+      try {
+        raw = fs.readFileSync(candidate, 'utf-8');
+      } catch (err) {
+        throw new Error(`Cannot read ${candidate}: ${err.message}`);
+      }
+      try {
+        return JSON.parse(raw);
+      } catch (err) {
+        throw new Error(`Invalid JSON in ${candidate}: ${err.message}`);
+      }
+    }
+    // Stop at a git root or the filesystem root.
+    if (fs.existsSync(path.join(dir, '.git'))) break;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return {};
+}
+
+/**
+ * Apply .vaultrc defaults to a Commander options object. Only keys whose
+ * current source is 'default' (i.e. not set by the user on the CLI) are
+ * overwritten, so CLI flags always win.
+ */
+export function applyProjectConfig(cmd, config) {
+  for (const key of VAULTRC_KEYS) {
+    if (
+      config[key] !== undefined &&
+      cmd.getOptionValueSource(key) === 'default'
+    ) {
+      cmd.setOptionValueWithSource(key, config[key], 'config');
+    }
+  }
+}
+
 /**
  * Best-effort secure deletion: overwrite the file with 3 passes (0xFF, 0x00,
  * random) before unlinking, per SPEC §12.3.

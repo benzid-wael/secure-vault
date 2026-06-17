@@ -15,6 +15,8 @@ import {
   toDotenv,
   parseAllowlist,
   readAllowlistFile,
+  loadProjectConfig,
+  applyProjectConfig,
   secureDelete,
   cleanupOrphanTempDirs,
 } from './envRunHelpers.js';
@@ -1268,11 +1270,19 @@ export function registerEnvCommand(program) {
       `File of vars to pass through in clean mode (one per line, # comments). ` +
         `Defaults to ${DEFAULT_ALLOWLIST_FILE} in CWD if present.`
     )
-    .action(async (envName, command, options) => {
+    .action(async (envName, command, options, cmd) => {
       if (!command || command.length === 0) {
         console.error(
           chalk.red('No command specified. Usage: vault env run <env> -- <cmd>')
         );
+        process.exit(1);
+      }
+
+      try {
+        const rc = loadProjectConfig();
+        applyProjectConfig(cmd, rc);
+      } catch (err) {
+        console.error(chalk.red(err.message));
         process.exit(1);
       }
 

@@ -151,4 +151,81 @@ describe('vault env run (integration)', () => {
     expect(r.status).toBe(1);
     expect(r.stdout + r.stderr).toMatch(/No command/i);
   });
+
+  it('.vaultrc inject default is applied when no --inject flag is passed', () => {
+    const rcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-rc-'));
+    const rcPath = path.join(rcDir, '.vaultrc');
+    fs.writeFileSync(rcPath, JSON.stringify({ inject: 'merge' }));
+    try {
+      const r = spawnSync(
+        NODE,
+        [CLI, 'env', 'run', 'dev', '-v', vaultPath, '--', ...PRINT_ENV],
+        {
+          encoding: 'utf8',
+          cwd: rcDir,
+          env: { ...process.env, VAULT_ENV_PASSWORD: PASSWORD },
+        }
+      );
+      expect(r.status).toBe(0);
+      const env = JSON.parse(r.stdout);
+      // merge mode: VAULT_ENV_PASSWORD should be inherited from parent
+      expect(env.VAULT_ENV_PASSWORD).toBe(PASSWORD);
+    } finally {
+      fs.rmSync(rcDir, { recursive: true, force: true });
+    }
+  });
+
+  it('.vaultrc is ignored when CLI flag explicitly overrides it', () => {
+    const rcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-rc-'));
+    const rcPath = path.join(rcDir, '.vaultrc');
+    fs.writeFileSync(rcPath, JSON.stringify({ inject: 'merge' }));
+    try {
+      const r = spawnSync(
+        NODE,
+        [
+          CLI,
+          'env',
+          'run',
+          'dev',
+          '--inject',
+          'clean',
+          '-v',
+          vaultPath,
+          '--',
+          ...PRINT_ENV,
+        ],
+        {
+          encoding: 'utf8',
+          cwd: rcDir,
+          env: { ...process.env, VAULT_ENV_PASSWORD: PASSWORD },
+        }
+      );
+      expect(r.status).toBe(0);
+      const env = JSON.parse(r.stdout);
+      // clean mode wins: VAULT_ENV_PASSWORD must not leak
+      expect(env.VAULT_ENV_PASSWORD).toBeUndefined();
+    } finally {
+      fs.rmSync(rcDir, { recursive: true, force: true });
+    }
+  });
+
+  it('exits 1 with a clear message on invalid .vaultrc JSON', () => {
+    const rcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-rc-'));
+    fs.writeFileSync(path.join(rcDir, '.vaultrc'), '{ bad json }');
+    try {
+      const r = spawnSync(
+        NODE,
+        [CLI, 'env', 'run', 'dev', '-v', vaultPath, '--', NODE, '-e', '0'],
+        {
+          encoding: 'utf8',
+          cwd: rcDir,
+          env: { ...process.env, VAULT_ENV_PASSWORD: PASSWORD },
+        }
+      );
+      expect(r.status).toBe(1);
+      expect(r.stdout + r.stderr).toMatch(/Invalid JSON/i);
+    } finally {
+      fs.rmSync(rcDir, { recursive: true, force: true });
+    }
+  });
 });
