@@ -452,7 +452,8 @@ vault env
   ├── copy   <src> <dst>              Copy an environment to a new name
   ├── diff   <envA> <envB>            Show diff between two environments
   ├── import <env> <file...>          Import .env file(s) into an environment
-  ├── run    <env> [--] <cmd>...      Run command with env injected
+  ├── run    [env] [--] <cmd>...      Run command with env injected
+  ├── shell  [env]                    Open interactive shell with env loaded
   │
   └── change-password                 Re-encrypt the vault with a new password
 ```
@@ -719,24 +720,45 @@ To undo a rollback, rollback again to the version before it.
 ```
 
 USAGE
-vault env run <env> [--vault <path>]
+vault env run [env] [--vault <path>]
 [--inject clean|merge|file]
-[--env-file <path>]
+[--out-file <path>]
 [--allowlist <comma-separated-vars>]
+[--allowlist-file <path>]
+[--dry-run]
 [--] <command>...
 
 FLAGS
 --inject <mode>
 clean (default) Only vault vars + allowlisted system vars (PATH, HOME, SHELL, USER, TMPDIR)
 merge Vault vars merged into inherited process.env
-file Write --env-file, set an env var pointing to it, spawn, cleanup
+file Write --out-file, spawn, then securely delete the file
 
---env-file <path>
+--out-file <path>
 Path to write a temporary .env file. Required when --inject=file.
-The file is created before spawn, securely deleted after child exits.
+The file is created 0600 before spawn and securely deleted after child exits.
 
 --allowlist <vars>
-Additional system vars to allow through in clean mode (comma-separated, no spaces).
+Additional system vars to allow through in clean mode (comma-separated).
+
+--allowlist-file <path>
+File of vars to allow through in clean mode (one per line, # comments).
+Defaults to .vault-allowlist in CWD if present; explicit path must exist.
+
+--dry-run
+Print the resolved environment without spawning the command.
+Vault vars are marked with '+'; sensitive values are masked as \*\*\*\*.
+
+ENV VARS
+VAULT_ENV Default environment name (overridden by positional arg or .vaultrc)
+VAULT_NAME Default vault name (overridden by --name or .vaultrc)
+VAULT_INJECT Default inject mode (overridden by --inject or .vaultrc)
+
+Precedence: CLI flag > .vaultrc > env var > built-in default.
+
+PROJECT CONFIG (.vaultrc)
+A .vaultrc JSON file at the project root (walks up to git root) sets defaults
+for any of: inject, env, name, vault, allowlistFile.
 
 DESCRIPTION
 Decrypts the env vault, resolves templates, validates required vars,
@@ -757,11 +779,64 @@ vault env run development --inject merge -- npx react-native run-ios
 
 # Temp .env file for react-native-config build
 
-vault env run staging --inject file --env-file .env -- npx react-native run-ios
+vault env run staging --inject file --out-file .env -- npx react-native run-ios
 
 # Clean mode with additional system vars allowed
 
 vault env run production --allowlist NODE_PATH,LANG -- npm run build
+
+# Allow extra vars via file
+
+vault env run production --allowlist-file .vault-allowlist -- npm run build
+
+# Preview what would be injected
+
+vault env run staging --dry-run
+
+# Use VAULT_ENV (useful in CI)
+
+VAULT_ENV=staging vault env run -- node server.js
+
+```
+
+#### `vault env shell`
+
+```
+
+USAGE
+vault env shell [env] [--vault <path>]
+[--inject clean|merge]
+[--allowlist <comma-separated-vars>]
+[--allowlist-file <path>]
+
+FLAGS
+--inject <mode>
+clean (default) Only vault vars + allowlisted system vars
+merge Vault vars merged into inherited process.env
+(file mode is not supported for interactive shells)
+
+--allowlist / --allowlist-file
+Same semantics as vault env run.
+
+ENV VARS / PROJECT CONFIG
+Same resolution as vault env run (VAULT_ENV, VAULT_NAME, VAULT_INJECT, .vaultrc).
+
+DESCRIPTION
+Opens an interactive subshell ($SHELL) with the vault environment loaded.
+Sets VAULT_SHELL=1 and VAULT_SHELL_ENV=<envName> so prompt integrations
+(starship, oh-my-zsh, etc.) can indicate the active vault context.
+
+Type 'exit' or Ctrl-D to return to the parent shell.
+
+EXAMPLES
+
+# Drop into a shell with the staging env loaded
+
+vault env shell staging
+
+# Use merge mode to keep your full dev environment
+
+vault env shell dev --inject merge
 
 ```
 
