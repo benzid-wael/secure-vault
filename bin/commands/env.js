@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import ora from 'ora';
 import { spawn } from 'child_process';
+import { Option } from 'commander';
 import os from 'os';
 import path from 'path';
 import fs from 'fs-extra';
@@ -10,11 +11,16 @@ import { EnvironmentVaultService } from '../../src/electron/services/Environment
 import { EnvironmentVault } from '../../src/electron/models/EnvironmentVault.js';
 import {
   INJECT_MODES,
+  DEFAULT_ALLOWLIST_FILE,
   buildChildEnv,
   toDotenv,
   parseAllowlist,
+  readAllowlistFile,
+  loadProjectConfig,
+  applyProjectConfig,
   secureDelete,
   cleanupOrphanTempDirs,
+  getRunCommand,
 } from './envRunHelpers.js';
 import {
   buildEditorTemplate,
@@ -1244,14 +1250,18 @@ export function registerEnvCommand(program) {
   env
     .command('run')
     .description('Run a command with the environment injected (no plaintext)')
-    .argument('<envName>', 'Environment name')
+    .argument('[envName]', 'Environment name (overrides VAULT_ENV)')
     .argument('[command...]', 'Command to run (use -- before it)')
-    .option('-n, --name <name>', 'Vault name')
+    .addOption(new Option('-n, --name <name>', 'Vault name').env('VAULT_NAME'))
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
     .option('--password-file <path>', 'Read vault password from a file')
     .option('--password-stdin', 'Read vault password from stdin')
-    .option('--inject <mode>', 'Injection mode: clean | merge | file', 'clean')
+    .addOption(
+      new Option('--inject <mode>', 'Injection mode: clean | merge | file')
+        .default('clean')
+        .env('VAULT_INJECT')
+    )
     .option(
       '--out-file <path>',
       'Temp .env path to write (required for --inject file). Named --out-file ' +
@@ -1261,10 +1271,42 @@ export function registerEnvCommand(program) {
       '--allowlist <vars>',
       'Extra system vars to pass through in clean mode (comma-separated)'
     )
-    .action(async (envName, command, options) => {
-      if (!command || command.length === 0) {
+    .option(
+      '--allowlist-file <path>',
+      `File of vars to pass through in clean mode (one per line, # comments). ` +
+        `Defaults to ${DEFAULT_ALLOWLIST_FILE} in CWD if present.`
+    )
+    .option(
+      '--dry-run',
+      'Print the resolved environment without running the command'
+    )
+    .action(async (envNameArg, commandArg, options, cmd) => {
+      // The command comes from after the `--` wall (extractRunCommand) when one
+      // was present; otherwise fall back to Commander's positional parsing for
+      // the no-`--` form (`vault env run <env> <cmd>...`).
+      const command = getRunCommand() ?? commandArg;
+      if (!options.dryRun && (!command || command.length === 0)) {
         console.error(
           chalk.red('No command specified. Usage: vault env run <env> -- <cmd>')
+        );
+        process.exit(1);
+      }
+
+      try {
+        const rc = loadProjectConfig();
+        applyProjectConfig(cmd, rc);
+      } catch (err) {
+        console.error(chalk.red(err.message));
+        process.exit(1);
+      }
+
+      // Resolve environment name: positional arg > VAULT_ENV > error.
+      const envName = envNameArg || process.env.VAULT_ENV;
+      if (!envName) {
+        console.error(
+          chalk.red(
+            'No environment specified. Pass it as an argument or set VAULT_ENV.'
+          )
         );
         process.exit(1);
       }
@@ -1298,12 +1340,62 @@ export function registerEnvCommand(program) {
         }
 
         const vars = exportResult.data;
+
+        // Resolve allowlist file: explicit flag (must exist) or CWD default (optional).
+        const allowlistFilePath = options.allowlistFile
+          ? path.resolve(options.allowlistFile)
+          : path.resolve(DEFAULT_ALLOWLIST_FILE);
+        const fileAllowlist = readAllowlistFile(allowlistFilePath, {
+          mustExist: !!options.allowlistFile,
+        });
+
         const childEnv = buildChildEnv({
           mode,
           vars,
           parentEnv: process.env,
-          allowlist: parseAllowlist(options.allowlist),
+          allowlist: [...parseAllowlist(options.allowlist), ...fileAllowlist],
         });
+
+        if (options.dryRun) {
+          // Build a sensitivity map from showEnv; inherited vars default to sensitive.
+          const showResult = await EnvironmentVaultService.showEnv(
+            vaultPath,
+            vaultPassword,
+            envName
+          );
+          const sensitiveMap = {};
+          if (showResult.success) {
+            for (const { key, sensitive } of showResult.data.keys) {
+              sensitiveMap[key] = sensitive;
+            }
+          }
+
+          const modeLabel =
+            mode === 'file'
+              ? `${mode} (vars written to ${options.outFile ?? '<out-file>'})`
+              : mode;
+          log(
+            chalk.bold(
+              `\nDry run — env: ${chalk.cyan(envName)}  mode: ${chalk.cyan(modeLabel)}\n`
+            )
+          );
+
+          for (const [key, value] of Object.entries(childEnv)) {
+            const isVaultVar = key in vars;
+            const isSensitive = sensitiveMap[key] ?? true; // unknown → sensitive
+            const display =
+              isVaultVar && isSensitive ? chalk.gray('****') : value;
+            const prefix = isVaultVar ? chalk.green('+') : chalk.gray(' ');
+            log(`  ${prefix} ${chalk.cyan(key)}=${display}`);
+          }
+
+          log(
+            chalk.gray(
+              `\n  ${chalk.green('+')} = from vault   (others inherited from parent env)\n`
+            )
+          );
+          return;
+        }
 
         let envFilePath = null;
         if (mode === 'file') {
@@ -1339,6 +1431,124 @@ export function registerEnvCommand(program) {
           process.removeListener('SIGINT', forward);
           process.removeListener('SIGTERM', forward);
           // Propagate the child's exit status; map a terminating signal to 1.
+          process.exit(signal ? 1 : (code ?? 0));
+        });
+      } catch (error) {
+        console.error(chalk.red(error.message));
+        process.exit(1);
+      }
+    });
+
+  env
+    .command('shell')
+    .description('Open an interactive shell with vault vars loaded')
+    .argument('[envName]', 'Environment name (overrides VAULT_ENV)')
+    .addOption(new Option('-n, --name <name>', 'Vault name').env('VAULT_NAME'))
+    .option('-v, --vault <path>', 'Exact vault file path')
+    .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
+    .addOption(
+      new Option('--inject <mode>', 'Injection mode: clean | merge')
+        .default('clean')
+        .env('VAULT_INJECT')
+    )
+    .option(
+      '--allowlist <vars>',
+      'Extra system vars to pass through in clean mode (comma-separated)'
+    )
+    .option(
+      '--allowlist-file <path>',
+      `File of vars to pass through in clean mode (one per line, # comments). ` +
+        `Defaults to ${DEFAULT_ALLOWLIST_FILE} in CWD if present.`
+    )
+    .action(async (envNameArg, options, cmd) => {
+      try {
+        const rc = loadProjectConfig();
+        applyProjectConfig(cmd, rc);
+      } catch (err) {
+        console.error(chalk.red(err.message));
+        process.exit(1);
+      }
+
+      const envName = envNameArg || process.env.VAULT_ENV;
+      if (!envName) {
+        console.error(
+          chalk.red(
+            'No environment specified. Pass it as an argument or set VAULT_ENV.'
+          )
+        );
+        process.exit(1);
+      }
+
+      const mode = options.inject;
+      if (!['clean', 'merge'].includes(mode)) {
+        console.error(
+          chalk.red(`Invalid --inject mode "${mode}" for shell (clean|merge)`)
+        );
+        process.exit(1);
+      }
+
+      try {
+        const { vaultPath, vaultPassword } = await loadVault(options);
+
+        const exportResult = await EnvironmentVaultService.exportEnv(
+          vaultPath,
+          vaultPassword,
+          envName,
+          'json'
+        );
+        if (!exportResult.success) {
+          console.error(chalk.red(exportResult.error));
+          process.exit(1);
+        }
+
+        const vars = exportResult.data;
+
+        const allowlistFilePath = options.allowlistFile
+          ? path.resolve(options.allowlistFile)
+          : path.resolve(DEFAULT_ALLOWLIST_FILE);
+        const fileAllowlist = readAllowlistFile(allowlistFilePath, {
+          mustExist: !!options.allowlistFile,
+        });
+
+        const childEnv = buildChildEnv({
+          mode,
+          vars,
+          parentEnv: process.env,
+          allowlist: [...parseAllowlist(options.allowlist), ...fileAllowlist],
+        });
+
+        // Let prompts (starship, oh-my-zsh, etc.) detect the active vault context.
+        childEnv.VAULT_SHELL = '1';
+        childEnv.VAULT_SHELL_ENV = envName;
+
+        const shell = process.env.SHELL || '/bin/sh';
+        log(
+          chalk.bold(
+            `\nOpening ${chalk.cyan(mode)} shell for env ${chalk.cyan(envName)} (${chalk.gray(shell)})\n` +
+              chalk.gray(`  Type 'exit' or press Ctrl-D to return.\n`)
+          )
+        );
+
+        const child = spawn(shell, [], { stdio: 'inherit', env: childEnv });
+
+        const forward = (signal) => child.kill(signal);
+        process.on('SIGINT', forward);
+        process.on('SIGTERM', forward);
+
+        child.on('error', (err) => {
+          const msg =
+            err.code === 'ENOENT'
+              ? `Shell not found: ${shell}`
+              : `Failed to open shell: ${err.message}`;
+          console.error(chalk.red(msg));
+          process.exit(127);
+        });
+
+        child.on('exit', (code, signal) => {
+          process.removeListener('SIGINT', forward);
+          process.removeListener('SIGTERM', forward);
           process.exit(signal ? 1 : (code ?? 0));
         });
       } catch (error) {

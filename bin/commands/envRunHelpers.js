@@ -3,6 +3,8 @@ import os from 'os';
 import path from 'path';
 import fs from 'fs-extra';
 
+export const DEFAULT_ALLOWLIST_FILE = '.vault-allowlist';
+
 // System variables passed through in `clean` mode so the spawned command can
 // still find its interpreter, home dir, etc. without inheriting the full env.
 export const CLEAN_ALLOWLIST = ['PATH', 'HOME', 'SHELL', 'USER', 'TMPDIR'];
@@ -55,6 +57,120 @@ export function parseAllowlist(value) {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+/**
+ * Read variable names from an allowlist file (one per line, # comments).
+ * Returns an empty array if filePath is falsy or the file doesn't exist and
+ * mustExist is false. Throws if mustExist is true and the file is unreadable.
+ */
+export function readAllowlistFile(filePath, { mustExist = false } = {}) {
+  if (!filePath) return [];
+  let content;
+  try {
+    content = fs.readFileSync(filePath, 'utf-8');
+  } catch (err) {
+    if (!mustExist && err.code === 'ENOENT') return [];
+    throw new Error(`Cannot read allowlist file "${filePath}": ${err.message}`);
+  }
+  return content
+    .split('\n')
+    .map((line) => line.replace(/#.*$/, '').trim())
+    .filter(Boolean);
+}
+
+export const VAULTRC_FILENAME = '.vaultrc';
+
+// The command to run, captured from the tokens after the first `--` of a
+// `vault env run` invocation. Set by extractRunCommand(), read by the run
+// action via getRunCommand(). Module-level because the CLI is single-shot.
+let runCommand = null;
+
+/** The command captured from after `--`, or null if there was no `--`. */
+export function getRunCommand() {
+  return runCommand;
+}
+
+/**
+ * Treat the first `--` after `vault env run` as a hard wall: everything to its
+ * right is the command to execute and is removed from argv before Commander
+ * parses, so a command token can never be mis-consumed as the `[envName]`
+ * positional. The env name is then resolved solely from a positional *before*
+ * `--` (or the VAULT_ENV fallback in the run action) — never from the command.
+ *
+ * Returns argv unchanged (and leaves the captured command null) when this is
+ * not an `env run` invocation or there is no `--` separator. The `--` case
+ * stashes the trailing tokens for getRunCommand(); any further `--` in the
+ * command is preserved so nested `vault env run … -- …` composes correctly.
+ */
+export function extractRunCommand(argv) {
+  runCommand = null;
+
+  // Locate the `env run` subcommand (options for `run` always follow `run`).
+  let runPos = -1;
+  for (let i = 0; i < argv.length - 1; i++) {
+    if (argv[i] === 'env' && argv[i + 1] === 'run') {
+      runPos = i + 1;
+      break;
+    }
+  }
+  if (runPos === -1) return argv;
+
+  const ddPos = argv.indexOf('--', runPos + 1);
+  if (ddPos === -1) return argv;
+
+  runCommand = argv.slice(ddPos + 1);
+  return argv.slice(0, ddPos);
+}
+
+// Keys in .vaultrc and the Commander option name they map to.
+const VAULTRC_KEYS = ['inject', 'env', 'name', 'vault', 'allowlistFile'];
+
+/**
+ * Walk from startDir upward looking for a .vaultrc file, stopping at a git
+ * root (presence of .git) or the filesystem root. Returns the parsed config
+ * object, or {} if no file is found. Throws on JSON parse errors.
+ */
+export function loadProjectConfig(startDir = process.cwd()) {
+  let dir = path.resolve(startDir);
+  while (true) {
+    const candidate = path.join(dir, VAULTRC_FILENAME);
+    if (fs.existsSync(candidate)) {
+      let raw;
+      try {
+        raw = fs.readFileSync(candidate, 'utf-8');
+      } catch (err) {
+        throw new Error(`Cannot read ${candidate}: ${err.message}`);
+      }
+      try {
+        return JSON.parse(raw);
+      } catch (err) {
+        throw new Error(`Invalid JSON in ${candidate}: ${err.message}`);
+      }
+    }
+    // Stop at a git root or the filesystem root.
+    if (fs.existsSync(path.join(dir, '.git'))) break;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return {};
+}
+
+/**
+ * Apply .vaultrc defaults to a Commander options object.
+ * Precedence: CLI flag ('cli') > .vaultrc ('config') > env var ('env') > default.
+ * Only overwrites options whose source is 'default' or 'env'.
+ */
+export function applyProjectConfig(cmd, config) {
+  for (const key of VAULTRC_KEYS) {
+    if (config[key] !== undefined) {
+      const src = cmd.getOptionValueSource(key);
+      if (src === 'default' || src === 'env') {
+        cmd.setOptionValueWithSource(key, config[key], 'config');
+      }
+    }
+  }
 }
 
 /**

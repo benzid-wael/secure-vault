@@ -58,7 +58,44 @@ vault env diff dev prod          # compare two environments
 vault env history dev            # view version history
 vault env rollback 3 -e dev      # restore a previous version of "dev"
 vault env run dev -- npm start   # run a command with the env injected
+vault env run dev --dry-run      # preview what would be injected (no spawn)
+vault env shell dev              # open an interactive shell with the env loaded
 ```
+
+#### Zero-friction project setup
+
+Drop a `.vaultrc` at your project root to avoid repeating flags on every invocation:
+
+```json
+{
+  "inject": "merge",
+  "name": "my-project",
+  "allowlistFile": ".vault-allowlist"
+}
+```
+
+Set `VAULT_ENV`, `VAULT_NAME`, or `VAULT_INJECT` for CI pipelines — they fill
+in the same defaults, and `.vaultrc` overrides them, and CLI flags override
+everything:
+
+```bash
+export VAULT_ENV=staging
+vault env run -- node server.js          # env name from VAULT_ENV
+VAULT_INJECT=merge vault env run -- ...  # inject mode from env var
+```
+
+Pass a per-project allowlist file to let extra system vars through in `clean`
+mode (one var per line, `#` comments supported):
+
+```bash
+# .vault-allowlist
+NODE_PATH
+LANG   # locale settings
+TERM   # terminal type
+```
+
+The file `.vault-allowlist` is loaded automatically if present; override with
+`--allowlist-file <path>`.
 
 #### Layering & template references
 

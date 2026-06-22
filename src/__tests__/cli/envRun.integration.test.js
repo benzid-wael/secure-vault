@@ -151,4 +151,198 @@ describe('vault env run (integration)', () => {
     expect(r.status).toBe(1);
     expect(r.stdout + r.stderr).toMatch(/No command/i);
   });
+
+  it('.vaultrc inject default is applied when no --inject flag is passed', () => {
+    const rcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-rc-'));
+    const rcPath = path.join(rcDir, '.vaultrc');
+    fs.writeFileSync(rcPath, JSON.stringify({ inject: 'merge' }));
+    try {
+      const r = spawnSync(
+        NODE,
+        [CLI, 'env', 'run', 'dev', '-v', vaultPath, '--', ...PRINT_ENV],
+        {
+          encoding: 'utf8',
+          cwd: rcDir,
+          env: { ...process.env, VAULT_ENV_PASSWORD: PASSWORD },
+        }
+      );
+      expect(r.status).toBe(0);
+      const env = JSON.parse(r.stdout);
+      // merge mode: VAULT_ENV_PASSWORD should be inherited from parent
+      expect(env.VAULT_ENV_PASSWORD).toBe(PASSWORD);
+    } finally {
+      fs.rmSync(rcDir, { recursive: true, force: true });
+    }
+  });
+
+  it('.vaultrc is ignored when CLI flag explicitly overrides it', () => {
+    const rcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-rc-'));
+    const rcPath = path.join(rcDir, '.vaultrc');
+    fs.writeFileSync(rcPath, JSON.stringify({ inject: 'merge' }));
+    try {
+      const r = spawnSync(
+        NODE,
+        [
+          CLI,
+          'env',
+          'run',
+          'dev',
+          '--inject',
+          'clean',
+          '-v',
+          vaultPath,
+          '--',
+          ...PRINT_ENV,
+        ],
+        {
+          encoding: 'utf8',
+          cwd: rcDir,
+          env: { ...process.env, VAULT_ENV_PASSWORD: PASSWORD },
+        }
+      );
+      expect(r.status).toBe(0);
+      const env = JSON.parse(r.stdout);
+      // clean mode wins: VAULT_ENV_PASSWORD must not leak
+      expect(env.VAULT_ENV_PASSWORD).toBeUndefined();
+    } finally {
+      fs.rmSync(rcDir, { recursive: true, force: true });
+    }
+  });
+
+  it('exits 1 with a clear message on invalid .vaultrc JSON', () => {
+    const rcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-rc-'));
+    fs.writeFileSync(path.join(rcDir, '.vaultrc'), '{ bad json }');
+    try {
+      const r = spawnSync(
+        NODE,
+        [CLI, 'env', 'run', 'dev', '-v', vaultPath, '--', NODE, '-e', '0'],
+        {
+          encoding: 'utf8',
+          cwd: rcDir,
+          env: { ...process.env, VAULT_ENV_PASSWORD: PASSWORD },
+        }
+      );
+      expect(r.status).toBe(1);
+      expect(r.stdout + r.stderr).toMatch(/Invalid JSON/i);
+    } finally {
+      fs.rmSync(rcDir, { recursive: true, force: true });
+    }
+  });
+
+  it('VAULT_ENV is used when no envName argument is passed', () => {
+    const r = cli(['run', '-v', vaultPath, '--', ...PRINT_ENV], {
+      VAULT_ENV: 'dev',
+    });
+    expect(r.status).toBe(0);
+    const env = JSON.parse(r.stdout);
+    expect(env.API_URL).toBe('https://api.example.com');
+  });
+
+  it('positional envName overrides VAULT_ENV', () => {
+    // 'dev' has API_URL; there is no 'other' env so it should error — proving
+    // the positional arg was used instead of falling back to VAULT_ENV=dev.
+    const r = cli(['run', 'nonexistent', '-v', vaultPath, '--', ...PRINT_ENV], {
+      VAULT_ENV: 'dev',
+    });
+    expect(r.status).not.toBe(0);
+  });
+
+  it('errors with "no environment" when neither envName arg nor VAULT_ENV is set', () => {
+    // The `--` is a hard wall: the command after it is never consulted for the
+    // env name. With no positional env and no VAULT_ENV, this must fail with a
+    // clear "no environment" message — not silently treat a command token as
+    // the env name.
+    const env = { ...process.env, VAULT_ENV_PASSWORD: PASSWORD };
+    delete env.VAULT_ENV;
+    const r = spawnSync(
+      NODE,
+      [CLI, 'env', 'run', '-v', vaultPath, '--', ...PRINT_ENV],
+      {
+        encoding: 'utf8',
+        env,
+      }
+    );
+    expect(r.status).toBe(1);
+    expect(r.stdout + r.stderr).toMatch(/no environment/i);
+  });
+
+  it('does not consume a post-`--` token as the env name (run -- vault env list)', () => {
+    // Regression: `vault env run -- vault env list` used to resolve env="vault"
+    // and report "Environment 'vault' not found". It must report a missing
+    // environment instead, never interpreting the command as the env name.
+    const env = { ...process.env, VAULT_ENV_PASSWORD: PASSWORD };
+    delete env.VAULT_ENV;
+    const r = spawnSync(
+      NODE,
+      [CLI, 'env', 'run', '-v', vaultPath, '--', 'vault', 'env', 'list'],
+      { encoding: 'utf8', env }
+    );
+    expect(r.status).toBe(1);
+    expect(r.stdout + r.stderr).toMatch(/no environment/i);
+    expect(r.stdout + r.stderr).not.toMatch(/'vault' not found/i);
+  });
+
+  it('VAULT_INJECT sets the injection mode', () => {
+    const r = cli(['run', 'dev', '-v', vaultPath, '--', ...PRINT_ENV], {
+      VAULT_INJECT: 'merge',
+    });
+    expect(r.status).toBe(0);
+    const env = JSON.parse(r.stdout);
+    expect(env.VAULT_ENV_PASSWORD).toBe(PASSWORD);
+  });
+
+  it('--inject flag overrides VAULT_INJECT', () => {
+    const r = cli(
+      ['run', 'dev', '--inject', 'clean', '-v', vaultPath, '--', ...PRINT_ENV],
+      { VAULT_INJECT: 'merge' }
+    );
+    expect(r.status).toBe(0);
+    const env = JSON.parse(r.stdout);
+    expect(env.VAULT_ENV_PASSWORD).toBeUndefined();
+  });
+
+  it('--dry-run prints vault vars without spawning the command', () => {
+    const r = cli(['run', 'dev', '--dry-run', '-v', vaultPath]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/API_URL/);
+    // Sensitive vars must be masked
+    expect(r.stdout).not.toMatch(/sekret/);
+    expect(r.stdout).toMatch(/\*\*\*\*/);
+  });
+
+  it('--dry-run does not require a command argument', () => {
+    const r = cli(['run', 'dev', '--dry-run', '-v', vaultPath]);
+    expect(r.status).toBe(0);
+  });
+
+  it('--dry-run shows public vars in full', () => {
+    // Mark API_URL as public first
+    cli([
+      'set',
+      'API_URL',
+      'https://api.example.com',
+      '-e',
+      'dev',
+      '-v',
+      vaultPath,
+      '--public',
+    ]);
+    const r = cli(['run', 'dev', '--dry-run', '-v', vaultPath]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/API_URL=https:\/\/api\.example\.com/);
+  });
+
+  it('--dry-run shows mode in header', () => {
+    const r = cli([
+      'run',
+      'dev',
+      '--dry-run',
+      '--inject',
+      'merge',
+      '-v',
+      vaultPath,
+    ]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/merge/i);
+  });
 });
