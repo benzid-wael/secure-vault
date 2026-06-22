@@ -1468,7 +1468,7 @@ Foundation  Developer     Composition    Agent & Mount   Integration     North S
 **Dependencies**: None (uses only `CryptographyService` which exists).
 
 **Exit criteria**: `vault env init --name myproject --env staging:.env.staging` creates
-the vault, and `vault env get staging API_URL --clip` copies the value to clipboard.
+the vault, and `vault env get API_URL -e staging --clip` copies the value to clipboard.
 
 ---
 
