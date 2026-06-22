@@ -20,6 +20,7 @@ import {
   applyProjectConfig,
   secureDelete,
   cleanupOrphanTempDirs,
+  getRunCommand,
 } from './envRunHelpers.js';
 import {
   buildEditorTemplate,
@@ -1279,7 +1280,11 @@ export function registerEnvCommand(program) {
       '--dry-run',
       'Print the resolved environment without running the command'
     )
-    .action(async (envNameArg, command, options, cmd) => {
+    .action(async (envNameArg, commandArg, options, cmd) => {
+      // The command comes from after the `--` wall (extractRunCommand) when one
+      // was present; otherwise fall back to Commander's positional parsing for
+      // the no-`--` form (`vault env run <env> <cmd>...`).
+      const command = getRunCommand() ?? commandArg;
       if (!options.dryRun && (!command || command.length === 0)) {
         console.error(
           chalk.red('No command specified. Usage: vault env run <env> -- <cmd>')
