@@ -247,10 +247,11 @@ describe('vault env run (integration)', () => {
     expect(r.status).not.toBe(0);
   });
 
-  it('exits 1 when neither envName arg nor VAULT_ENV is set', () => {
-    // Without VAULT_ENV set and no positional before --, Commander assigns
-    // the first post-`--` token as envName. The vault will not find it and
-    // exits non-zero — the important thing is that nothing succeeds.
+  it('errors with "no environment" when neither envName arg nor VAULT_ENV is set', () => {
+    // The `--` is a hard wall: the command after it is never consulted for the
+    // env name. With no positional env and no VAULT_ENV, this must fail with a
+    // clear "no environment" message — not silently treat a command token as
+    // the env name.
     const env = { ...process.env, VAULT_ENV_PASSWORD: PASSWORD };
     delete env.VAULT_ENV;
     const r = spawnSync(
@@ -261,7 +262,24 @@ describe('vault env run (integration)', () => {
         env,
       }
     );
-    expect(r.status).not.toBe(0);
+    expect(r.status).toBe(1);
+    expect(r.stdout + r.stderr).toMatch(/no environment/i);
+  });
+
+  it('does not consume a post-`--` token as the env name (run -- vault env list)', () => {
+    // Regression: `vault env run -- vault env list` used to resolve env="vault"
+    // and report "Environment 'vault' not found". It must report a missing
+    // environment instead, never interpreting the command as the env name.
+    const env = { ...process.env, VAULT_ENV_PASSWORD: PASSWORD };
+    delete env.VAULT_ENV;
+    const r = spawnSync(
+      NODE,
+      [CLI, 'env', 'run', '-v', vaultPath, '--', 'vault', 'env', 'list'],
+      { encoding: 'utf8', env }
+    );
+    expect(r.status).toBe(1);
+    expect(r.stdout + r.stderr).toMatch(/no environment/i);
+    expect(r.stdout + r.stderr).not.toMatch(/'vault' not found/i);
   });
 
   it('VAULT_INJECT sets the injection mode', () => {

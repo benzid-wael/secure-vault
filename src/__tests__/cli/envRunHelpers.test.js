@@ -14,7 +14,8 @@ import {
   readAllowlistFile,
   loadProjectConfig,
   applyProjectConfig,
-  injectVaultEnvArg,
+  extractRunCommand,
+  getRunCommand,
 } from '../../../bin/commands/envRunHelpers.js';
 
 describe('buildChildEnv', () => {
@@ -252,10 +253,10 @@ describe('applyProjectConfig', () => {
   });
 });
 
-describe('injectVaultEnvArg', () => {
+describe('extractRunCommand', () => {
   const BASE = ['node', 'cli'];
 
-  it('injects VAULT_ENV before -- when no envName is present', () => {
+  it('strips the command after -- and captures it for getRunCommand', () => {
     const argv = [
       ...BASE,
       'env',
@@ -266,21 +267,18 @@ describe('injectVaultEnvArg', () => {
       'node',
       'server.js',
     ];
-    expect(injectVaultEnvArg(argv, 'staging')).toEqual([
+    expect(extractRunCommand(argv)).toEqual([
       'node',
       'cli',
       'env',
       'run',
       '-v',
       '/vault',
-      'staging',
-      '--',
-      'node',
-      'server.js',
     ]);
+    expect(getRunCommand()).toEqual(['node', 'server.js']);
   });
 
-  it('does not inject when envName is already provided before --', () => {
+  it('keeps an envName positional that appears before --', () => {
     const argv = [
       ...BASE,
       'env',
@@ -292,72 +290,80 @@ describe('injectVaultEnvArg', () => {
       'node',
       's.js',
     ];
-    expect(injectVaultEnvArg(argv, 'staging')).toBe(argv);
-  });
-
-  it('does not inject when vaultEnv is falsy', () => {
-    const argv = [...BASE, 'env', 'run', '--', 'node', 's.js'];
-    expect(injectVaultEnvArg(argv, undefined)).toBe(argv);
-    expect(injectVaultEnvArg(argv, '')).toBe(argv);
-  });
-
-  it('does not inject when there is no -- separator', () => {
-    const argv = [...BASE, 'env', 'run', '-v', '/vault'];
-    expect(injectVaultEnvArg(argv, 'staging')).toBe(argv);
-  });
-
-  it('does not inject when env run is not in argv', () => {
-    const argv = [...BASE, 'env', 'show', '--', 'extra'];
-    expect(injectVaultEnvArg(argv, 'staging')).toBe(argv);
-  });
-
-  it('correctly skips boolean flags before --', () => {
-    const argv = [
-      ...BASE,
-      'env',
-      'run',
-      '--password-stdin',
-      '--',
-      'node',
-      's.js',
-    ];
-    expect(injectVaultEnvArg(argv, 'dev')).toEqual([
+    expect(extractRunCommand(argv)).toEqual([
       'node',
       'cli',
       'env',
       'run',
-      '--password-stdin',
+      '-v',
+      '/vault',
       'dev',
-      '--',
-      'node',
-      's.js',
     ]);
+    expect(getRunCommand()).toEqual(['node', 's.js']);
   });
 
-  it('correctly skips flags-with-value pairs before --', () => {
+  it('never consumes a command token as envName (the run -- bug)', () => {
+    // `vault env run -- vault env list` must NOT treat the first post-`--`
+    // token ("vault") as the environment name.
+    const argv = [...BASE, 'env', 'run', '--', 'vault', 'env', 'list'];
+    expect(extractRunCommand(argv)).toEqual(['node', 'cli', 'env', 'run']);
+    expect(getRunCommand()).toEqual(['vault', 'env', 'list']);
+  });
+
+  it('preserves a nested -- inside the command for recursive run', () => {
     const argv = [
       ...BASE,
       'env',
       'run',
-      '--inject',
-      'merge',
-      '-v',
-      '/v',
-      '--',
-      'cmd',
-    ];
-    expect(injectVaultEnvArg(argv, 'prod')).toEqual([
-      'node',
-      'cli',
-      'env',
-      'run',
-      '--inject',
-      'merge',
-      '-v',
-      '/v',
       'prod',
       '--',
-      'cmd',
+      'vault',
+      'env',
+      'run',
+      'dev',
+      '--',
+      'echo',
+      'hi',
+    ];
+    expect(extractRunCommand(argv)).toEqual([
+      'node',
+      'cli',
+      'env',
+      'run',
+      'prod',
     ]);
+    expect(getRunCommand()).toEqual([
+      'vault',
+      'env',
+      'run',
+      'dev',
+      '--',
+      'echo',
+      'hi',
+    ]);
+  });
+
+  it('returns argv unchanged with no command when there is no -- separator', () => {
+    const argv = [...BASE, 'env', 'run', '-v', '/vault'];
+    expect(extractRunCommand(argv)).toBe(argv);
+    expect(getRunCommand()).toBeNull();
+  });
+
+  it('returns argv unchanged when env run is not in argv', () => {
+    const argv = [...BASE, 'env', 'show', '--', 'extra'];
+    expect(extractRunCommand(argv)).toBe(argv);
+    expect(getRunCommand()).toBeNull();
+  });
+
+  it('captures an empty command for a trailing -- with nothing after', () => {
+    const argv = [...BASE, 'env', 'run', 'dev', '--'];
+    expect(extractRunCommand(argv)).toEqual([
+      'node',
+      'cli',
+      'env',
+      'run',
+      'dev',
+    ]);
+    expect(getRunCommand()).toEqual([]);
   });
 });

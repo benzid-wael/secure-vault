@@ -81,33 +81,32 @@ export function readAllowlistFile(filePath, { mustExist = false } = {}) {
 
 export const VAULTRC_FILENAME = '.vaultrc';
 
-// Flags on `vault env run` that consume the next argument as their value.
-const RUN_FLAGS_WITH_VALUE = new Set([
-  '-n',
-  '--name',
-  '-v',
-  '--vault',
-  '--password',
-  '--password-file',
-  '--inject',
-  '--out-file',
-  '--allowlist',
-  '--allowlist-file',
-]);
+// The command to run, captured from the tokens after the first `--` of a
+// `vault env run` invocation. Set by extractRunCommand(), read by the run
+// action via getRunCommand(). Module-level because the CLI is single-shot.
+let runCommand = null;
+
+/** The command captured from after `--`, or null if there was no `--`. */
+export function getRunCommand() {
+  return runCommand;
+}
 
 /**
- * Inject VAULT_ENV into argv before the `--` separator when `vault env run`
- * is invoked without an explicit envName positional argument. This lets
- * Commander see the env name as a proper positional rather than consuming
- * the first command argument after `--` as the env name.
+ * Treat the first `--` after `vault env run` as a hard wall: everything to its
+ * right is the command to execute and is removed from argv before Commander
+ * parses, so a command token can never be mis-consumed as the `[envName]`
+ * positional. The env name is then resolved solely from a positional *before*
+ * `--` (or the VAULT_ENV fallback in the run action) — never from the command.
  *
- * Does nothing when VAULT_ENV is not set, when `env run` is not in argv,
- * when there is no `--` separator, or when an envName is already present.
+ * Returns argv unchanged (and leaves the captured command null) when this is
+ * not an `env run` invocation or there is no `--` separator. The `--` case
+ * stashes the trailing tokens for getRunCommand(); any further `--` in the
+ * command is preserved so nested `vault env run … -- …` composes correctly.
  */
-export function injectVaultEnvArg(argv, vaultEnv = process.env.VAULT_ENV) {
-  if (!vaultEnv) return argv;
+export function extractRunCommand(argv) {
+  runCommand = null;
 
-  // Locate 'env run' in the argument list.
+  // Locate the `env run` subcommand (options for `run` always follow `run`).
   let runPos = -1;
   for (let i = 0; i < argv.length - 1; i++) {
     if (argv[i] === 'env' && argv[i + 1] === 'run') {
@@ -117,28 +116,11 @@ export function injectVaultEnvArg(argv, vaultEnv = process.env.VAULT_ENV) {
   }
   if (runPos === -1) return argv;
 
-  // Find the `--` separator after `run`.
   const ddPos = argv.indexOf('--', runPos + 1);
   if (ddPos === -1) return argv;
 
-  // Walk the slice between `run` and `--`, skipping known option/value pairs.
-  // If any non-option, non-value arg is found, the user already supplied envName.
-  let i = runPos + 1;
-  while (i < ddPos) {
-    const arg = argv[i];
-    if (RUN_FLAGS_WITH_VALUE.has(arg)) {
-      i += 2; // skip flag + its value
-    } else if (arg.startsWith('-')) {
-      i += 1; // boolean flag
-    } else {
-      return argv; // positional envName already present
-    }
-  }
-
-  // No envName found before `--`: inject VAULT_ENV there.
-  const result = [...argv];
-  result.splice(ddPos, 0, vaultEnv);
-  return result;
+  runCommand = argv.slice(ddPos + 1);
+  return argv.slice(0, ddPos);
 }
 
 // Keys in .vaultrc and the Commander option name they map to.
