@@ -413,13 +413,14 @@ This split is intentional — see §6.1.3 for the rationale.
 
 - **Var-level** commands operate on a single key inside an environment. They take
   the **key as the positional** and the environment as a `-e, --env <name>` flag
-  (default `"default"`): `set`, `get`, `rm`, plus `rollback` (positional is the
-  version number) and `squash` (no positional).
+  (resolved as `-e` → `VAULT_ENV`, else error): `set`, `get`, `rm`, plus
+  `rollback` (positional is the version number) and `squash` (no positional).
 - **Env-level** commands operate on a whole environment. They take the
   **environment name as a positional**. Single-target read/inspect commands
-  (`show`, `history`, `validate`, `export`, `template`) default the positional to
-  `"default"` when omitted; multi-target or destructive commands
-  (`delete`, `rename`, `copy`, `diff`, `import`, `run`) require it.
+  (`show`, `history`, `validate`, `export`, `template`) resolve the positional
+  from `VAULT_ENV` when omitted, and error if neither is given; multi-target or
+  destructive commands (`delete`, `rename`, `copy`, `diff`, `import`) require the
+  positional. There is no implicit `"default"` environment.
 
 #### 6.1.2 Command Tree
 
@@ -428,7 +429,7 @@ vault env
   ├── init [--name <name>]            Initialize a new environment vault
   │     [--env <name>:<file>]         (optionally import .env files)
   │
-  │   ── var-level (key positional, -e <env>, default "default") ──
+  │   ── var-level (key positional; -e <env> or VAULT_ENV; required) ──
   ├── set <key> <value> [-e <env>]    Set a key (creates new version)
   │     [--public] [--required]       (--public = non-sensitive; --required = checked by validate)
   │     [--message <text>]
@@ -438,7 +439,7 @@ vault env
   ├── rollback <version> [-e <env>]   Rollback to a previous version
   ├── squash [-e <env>] [--keep <n>]  Squash version history
   │
-  │   ── env-level (env positional; defaults to "default" where shown as [env]) ──
+  │   ── env-level ([env] = positional or VAULT_ENV; required — no implicit "default") ──
   ├── list                            List all environments
   ├── show     [env]                  Show env details (sensitive values masked)
   ├── history  [env]                  Show version history
@@ -465,10 +466,10 @@ The original draft of this spec showed every command as env-first
 the unit they act on, and this section codifies that as the canonical contract
 (option (b) from §16.1):
 
-- Var-level ops (`set`/`get`/`rm`) make the common single-env case ergonomic:
-  `vault env get API_URL` reads from the `"default"` env with no ceremony. The
-  environment is a flag because it's the part that usually stays constant across
-  a run of commands, while the key changes every time.
+- Var-level ops (`set`/`get`/`rm`) keep the key as the positional because it
+  changes on every call, while the environment — which usually stays constant
+  across a run of commands — is a flag. Set `VAULT_ENV` once and
+  `vault env get API_URL` reads from it with no per-command ceremony.
 - `rollback` and `squash` are version operations scoped to one env, so they
   follow the same `-e <env>` convention rather than taking the env positionally.
 - Env-level ops take the env positionally because the environment _is_ the
@@ -590,7 +591,7 @@ USAGE
 vault env set <key> <value> [-e <env>] [--vault <path>]
 
 FLAGS
--e, --env <name> Environment to write to (default: "default")
+-e, --env <name> Environment to write to (or VAULT_ENV; required)
 --public Mark this var as non-sensitive (shown unmasked in `show`)
 --required Mark this var as required (checked by `validate`)
 --message <text> Optional version message
@@ -608,7 +609,7 @@ EXAMPLES
 vault env set API_URL https://staging.example.com -e staging --public
 vault env set API_KEY sk-abc123 -e staging --message "Rotate API key"
 vault env set DB_URL "{{env:base/DB_URL}}" -e staging # template ref
-vault env set PORT 3000 # writes to the "default" env
+vault env set PORT 3000 -e dev # writes to the "dev" env
 
 ```
 
@@ -648,7 +649,7 @@ USAGE
 vault env get <key> [-e <env>] [--vault <path>] [--clip] [--pair]
 
 FLAGS
--e, --env <name> Environment to read from (default: "default")
+-e, --env <name> Environment to read from (or VAULT_ENV; required)
 --clip Copy the value to system clipboard instead of printing to stdout
 --pair Copy the full KEY=VALUE string to system clipboard
 
@@ -701,7 +702,7 @@ USAGE
 vault env rollback <version> [-e <env>] [--vault <path>]
 
 FLAGS
--e, --env <name> Environment to roll back (default: "default")
+-e, --env <name> Environment to roll back (or VAULT_ENV; required)
 
 DESCRIPTION
 Rolls back to a previous version by creating a NEW version whose vars
@@ -980,7 +981,7 @@ USAGE
 vault env squash [-e <env>] [--keep <n>] [--vault <path>]
 
 FLAGS
--e, --env <name> Environment to squash (default: "default")
+-e, --env <name> Environment to squash (or VAULT_ENV; required)
 --keep <n> Number of versions to keep after squashing (default: 1)
 
 DESCRIPTION
@@ -1737,7 +1738,7 @@ vault env rm  <env> <key>
 **Implementation does:**
 
 ```
-vault env set <key> <value> [-e <env>]    # env defaults to "default"
+vault env set <key> <value> [-e <env>]    # env from -e or VAULT_ENV (required)
 vault env get <key>          [-e <env>]
 vault env rm  <key>          [-e <env>]
 ```
@@ -1770,6 +1771,12 @@ command shapes. No CLI behavior changed. Note: `rollback` is `-e`-based (a
 version op), correcting this item's earlier draft which grouped it with the
 env-positional commands. Covers §16.1, §16.2, and §16.3.
 
+**SUPERSEDED** — the implicit `"default"` environment was later removed. Every
+command now resolves the environment as explicit arg/`-e` → `VAULT_ENV` → error;
+there is no `"default"` fallback (a forgotten env silently read or wrote the
+wrong environment, and `set` would auto-create `"default"`). The argument-shape
+split from option (b) still stands; only the `"default"` fallback is gone.
+
 ### 16.2 `env get <key>` rejects a second positional
 
 **Where seen:** implementation in `bin/commands/env.js`.
@@ -1798,7 +1805,7 @@ vault env squash <env> [--keep <n>]
 **Implementation does:**
 
 ```
-vault env squash [-e <env>] [--keep <n>]    # env defaults to "default"
+vault env squash [-e <env>] [--keep <n>]    # env from -e or VAULT_ENV (required)
 ```
 
 Same family as 16.1. Spec and `--help` disagree. Same recommendation: codify
