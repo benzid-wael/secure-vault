@@ -28,7 +28,7 @@ import { VaultService } from '../src/electron/services/VaultService.js';
 import { VaultRecoveryService } from '../src/electron/services/VaultRecoveryService.js';
 import { getVaultsDir } from '../src/electron/utils/appPaths.js';
 import { registerEnvCommand } from './commands/env.js';
-import { injectVaultEnvArg } from './commands/envRunHelpers.js';
+import { extractRunCommand } from './commands/envRunHelpers.js';
 
 program
   .name('SecureVault')
@@ -81,4 +81,4 @@ program
 
 registerEnvCommand(program);
 
-program.parse(injectVaultEnvArg(process.argv));
+program.parse(extractRunCommand(process.argv));
