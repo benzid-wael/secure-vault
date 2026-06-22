@@ -51,9 +51,13 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# Current version recorded in package.json. The release workflow realigns this
+# to the tag version on publish, so capture it to show the old -> new transition.
+PKG_VERSION="$(node -p "require('./package.json').version")"
+
 # Resolve the version: positional arg wins, else fall back to package.json.
 if [ -z "$VERSION" ]; then
-  VERSION="$(node -p "require('./package.json').version")"
+  VERSION="$PKG_VERSION"
 fi
 VERSION="${VERSION#v}" # strip an optional leading v
 TAG="v${VERSION}"
@@ -87,7 +91,25 @@ case "$VERSION" in
   *) CHANNEL="latest" ;;
 esac
 
+# Highlight the package.json version transition. Bold the new version when it
+# changes; note "(unchanged)" when the tag already matches package.json.
+if [ -t 1 ] && command -v tput >/dev/null 2>&1 && [ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]; then
+  BOLD="$(tput bold)"
+  YELLOW="$(tput setaf 3)"
+  RESET="$(tput sgr0)"
+else
+  BOLD=""
+  YELLOW=""
+  RESET=""
+fi
+if [ "$PKG_VERSION" = "$VERSION" ]; then
+  VERSION_LINE="${PKG_VERSION} (unchanged)"
+else
+  VERSION_LINE="${PKG_VERSION} -> ${BOLD}${YELLOW}${VERSION}${RESET}"
+fi
+
 echo "Release tag plan:"
+echo "  package.json version:   $VERSION_LINE"
 echo "  tag:                    $TAG"
 echo "  remote:                 $REMOTE"
 echo "  commit:                 $(git rev-parse --short HEAD) ($(git rev-parse --abbrev-ref HEAD))"
