@@ -47,27 +47,6 @@ afterAll(() => {
   }
 });
 
-// Run `vault env shell` with a non-interactive shell that executes one command
-// and exits. This lets us inspect the environment without actually going interactive.
-function shellRun(envName, shellCmd, extraArgs = [], extraEnv = {}) {
-  return spawnSync(
-    NODE,
-    [CLI, 'env', 'shell', envName, '-v', vaultPath, ...extraArgs],
-    {
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        VAULT_ENV_PASSWORD: PASSWORD,
-        // Point SHELL at a wrapper that runs shellCmd then exits immediately.
-        SHELL: `${process.execPath}`,
-        ...extraEnv,
-      },
-      // Pipe stdin so the shell exits immediately when stdin closes.
-      input: '',
-    }
-  );
-}
-
 describe('vault env shell (integration)', () => {
   it('injects vault vars into the shell environment', () => {
     // Use node as the "shell" so we can inspect process.env without interaction.
@@ -83,7 +62,7 @@ describe('vault env shell (integration)', () => {
         'process.stdout.write(JSON.stringify(process.env)); process.exit(0);',
     });
     expect(r.status).toBe(0);
-    const env = JSON.parse(r.stdout.replace(/^[^\{]*/, '')); // strip banner
+    const env = JSON.parse(r.stdout.replace(/^[^{]*/, '')); // strip banner
     expect(env.API_URL).toBe('https://api.example.com');
     expect(env.TOKEN).toBe('sekret');
   });
@@ -96,7 +75,7 @@ describe('vault env shell (integration)', () => {
         'process.stdout.write(JSON.stringify(process.env)); process.exit(0);',
     });
     expect(r.status).toBe(0);
-    const env = JSON.parse(r.stdout.replace(/^[^\{]*/, ''));
+    const env = JSON.parse(r.stdout.replace(/^[^{]*/, ''));
     expect(env.VAULT_SHELL).toBe('1');
     expect(env.VAULT_SHELL_ENV).toBe('dev');
   });
@@ -118,7 +97,7 @@ describe('vault env shell (integration)', () => {
       }
     );
     expect(r.status).toBe(0);
-    const env = JSON.parse(r.stdout.replace(/^[^\{]*/, ''));
+    const env = JSON.parse(r.stdout.replace(/^[^{]*/, ''));
     expect(env.SECRET_SHOULD_NOT_LEAK).toBeUndefined();
     expect(env.API_URL).toBe('https://api.example.com');
   });
@@ -140,7 +119,7 @@ describe('vault env shell (integration)', () => {
       }
     );
     expect(r.status).toBe(0);
-    const env = JSON.parse(r.stdout.replace(/^[^\{]*/, ''));
+    const env = JSON.parse(r.stdout.replace(/^[^{]*/, ''));
     expect(env.MY_CUSTOM_VAR).toBe('hello');
     expect(env.API_URL).toBe('https://api.example.com');
   });
