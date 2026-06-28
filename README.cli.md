@@ -41,8 +41,13 @@ vault recover --name <vault>     # recover a vault with your master password
 Manage `.env` secrets as encrypted, versioned vaults:
 
 Variable-level commands (`set`, `get`, `rm`) take the **key** as the argument and
-the environment as `-e <env>` (defaults to `"default"`). Environment-level
-commands take the **environment name** as the argument.
+the environment as `-e <env>`. Environment-level commands take the **environment
+name** as the argument.
+
+There is **no implicit "default" environment** — every command must be told which
+environment to act on. The environment is resolved as: explicit argument / `-e`
+→ `VAULT_ENV` → error. (Structural commands like `delete`/`rename`/`copy` require
+the name as a positional argument.)
 
 ```bash
 vault env init                   # create an environment vault for this project

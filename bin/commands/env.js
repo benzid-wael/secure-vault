@@ -98,6 +98,23 @@ function log(...args) {
   if (!isQuiet) console.log(...args);
 }
 
+// Resolve the environment name from an explicit value (positional arg or -e),
+// falling back to VAULT_ENV. There is no implicit "default" environment — every
+// command must be told which environment to act on. Exits 1 when unresolved.
+function requireEnvName(explicit) {
+  const name = explicit || process.env.VAULT_ENV;
+  if (!name) {
+    console.error(
+      chalk.red(
+        'No environment specified. Provide it explicitly (arg or -e <name>) ' +
+          'or set VAULT_ENV.'
+      )
+    );
+    process.exit(1);
+  }
+  return name;
+}
+
 function oraQuiet(text) {
   if (isQuiet) {
     return {
@@ -438,7 +455,7 @@ export function registerEnvCommand(program) {
     .option('--password <password>', 'Vault password (non-interactive)')
     .option('--password-file <path>', 'Read vault password from a file')
     .option('--password-stdin', 'Read vault password from stdin')
-    .option('-e, --env <name>', 'Environment name (defaults to "default")')
+    .option('-e, --env <name>', 'Environment name (or set VAULT_ENV)')
     .option('--public', 'Mark variable as non-sensitive')
     .option('--required', 'Mark variable as required (checked by validate)')
     .option('--extends <parent>', 'Set this environment to extend <parent>')
@@ -456,7 +473,7 @@ export function registerEnvCommand(program) {
         }
 
         const { vaultPath, vaultPassword, vault } = await loadVault(options);
-        const envName = options.env || 'default';
+        const envName = requireEnvName(options.env);
 
         if (value === undefined) {
           let previousValue;
@@ -538,13 +555,13 @@ export function registerEnvCommand(program) {
     .option('--password <password>', 'Vault password (non-interactive)')
     .option('--password-file <path>', 'Read vault password from a file')
     .option('--password-stdin', 'Read vault password from stdin')
-    .option('-e, --env <name>', 'Environment name (defaults to "default")')
+    .option('-e, --env <name>', 'Environment name (or set VAULT_ENV)')
     .option('--pair', 'Output as KEY=VALUE')
     .option('--clip', 'Copy value to clipboard')
     .action(async (key, options) => {
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
-        const envName = options.env || 'default';
+        const envName = requireEnvName(options.env);
 
         const result = await EnvironmentVaultService.getEnv(
           vaultPath,
@@ -576,7 +593,7 @@ export function registerEnvCommand(program) {
   env
     .command('show')
     .description('Show environment details and all variables')
-    .argument('[envName]', 'Environment name (defaults to "default")')
+    .argument('[envName]', 'Environment name (or set VAULT_ENV)')
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
@@ -586,7 +603,7 @@ export function registerEnvCommand(program) {
     .action(async (envName, options) => {
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
-        const name = envName || 'default';
+        const name = requireEnvName(envName);
 
         const result = await EnvironmentVaultService.showEnv(
           vaultPath,
@@ -697,13 +714,13 @@ export function registerEnvCommand(program) {
     .option('--password <password>', 'Vault password (non-interactive)')
     .option('--password-file <path>', 'Read vault password from a file')
     .option('--password-stdin', 'Read vault password from stdin')
-    .option('-e, --env <name>', 'Environment name (defaults to "default")')
+    .option('-e, --env <name>', 'Environment name (or set VAULT_ENV)')
     .action(async (key, options) => {
       const spinner = oraQuiet(`Removing ${key}...`).start();
 
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
-        const envName = options.env || 'default';
+        const envName = requireEnvName(options.env);
 
         const result = await EnvironmentVaultService.removeKey(
           vaultPath,
@@ -727,7 +744,7 @@ export function registerEnvCommand(program) {
   env
     .command('export')
     .description('Export an environment as dotenv or JSON')
-    .argument('[envName]', 'Environment name (defaults to "default")')
+    .argument('[envName]', 'Environment name (or set VAULT_ENV)')
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
@@ -742,7 +759,7 @@ export function registerEnvCommand(program) {
     .action(async (envName, options) => {
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
-        const name = envName || 'default';
+        const name = requireEnvName(envName);
 
         const result = await EnvironmentVaultService.exportEnv(
           vaultPath,
@@ -943,7 +960,7 @@ export function registerEnvCommand(program) {
   env
     .command('template')
     .description('Generate a .env.template from an environment')
-    .argument('[envName]', 'Environment name (defaults to "default")')
+    .argument('[envName]', 'Environment name (or set VAULT_ENV)')
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
@@ -953,7 +970,7 @@ export function registerEnvCommand(program) {
     .action(async (envName, options) => {
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
-        const name = envName || 'default';
+        const name = requireEnvName(envName);
 
         const result = await EnvironmentVaultService.templateEnv(
           vaultPath,
@@ -977,7 +994,7 @@ export function registerEnvCommand(program) {
   env
     .command('history')
     .description('Show version history for an environment')
-    .argument('[envName]', 'Environment name (defaults to "default")')
+    .argument('[envName]', 'Environment name (or set VAULT_ENV)')
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
@@ -987,7 +1004,7 @@ export function registerEnvCommand(program) {
     .action(async (envName, options) => {
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
-        const name = envName || 'default';
+        const name = requireEnvName(envName);
 
         const result = await EnvironmentVaultService.getHistory(
           vaultPath,
@@ -1045,13 +1062,13 @@ export function registerEnvCommand(program) {
     .option('--password <password>', 'Vault password (non-interactive)')
     .option('--password-file <path>', 'Read vault password from a file')
     .option('--password-stdin', 'Read vault password from stdin')
-    .option('-e, --env <name>', 'Environment name (defaults to "default")')
+    .option('-e, --env <name>', 'Environment name (or set VAULT_ENV)')
     .action(async (versionN, options) => {
       const spinner = oraQuiet(`Rolling back to v${versionN}...`).start();
 
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
-        const envName = options.env || 'default';
+        const envName = requireEnvName(options.env);
 
         const result = await EnvironmentVaultService.rollbackEnv(
           vaultPath,
@@ -1082,7 +1099,7 @@ export function registerEnvCommand(program) {
     .option('--password <password>', 'Vault password (non-interactive)')
     .option('--password-file <path>', 'Read vault password from a file')
     .option('--password-stdin', 'Read vault password from stdin')
-    .option('-e, --env <name>', 'Environment name (defaults to "default")')
+    .option('-e, --env <name>', 'Environment name (or set VAULT_ENV)')
     .option('-k, --keep <count>', 'Number of versions to keep', Number, 1)
     .action(async (options) => {
       const spinner = oraQuiet(
@@ -1091,7 +1108,7 @@ export function registerEnvCommand(program) {
 
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
-        const envName = options.env || 'default';
+        const envName = requireEnvName(options.env);
 
         const result = await EnvironmentVaultService.squashEnv(
           vaultPath,
@@ -1186,7 +1203,7 @@ export function registerEnvCommand(program) {
   env
     .command('validate')
     .description('Validate an environment (required keys present, value types)')
-    .argument('[envName]', 'Environment name (defaults to "default")')
+    .argument('[envName]', 'Environment name (or set VAULT_ENV)')
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
     .option('--password <password>', 'Vault password (non-interactive)')
@@ -1197,7 +1214,7 @@ export function registerEnvCommand(program) {
     .action(async (envName, options) => {
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
-        const name = envName || 'default';
+        const name = requireEnvName(envName);
 
         const result = await EnvironmentVaultService.validateEnv(
           vaultPath,
