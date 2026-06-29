@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 #
-# Create and push an annotated release tag.
+# Bump package.json to the release version, commit it, then create and push an
+# annotated release tag.
+#
+# When the requested version differs from package.json, the script bumps
+# package.json (and package-lock.json), commits the bump to the current branch,
+# and tags that commit — so the repo's version always matches the latest tag.
 #
 # Pushing the tag triggers the release workflow (.github/workflows/release.yml),
-# which aligns the package version to the tag, builds, packages, and publishes
-# to npm. The npm dist-tag is chosen by the tag name:
+# which (re)aligns the package version to the tag, builds, packages, and
+# publishes to npm. The npm dist-tag is chosen by the tag name:
 #   vX.Y.Z          -> published under `latest`
 #   vX.Y.Z-rc.N etc -> published under `next` (prerelease; never the default
 #                      `npm install` version)
@@ -27,7 +32,7 @@ ASSUME_YES=0
 VERSION=""
 
 usage() {
-  sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '3,25p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 
@@ -51,8 +56,8 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-# Current version recorded in package.json. The release workflow realigns this
-# to the tag version on publish, so capture it to show the old -> new transition.
+# Current version recorded in package.json. When it differs from the requested
+# version we bump + commit it below; capture it to show the old -> new transition.
 PKG_VERSION="$(node -p "require('./package.json').version")"
 
 # Resolve the version: positional arg wins, else fall back to package.json.
@@ -108,20 +113,34 @@ else
   VERSION_LINE="${PKG_VERSION} -> ${BOLD}${YELLOW}${VERSION}${RESET}"
 fi
 
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+
+# Bump + commit package.json only when the version actually changes. When the
+# tag already matches package.json there is nothing to commit, so we tag HEAD.
+BUMP_NEEDED=0
+if [ "$PKG_VERSION" != "$VERSION" ]; then
+  BUMP_NEEDED=1
+fi
+
 echo "Release tag plan:"
 echo "  package.json version:   $VERSION_LINE"
+if [ "$BUMP_NEEDED" -eq 1 ]; then
+  echo "  bump commit:            chore(release): $TAG -> $BRANCH"
+fi
 echo "  tag:                    $TAG"
 echo "  remote:                 $REMOTE"
-echo "  commit:                 $(git rev-parse --short HEAD) ($(git rev-parse --abbrev-ref HEAD))"
+echo "  commit:                 $(git rev-parse --short HEAD) ($BRANCH)"
 echo "  npm dist-tag on publish: $CHANNEL"
 echo
 
-TAG_CMD=(git tag -a "$TAG" -m "Release version $TAG")
-PUSH_CMD=(git push "$REMOTE" "$TAG")
-
 if [ "$DRY_RUN" -eq 1 ]; then
-  echo "[dry-run] ${TAG_CMD[*]}"
-  echo "[dry-run] ${PUSH_CMD[*]}"
+  if [ "$BUMP_NEEDED" -eq 1 ]; then
+    echo "[dry-run] npm version $VERSION --no-git-tag-version --allow-same-version"
+    echo "[dry-run] git commit -am \"chore(release): $TAG\""
+    echo "[dry-run] git push $REMOTE $BRANCH"
+  fi
+  echo "[dry-run] git tag -a $TAG -m \"Release version $TAG\""
+  echo "[dry-run] git push $REMOTE $TAG"
   exit 0
 fi
 
@@ -140,6 +159,19 @@ if [ "$ASSUME_YES" -ne 1 ]; then
   esac
 fi
 
-"${TAG_CMD[@]}"
-"${PUSH_CMD[@]}"
+# Bump package.json (+ package-lock.json) and commit the bump to the branch so
+# the repo's version tracks the tag. npm version updates both files without
+# creating its own commit/tag; we commit and tag them ourselves.
+if [ "$BUMP_NEEDED" -eq 1 ]; then
+  npm version "$VERSION" --no-git-tag-version --allow-same-version >/dev/null
+  git commit -am "chore(release): $TAG"
+fi
+
+git tag -a "$TAG" -m "Release version $TAG"
+
+# Push the bump commit before the tag so the tagged commit exists on the branch.
+if [ "$BUMP_NEEDED" -eq 1 ]; then
+  git push "$REMOTE" "$BRANCH"
+fi
+git push "$REMOTE" "$TAG"
 echo "✔ Pushed $TAG to $REMOTE — the release workflow will build and publish (dist-tag: $CHANNEL)."
