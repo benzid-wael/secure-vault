@@ -43,35 +43,10 @@ export function buildChildEnv({
   return { ...base, ...vars };
 }
 
-/**
- * Quote/escape a single dotenv value so it survives the line-based parser
- * (EnvironmentVault.parseEnvFile) unchanged. A value is double-quoted with
- * \\, \", \n, \r escaped when it would otherwise be corrupted unquoted —
- * i.e. it contains a newline or quote char, a `#`, or has leading/trailing
- * whitespace (which the parser would trim away). Plain values are emitted raw.
- */
-export function quoteDotenvValue(value) {
-  const str = value == null ? '' : String(value);
-  const needsQuoting =
-    str !== '' &&
-    (str !== str.trim() || /[\n\r"']/.test(str) || str.includes('#'));
-  if (!needsQuoting) return str;
-  const escaped = str
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '\\r');
-  return `"${escaped}"`;
-}
-
-/** Serialize a key/value map to dotenv format (values quoted/escaped as needed). */
-export function toDotenv(vars) {
-  return (
-    Object.entries(vars)
-      .map(([key, value]) => `${key}=${quoteDotenvValue(value)}`)
-      .join('\n') + '\n'
-  );
-}
+// Dotenv serialization is shared with `vault env export` (the electron
+// service), so it lives in src/utils/dotenv.js. Re-exported here for the
+// CLI runner and existing importers.
+export { quoteDotenvValue, toDotenv } from '../../src/utils/dotenv.js';
 
 /**
  * Parse repeatable `--set KEY=VALUE` pairs into an object. The value may itself

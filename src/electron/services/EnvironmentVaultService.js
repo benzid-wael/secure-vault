@@ -13,6 +13,7 @@ const SUSPICIOUS_VALUE_RE =
   /-----BEGIN |sk_live_|AKIA[0-9A-Z]{16}|[0-9a-f]{64,}/;
 import { validatePasswordStrength } from '../utils/passwordValidation.js';
 import { getAppDataPath, getEnvsDir } from '../utils/appPaths.js';
+import { toDotenv } from '../../utils/dotenv.js';
 
 function resolvePath(...segments) {
   return process.platform === 'win32'
@@ -568,11 +569,7 @@ export class EnvironmentVaultService {
         return { success: true, data: vars };
       }
 
-      const lines = Object.entries(vars).map(
-        ([key, value]) => `${key}=${value}`
-      );
-
-      return { success: true, data: lines.join('\n') + '\n' };
+      return { success: true, data: toDotenv(vars) };
     } catch (error) {
       return { success: false, error: error.message };
     }
