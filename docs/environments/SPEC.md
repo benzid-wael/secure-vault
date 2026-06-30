@@ -2016,10 +2016,10 @@ that need it, and `parseEnvFile` decodes those escapes for double-quoted
 values, making writer and reader a matched pair (verified by a round-trip
 test). The write now aborts on an existing target unless `--force` is given.
 
-> Follow-up: `vault env export --format dotenv` (stdout) still uses a separate
-> raw serializer in `EnvironmentVaultService.exportEnv`; unifying it with the
-> escaping helper is tracked as a future cleanup (needs a shared
-> bin/electron utility).
+> **Also resolved:** `vault env export --format dotenv` (stdout) now shares the
+> same serializer. The escaping helper lives in `src/utils/dotenv.js` and is
+> used by both the CLI runner (`--export`) and `EnvironmentVaultService.exportEnv`,
+> so exported and run-injected files quote/escape identically.
 
 ---
 
