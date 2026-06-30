@@ -353,6 +353,26 @@ describe('EnvironmentVault', () => {
       const result = EnvironmentVault.parseEnvFile('JUST_A_COMMENT\nKEY=val');
       expect(result).toEqual({ KEY: 'val' });
     });
+
+    it('decodes escapes inside double-quoted values', () => {
+      const result = EnvironmentVault.parseEnvFile(
+        'K="line1\\nline2#x"\nQ="has \\"quote\\""'
+      );
+      expect(result).toEqual({
+        K: 'line1\nline2#x',
+        Q: 'has "quote"',
+      });
+    });
+
+    it('preserves edge whitespace in double-quoted values', () => {
+      const result = EnvironmentVault.parseEnvFile('K=" padded "');
+      expect(result).toEqual({ K: ' padded ' });
+    });
+
+    it('treats single-quoted values as literal (no escape decoding)', () => {
+      const result = EnvironmentVault.parseEnvFile("K='a\\nb'");
+      expect(result).toEqual({ K: 'a\\nb' });
+    });
   });
 
   describe('importFromEnvFile', () => {

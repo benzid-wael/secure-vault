@@ -17,6 +17,7 @@ import {
   extractRunCommand,
   getRunCommand,
 } from '../../../bin/commands/envRunHelpers.js';
+import { EnvironmentVault } from '../../electron/models/EnvironmentVault.js';
 
 describe('buildChildEnv', () => {
   const parentEnv = {
@@ -82,12 +83,41 @@ describe('buildChildEnv', () => {
 });
 
 describe('toDotenv', () => {
-  it('serializes key/value pairs with a trailing newline', () => {
+  it('serializes plain key/value pairs unquoted with a trailing newline', () => {
     expect(toDotenv({ A: '1', B: 'two' })).toBe('A=1\nB=two\n');
   });
 
   it('handles an empty map', () => {
     expect(toDotenv({})).toBe('\n');
+  });
+
+  it('leaves middle spaces and = signs unquoted', () => {
+    expect(toDotenv({ A: 'a b', DB: 'postgres://h?ssl=true' })).toBe(
+      'A=a b\nDB=postgres://h?ssl=true\n'
+    );
+  });
+
+  it('double-quotes and escapes values with newlines, quotes, # or edge whitespace', () => {
+    expect(toDotenv({ K: 'line1\nline2#x' })).toBe('K="line1\\nline2#x"\n');
+    expect(toDotenv({ K: 'has "quote"' })).toBe('K="has \\"quote\\""\n');
+    expect(toDotenv({ K: ' padded ' })).toBe('K=" padded "\n');
+    expect(toDotenv({ K: 'a\\b' })).toBe('K=a\\b\n'); // backslash alone: not quoted
+  });
+});
+
+describe('toDotenv <-> parseEnvFile round-trip', () => {
+  it('round-trips tricky values unchanged (write with toDotenv, read with parseEnvFile)', () => {
+    const obj = {
+      SIMPLE: 'value',
+      WITH_SPACES: 'a b c',
+      WITH_HASH: 'color#fff',
+      MULTILINE: 'line1\nline2',
+      WITH_QUOTE: 'say "hi"',
+      PADDED: '  pad  ',
+      URL: 'postgres://u:p@h:5432/db?ssl=true',
+      BACKSLASH: 'a\\b',
+    };
+    expect(EnvironmentVault.parseEnvFile(toDotenv(obj))).toEqual(obj);
   });
 });
 

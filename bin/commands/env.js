@@ -1291,6 +1291,11 @@ export function registerEnvCommand(program) {
         'Composes with --inject clean|merge.'
     )
     .option(
+      '--force',
+      'Overwrite the --export / --out-file target if it already exists ' +
+        '(by default an existing file is left untouched and the run aborts).'
+    )
+    .option(
       '--allowlist <vars>',
       'Extra system vars to pass through in clean mode (comma-separated)'
     )
@@ -1434,6 +1439,19 @@ export function registerEnvCommand(program) {
         }
 
         if (exportPath) {
+          // Guard against clobbering a real file: since we securely delete the
+          // target on exit, silently overwriting an existing file would destroy
+          // it. Require --force to opt in.
+          if (fs.existsSync(exportPath) && !options.force) {
+            console.error(
+              chalk.red(
+                `Refusing to overwrite existing file ${exportPath} ` +
+                  `(it would be securely deleted when the command exits). ` +
+                  `Pass --force to override.`
+              )
+            );
+            process.exit(1);
+          }
           fs.writeFileSync(exportPath, toDotenv(vars), { mode: 0o600 });
         }
 

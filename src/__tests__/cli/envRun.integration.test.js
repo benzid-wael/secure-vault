@@ -213,6 +213,49 @@ describe('vault env run (integration)', () => {
     expect(fs.existsSync(envFile)).toBe(false);
   });
 
+  it('--export refuses to overwrite an existing file without --force, leaving it intact', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'existing.env');
+    fs.writeFileSync(envFile, 'PRECIOUS=keepme\n');
+    const r = cli([
+      'run',
+      'dev',
+      '--export',
+      envFile,
+      '-v',
+      vaultPath,
+      '--',
+      NODE,
+      '-e',
+      '0',
+    ]);
+    expect(r.status).toBe(1);
+    expect(r.stdout + r.stderr).toMatch(/Refusing to overwrite/i);
+    // The pre-existing file must NOT be touched or deleted.
+    expect(fs.existsSync(envFile)).toBe(true);
+    expect(fs.readFileSync(envFile, 'utf8')).toBe('PRECIOUS=keepme\n');
+    fs.rmSync(envFile);
+  });
+
+  it('--export --force overwrites an existing file and securely deletes it after', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'existing2.env');
+    fs.writeFileSync(envFile, 'OLD=stuff\n');
+    const r = cli([
+      'run',
+      'dev',
+      '--export',
+      envFile,
+      '--force',
+      '-v',
+      vaultPath,
+      '--',
+      NODE,
+      '-e',
+      '0',
+    ]);
+    expect(r.status).toBe(0);
+    expect(fs.existsSync(envFile)).toBe(false);
+  });
+
   it('exits 127 when the command is not found', () => {
     const r = cli(['run', 'dev', '-v', vaultPath, '--', 'no-such-cmd-xyz-123']);
     expect(r.status).toBe(127);
