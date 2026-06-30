@@ -64,11 +64,14 @@ describe('buildChildEnv', () => {
     expect(env.PATH).toBe('/vault/path');
   });
 
-  it('file mode injects no vault vars (they go to the file)', () => {
+  it('treats the legacy "file" mode as clean: vault vars injected, parent env not leaked', () => {
+    // file is no longer a population mode (writing a file is orthogonal).
+    // Any non-merge mode must inject vault vars and keep clean isolation —
+    // the old behavior (no vault vars + full parent passthrough) was the bug.
     const env = buildChildEnv({ mode: 'file', vars, parentEnv });
-    expect(env.API_URL).toBeUndefined();
-    expect(env.TOKEN).toBeUndefined();
-    expect(env.SECRET_FROM_PARENT).toBe('leak'); // still inherits parent
+    expect(env.API_URL).toBe('https://x'); // now injected
+    expect(env.TOKEN).toBe('abc');
+    expect(env.SECRET_FROM_PARENT).toBeUndefined(); // not leaked
   });
 
   it('CLEAN_ALLOWLIST covers the documented system vars', () => {

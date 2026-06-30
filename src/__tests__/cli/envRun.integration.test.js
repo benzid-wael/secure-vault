@@ -98,29 +98,50 @@ describe('vault env run (integration)', () => {
 
   it('file mode writes the env file, the child can read it, and it is deleted after', () => {
     const envFile = path.join(path.dirname(vaultPath), 'out.env');
-    const r = cli(
-      [
-        'run',
-        'dev',
-        '--inject',
-        'file',
-        '--out-file',
-        envFile,
-        '-v',
-        vaultPath,
-        '--',
-        NODE,
-        '-e',
-        // file mode inherits the parent env, so read the path from an env var
-        // (avoids ambiguity of passing it as a node script argument).
-        `process.stdout.write(require('fs').readFileSync(process.env.EF_PATH,'utf8'))`,
-      ],
-      { EF_PATH: envFile }
-    );
+    const r = cli([
+      'run',
+      'dev',
+      '--inject',
+      'file',
+      '--out-file',
+      envFile,
+      '-v',
+      vaultPath,
+      '--',
+      NODE,
+      '-e',
+      // File mode is now clean-isolated (vault vars are injected, but the
+      // parent env is NOT passed through), so the child cannot rely on an
+      // inherited env var to locate the file — read the literal path instead.
+      `process.stdout.write(require('fs').readFileSync(${JSON.stringify(envFile)},'utf8'))`,
+    ]);
     expect(r.status).toBe(0);
     // The child saw the decrypted vars via the file...
     expect(r.stdout).toContain('API_URL=https://api.example.com');
     // ...and the file is securely deleted once the child exits.
+    expect(fs.existsSync(envFile)).toBe(false);
+  });
+
+  it('file mode does not leak the parent env to the child (clean isolation)', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'out2.env');
+    const r = cli([
+      'run',
+      'dev',
+      '--inject',
+      'file',
+      '--out-file',
+      envFile,
+      '-v',
+      vaultPath,
+      '--',
+      ...PRINT_ENV,
+    ]);
+    expect(r.status).toBe(0);
+    const env = JSON.parse(r.stdout);
+    // Vault vars are injected into the process env...
+    expect(env.API_URL).toBe('https://api.example.com');
+    // ...but the parent's password must NOT leak (was the file-mode bug).
+    expect(env.VAULT_ENV_PASSWORD).toBeUndefined();
     expect(fs.existsSync(envFile)).toBe(false);
   });
 
