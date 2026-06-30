@@ -15,6 +15,7 @@ import {
   buildChildEnv,
   toDotenv,
   parseAllowlist,
+  parseSetPairs,
   readAllowlistFile,
   loadProjectConfig,
   applyProjectConfig,
@@ -1296,6 +1297,18 @@ export function registerEnvCommand(program) {
         '(by default an existing file is left untouched and the run aborts).'
     )
     .option(
+      '--set <pair>',
+      'Add an explicit KEY=VALUE to the run (repeatable). Injected into the ' +
+        'child and included in --export output; layered under vault vars.',
+      (val, prev) => prev.concat(val),
+      []
+    )
+    .option(
+      '--env-file <path>',
+      'Load extra KEY=VALUE pairs from a .env file. Same placement as --set ' +
+        '(injected + exported, under vault vars; --set overrides --env-file).'
+    )
+    .option(
       '--allowlist <vars>',
       'Extra system vars to pass through in clean mode (comma-separated)'
     )
@@ -1369,6 +1382,28 @@ export function registerEnvCommand(program) {
 
         const vars = exportResult.data;
 
+        // Explicit user-supplied additions: --env-file first, then --set
+        // overrides it. These are injected into the child AND written to the
+        // --export file, but layered UNDER the vault vars (vault wins). This is
+        // distinct from --allowlist / merge, which only let parent-env values
+        // through to the process env and never enter the exported file.
+        let userVars = {};
+        if (options.envFile) {
+          const userEnvFilePath = path.resolve(options.envFile);
+          let content;
+          try {
+            content = fs.readFileSync(userEnvFilePath, 'utf-8');
+          } catch (err) {
+            throw new Error(
+              `Cannot read --env-file "${userEnvFilePath}": ${err.message}`
+            );
+          }
+          userVars = EnvironmentVault.parseEnvFile(content);
+        }
+        userVars = { ...userVars, ...parseSetPairs(options.set) };
+
+        const injectedVars = { ...userVars, ...vars };
+
         // Resolve allowlist file: explicit flag (must exist) or CWD default (optional).
         const allowlistFilePath = options.allowlistFile
           ? path.resolve(options.allowlistFile)
@@ -1379,7 +1414,7 @@ export function registerEnvCommand(program) {
 
         const childEnv = buildChildEnv({
           mode,
-          vars,
+          vars: injectedVars,
           parentEnv: process.env,
           allowlist: [...parseAllowlist(options.allowlist), ...fileAllowlist],
         });
@@ -1452,7 +1487,7 @@ export function registerEnvCommand(program) {
             );
             process.exit(1);
           }
-          fs.writeFileSync(exportPath, toDotenv(vars), { mode: 0o600 });
+          fs.writeFileSync(exportPath, toDotenv(injectedVars), { mode: 0o600 });
         }
 
         const cleanup = () => {

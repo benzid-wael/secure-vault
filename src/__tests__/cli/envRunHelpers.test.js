@@ -11,6 +11,7 @@ import {
   buildChildEnv,
   toDotenv,
   parseAllowlist,
+  parseSetPairs,
   readAllowlistFile,
   loadProjectConfig,
   applyProjectConfig,
@@ -118,6 +119,36 @@ describe('toDotenv <-> parseEnvFile round-trip', () => {
       BACKSLASH: 'a\\b',
     };
     expect(EnvironmentVault.parseEnvFile(toDotenv(obj))).toEqual(obj);
+  });
+});
+
+describe('parseSetPairs', () => {
+  it('parses KEY=VALUE pairs into an object', () => {
+    expect(parseSetPairs(['A=1', 'B=two'])).toEqual({ A: '1', B: 'two' });
+  });
+
+  it('keeps everything after the first = in the value', () => {
+    expect(parseSetPairs(['URL=postgres://h?ssl=true'])).toEqual({
+      URL: 'postgres://h?ssl=true',
+    });
+  });
+
+  it('allows an empty value', () => {
+    expect(parseSetPairs(['EMPTY='])).toEqual({ EMPTY: '' });
+  });
+
+  it('later pairs override earlier ones', () => {
+    expect(parseSetPairs(['K=1', 'K=2'])).toEqual({ K: '2' });
+  });
+
+  it('returns {} for no pairs', () => {
+    expect(parseSetPairs()).toEqual({});
+    expect(parseSetPairs([])).toEqual({});
+  });
+
+  it('throws on a pair without = or with an empty key', () => {
+    expect(() => parseSetPairs(['NOEQUALS'])).toThrow(/expected KEY=VALUE/);
+    expect(() => parseSetPairs(['=value'])).toThrow(/expected KEY=VALUE/);
   });
 });
 

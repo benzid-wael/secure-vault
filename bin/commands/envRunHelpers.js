@@ -73,6 +73,23 @@ export function toDotenv(vars) {
   );
 }
 
+/**
+ * Parse repeatable `--set KEY=VALUE` pairs into an object. The value may itself
+ * contain `=` (only the first `=` is the separator). Throws on a pair with no
+ * `=` or an empty key. Later pairs override earlier ones for the same key.
+ */
+export function parseSetPairs(pairs = []) {
+  const out = {};
+  for (const pair of pairs) {
+    const eq = pair.indexOf('=');
+    if (eq <= 0) {
+      throw new Error(`Invalid --set "${pair}" (expected KEY=VALUE)`);
+    }
+    out[pair.slice(0, eq)] = pair.slice(eq + 1);
+  }
+  return out;
+}
+
 /** Parse a comma-separated allowlist string into a clean array. */
 export function parseAllowlist(value) {
   if (!value) return [];

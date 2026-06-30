@@ -256,6 +256,86 @@ describe('vault env run (integration)', () => {
     expect(fs.existsSync(envFile)).toBe(false);
   });
 
+  it('--set injects user vars into the child env, layered under vault vars', () => {
+    const r = cli([
+      'run',
+      'dev',
+      '--set',
+      'FEATURE_FLAG=on',
+      '--set',
+      'API_URL=should-lose-to-vault',
+      '-v',
+      vaultPath,
+      '--',
+      ...PRINT_ENV,
+    ]);
+    expect(r.status).toBe(0);
+    const env = JSON.parse(r.stdout);
+    expect(env.FEATURE_FLAG).toBe('on'); // user var injected
+    expect(env.API_URL).toBe('https://api.example.com'); // vault wins on conflict
+  });
+
+  it('--set values are written into the --export file alongside vault vars', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'with-set.env');
+    const r = cli([
+      'run',
+      'dev',
+      '--set',
+      'FEATURE_FLAG=on',
+      '--export',
+      envFile,
+      '-v',
+      vaultPath,
+      '--',
+      NODE,
+      '-e',
+      `process.stdout.write(require('fs').readFileSync(process.env.ENV_FILE_PATH,'utf8'))`,
+    ]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('FEATURE_FLAG=on');
+    expect(r.stdout).toContain('API_URL=https://api.example.com');
+    expect(fs.existsSync(envFile)).toBe(false);
+  });
+
+  it('--env-file loads extra vars, and --set overrides --env-file', () => {
+    const extra = path.join(path.dirname(vaultPath), 'extra.env');
+    fs.writeFileSync(extra, 'FROM_FILE=filevalue\nOVERRIDE_ME=fromfile\n');
+    const r = cli([
+      'run',
+      'dev',
+      '--env-file',
+      extra,
+      '--set',
+      'OVERRIDE_ME=fromset',
+      '-v',
+      vaultPath,
+      '--',
+      ...PRINT_ENV,
+    ]);
+    fs.rmSync(extra);
+    expect(r.status).toBe(0);
+    const env = JSON.parse(r.stdout);
+    expect(env.FROM_FILE).toBe('filevalue'); // loaded from --env-file
+    expect(env.OVERRIDE_ME).toBe('fromset'); // --set beats --env-file
+  });
+
+  it('exits 1 on a malformed --set pair', () => {
+    const r = cli([
+      'run',
+      'dev',
+      '--set',
+      'NOEQUALS',
+      '-v',
+      vaultPath,
+      '--',
+      NODE,
+      '-e',
+      '0',
+    ]);
+    expect(r.status).toBe(1);
+    expect(r.stdout + r.stderr).toMatch(/expected KEY=VALUE/);
+  });
+
   it('exits 127 when the command is not found', () => {
     const r = cli(['run', 'dev', '-v', vaultPath, '--', 'no-such-cmd-xyz-123']);
     expect(r.status).toBe(127);
