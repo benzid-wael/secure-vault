@@ -336,6 +336,61 @@ describe('vault env run (integration)', () => {
     expect(r.stdout + r.stderr).toMatch(/expected KEY=VALUE/);
   });
 
+  it('--dry-run with --export reports the path but writes no file', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'dry.env');
+    const r = cli([
+      'run',
+      'dev',
+      '--export',
+      envFile,
+      '--dry-run',
+      '-v',
+      vaultPath,
+    ]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/env also written to/);
+    expect(fs.existsSync(envFile)).toBe(false); // dry-run never writes
+  });
+
+  it('.vaultrc inject:"file" is honored as deprecated and routed to --export', () => {
+    const rcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-rc-'));
+    fs.writeFileSync(
+      path.join(rcDir, '.vaultrc'),
+      JSON.stringify({ inject: 'file' })
+    );
+    const envFile = path.join(rcDir, 'rc.env');
+    try {
+      const r = spawnSync(
+        NODE,
+        [
+          CLI,
+          'env',
+          'run',
+          'dev',
+          '--export',
+          envFile,
+          '-v',
+          vaultPath,
+          '--',
+          ...PRINT_ENV,
+        ],
+        {
+          encoding: 'utf8',
+          cwd: rcDir,
+          env: { ...process.env, VAULT_ENV_PASSWORD: PASSWORD },
+        }
+      );
+      expect(r.status).toBe(0);
+      expect(r.stderr).toMatch(/--inject file` is deprecated/);
+      const env = JSON.parse(r.stdout);
+      expect(env.API_URL).toBe('https://api.example.com'); // vault var injected
+      expect(env.VAULT_ENV_PASSWORD).toBeUndefined(); // file -> clean isolation
+      expect(fs.existsSync(envFile)).toBe(false); // deleted after exit
+    } finally {
+      fs.rmSync(rcDir, { recursive: true, force: true });
+    }
+  });
+
   it('exits 127 when the command is not found', () => {
     const r = cli(['run', 'dev', '-v', vaultPath, '--', 'no-such-cmd-xyz-123']);
     expect(r.status).toBe(127);

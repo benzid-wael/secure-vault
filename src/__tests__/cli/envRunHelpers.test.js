@@ -10,6 +10,7 @@ import {
   VAULTRC_FILENAME,
   buildChildEnv,
   toDotenv,
+  quoteDotenvValue,
   parseAllowlist,
   parseSetPairs,
   readAllowlistFile,
@@ -103,6 +104,31 @@ describe('toDotenv', () => {
     expect(toDotenv({ K: 'has "quote"' })).toBe('K="has \\"quote\\""\n');
     expect(toDotenv({ K: ' padded ' })).toBe('K=" padded "\n');
     expect(toDotenv({ K: 'a\\b' })).toBe('K=a\\b\n'); // backslash alone: not quoted
+  });
+});
+
+describe('quoteDotenvValue', () => {
+  it('leaves plain values and the empty string unquoted', () => {
+    expect(quoteDotenvValue('plain')).toBe('plain');
+    expect(quoteDotenvValue('a b c')).toBe('a b c'); // middle spaces ok
+    expect(quoteDotenvValue('')).toBe('');
+  });
+
+  it('coerces null/undefined to an empty string', () => {
+    expect(quoteDotenvValue(null)).toBe('');
+    expect(quoteDotenvValue(undefined)).toBe('');
+  });
+
+  it('does not quote a value whose only special char is a backslash', () => {
+    expect(quoteDotenvValue('a\\b')).toBe('a\\b');
+  });
+
+  it('quotes and escapes carriage returns, quotes, # and edge whitespace', () => {
+    expect(quoteDotenvValue('a\rb')).toBe('"a\\rb"');
+    expect(quoteDotenvValue("'")).toBe('"\'"'); // single quote triggers quoting
+    expect(quoteDotenvValue('a#b')).toBe('"a#b"');
+    expect(quoteDotenvValue(' lead')).toBe('" lead"');
+    expect(quoteDotenvValue('a"b')).toBe('"a\\"b"');
   });
 });
 
