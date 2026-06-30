@@ -145,6 +145,74 @@ describe('vault env run (integration)', () => {
     expect(fs.existsSync(envFile)).toBe(false);
   });
 
+  it('--export writes the file, sets ENV_FILE_PATH, injects clean vars, and deletes after', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'exp.env');
+    const r = cli([
+      'run',
+      'dev',
+      '--export',
+      envFile,
+      '-v',
+      vaultPath,
+      '--',
+      NODE,
+      '-e',
+      // The child finds the file via ENV_FILE_PATH (no hardcoded path).
+      `const fs=require('fs');` +
+        `process.stdout.write('FILE:'+fs.readFileSync(process.env.ENV_FILE_PATH,'utf8'));` +
+        `process.stdout.write('ENVVAR:'+process.env.API_URL)`,
+    ]);
+    expect(r.status).toBe(0);
+    // File contains the resolved vars...
+    expect(r.stdout).toContain('FILE:');
+    expect(r.stdout).toContain('API_URL=https://api.example.com');
+    // ...and the vars are ALSO injected into the (clean) process env.
+    expect(r.stdout).toContain('ENVVAR:https://api.example.com');
+    // ENV_FILE_PATH points at the export path.
+    // File is securely deleted once the child exits.
+    expect(fs.existsSync(envFile)).toBe(false);
+  });
+
+  it('--export composes with --inject merge (file written + parent env inherited)', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'exp-merge.env');
+    const r = cli([
+      'run',
+      'dev',
+      '--inject',
+      'merge',
+      '--export',
+      envFile,
+      '-v',
+      vaultPath,
+      '--',
+      ...PRINT_ENV,
+    ]);
+    expect(r.status).toBe(0);
+    const env = JSON.parse(r.stdout);
+    expect(env.API_URL).toBe('https://api.example.com'); // vault var
+    expect(env.VAULT_ENV_PASSWORD).toBe(PASSWORD); // inherited (merge)
+    expect(env.ENV_FILE_PATH).toBe(envFile); // pointer set
+    expect(fs.existsSync(envFile)).toBe(false); // deleted after exit
+  });
+
+  it('--export securely deletes the file even when the child fails', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'exp-fail.env');
+    const r = cli([
+      'run',
+      'dev',
+      '--export',
+      envFile,
+      '-v',
+      vaultPath,
+      '--',
+      NODE,
+      '-e',
+      'process.exit(3)',
+    ]);
+    expect(r.status).toBe(3);
+    expect(fs.existsSync(envFile)).toBe(false);
+  });
+
   it('exits 127 when the command is not found', () => {
     const r = cli(['run', 'dev', '-v', vaultPath, '--', 'no-such-cmd-xyz-123']);
     expect(r.status).toBe(127);

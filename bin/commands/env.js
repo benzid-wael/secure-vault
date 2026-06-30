@@ -1285,6 +1285,12 @@ export function registerEnvCommand(program) {
         'because Node/Bun reserve --env-file as a built-in flag.'
     )
     .option(
+      '--export <path>',
+      'Also write the resolved env to a temp .env at <path> (0600), set ' +
+        'ENV_FILE_PATH for the child, and securely delete it on exit. ' +
+        'Composes with --inject clean|merge.'
+    )
+    .option(
       '--allowlist <vars>',
       'Extra system vars to pass through in clean mode (comma-separated)'
     )
@@ -1373,6 +1379,20 @@ export function registerEnvCommand(program) {
           allowlist: [...parseAllowlist(options.allowlist), ...fileAllowlist],
         });
 
+        // File delivery is orthogonal to the population mode: --export writes
+        // a temp .env regardless of clean|merge. The legacy `--inject file`
+        // path (with --out-file) is still honored here; it is routed through
+        // the same single write path and deprecated in a later task.
+        const exportPath = options.export
+          ? path.resolve(options.export)
+          : mode === 'file'
+            ? path.resolve(options.outFile)
+            : null;
+
+        // Let the child locate the written file (fixes the long-standing
+        // missing-pointer bug where file mode never set this).
+        if (exportPath) childEnv.ENV_FILE_PATH = exportPath;
+
         if (options.dryRun) {
           // Build a sensitivity map from showEnv; inherited vars default to sensitive.
           const showResult = await EnvironmentVaultService.showEnv(
@@ -1387,10 +1407,9 @@ export function registerEnvCommand(program) {
             }
           }
 
-          const modeLabel =
-            mode === 'file'
-              ? `${mode} (vars written to ${options.outFile ?? '<out-file>'})`
-              : mode;
+          const modeLabel = exportPath
+            ? `${mode} (env also written to ${exportPath})`
+            : mode;
           log(
             chalk.bold(
               `\nDry run — env: ${chalk.cyan(envName)}  mode: ${chalk.cyan(modeLabel)}\n`
@@ -1414,14 +1433,12 @@ export function registerEnvCommand(program) {
           return;
         }
 
-        let envFilePath = null;
-        if (mode === 'file') {
-          envFilePath = path.resolve(options.outFile);
-          fs.writeFileSync(envFilePath, toDotenv(vars), { mode: 0o600 });
+        if (exportPath) {
+          fs.writeFileSync(exportPath, toDotenv(vars), { mode: 0o600 });
         }
 
         const cleanup = () => {
-          if (envFilePath) secureDelete(envFilePath);
+          if (exportPath) secureDelete(exportPath);
         };
 
         const child = spawn(command[0], command.slice(1), {
