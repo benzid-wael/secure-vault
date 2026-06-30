@@ -1276,14 +1276,16 @@ export function registerEnvCommand(program) {
     .option('--password-file <path>', 'Read vault password from a file')
     .option('--password-stdin', 'Read vault password from stdin')
     .addOption(
-      new Option('--inject <mode>', 'Injection mode: clean | merge | file')
+      new Option(
+        '--inject <mode>',
+        'Population mode: clean | merge (file is a deprecated alias of --export)'
+      )
         .default('clean')
         .env('VAULT_INJECT')
     )
     .option(
       '--out-file <path>',
-      'Temp .env path to write (required for --inject file). Named --out-file ' +
-        'because Node/Bun reserve --env-file as a built-in flag.'
+      '[deprecated, removed in v2.0] alias of --export <path>.'
     )
     .option(
       '--export <path>',
@@ -1352,16 +1354,41 @@ export function registerEnvCommand(program) {
         process.exit(1);
       }
 
-      const mode = options.inject;
-      if (!INJECT_MODES.includes(mode)) {
+      // `--inject file` and `--out-file` are deprecated aliases for the
+      // orthogonal `--export` flag (to be removed in v2.0). `file` is no longer
+      // a population mode — it maps to clean and writes the file via --export.
+      const requestedInject = options.inject;
+      if (!INJECT_MODES.includes(requestedInject)) {
         console.error(
-          chalk.red(`Invalid --inject mode "${mode}" (clean|merge|file)`)
+          chalk.red(`Invalid --inject mode "${requestedInject}" (clean|merge)`)
         );
         process.exit(1);
       }
-      if (mode === 'file' && !options.outFile) {
+      const legacyFileMode = requestedInject === 'file';
+      const mode = legacyFileMode ? 'clean' : requestedInject;
+
+      if (legacyFileMode) {
         console.error(
-          chalk.red('--out-file <path> is required for --inject file')
+          chalk.yellow(
+            'warning: `--inject file` is deprecated and will be removed in ' +
+              'v2.0. Use `--export <path>` (clean is the default population mode).'
+          )
+        );
+      }
+      if (options.outFile) {
+        console.error(
+          chalk.yellow(
+            'warning: `--out-file` is deprecated and will be removed in v2.0. ' +
+              'Use `--export <path>`.'
+          )
+        );
+      }
+
+      // Single file target: --export (preferred) or the legacy --out-file.
+      const exportTarget = options.export ?? options.outFile;
+      if (legacyFileMode && !exportTarget) {
+        console.error(
+          chalk.red('--export <path> is required for --inject file')
         );
         process.exit(1);
       }
@@ -1419,15 +1446,10 @@ export function registerEnvCommand(program) {
           allowlist: [...parseAllowlist(options.allowlist), ...fileAllowlist],
         });
 
-        // File delivery is orthogonal to the population mode: --export writes
-        // a temp .env regardless of clean|merge. The legacy `--inject file`
-        // path (with --out-file) is still honored here; it is routed through
-        // the same single write path and deprecated in a later task.
-        const exportPath = options.export
-          ? path.resolve(options.export)
-          : mode === 'file'
-            ? path.resolve(options.outFile)
-            : null;
+        // File delivery is orthogonal to the population mode: a temp .env is
+        // written whenever a target was given via --export or the legacy
+        // --out-file / --inject file (resolved together as exportTarget).
+        const exportPath = exportTarget ? path.resolve(exportTarget) : null;
 
         // Let the child locate the written file (fixes the long-standing
         // missing-pointer bug where file mode never set this).

@@ -341,7 +341,7 @@ describe('vault env run (integration)', () => {
     expect(r.status).toBe(127);
   });
 
-  it('rejects --inject file without --out-file', () => {
+  it('rejects --inject file without a file target', () => {
     const r = cli([
       'run',
       'dev',
@@ -355,7 +355,52 @@ describe('vault env run (integration)', () => {
       '0',
     ]);
     expect(r.status).toBe(1);
-    expect(r.stdout + r.stderr).toMatch(/--out-file/);
+    expect(r.stdout + r.stderr).toMatch(/--export <path> is required/);
+  });
+
+  it('warns that --inject file is deprecated but still works (routed to --export)', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'legacy-file.env');
+    const r = cli([
+      'run',
+      'dev',
+      '--inject',
+      'file',
+      '--out-file',
+      envFile,
+      '-v',
+      vaultPath,
+      '--',
+      ...PRINT_ENV,
+    ]);
+    expect(r.status).toBe(0);
+    // Deprecation warnings go to stderr, never stdout (stdout stays parseable).
+    expect(r.stderr).toMatch(/--inject file` is deprecated/);
+    expect(r.stderr).toMatch(/--out-file` is deprecated/);
+    const env = JSON.parse(r.stdout);
+    expect(env.API_URL).toBe('https://api.example.com'); // vault var injected
+    expect(env.VAULT_ENV_PASSWORD).toBeUndefined(); // clean isolation
+    expect(env.ENV_FILE_PATH).toBe(envFile); // pointer set
+    expect(fs.existsSync(envFile)).toBe(false); // deleted after exit
+  });
+
+  it('treats --out-file alone as a deprecated alias of --export', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'legacy-outfile.env');
+    const r = cli([
+      'run',
+      'dev',
+      '--out-file',
+      envFile,
+      '-v',
+      vaultPath,
+      '--',
+      NODE,
+      '-e',
+      `process.stdout.write(require('fs').readFileSync(process.env.ENV_FILE_PATH,'utf8'))`,
+    ]);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toMatch(/--out-file` is deprecated/);
+    expect(r.stdout).toContain('API_URL=https://api.example.com');
+    expect(fs.existsSync(envFile)).toBe(false);
   });
 
   it('errors when no command is given', () => {
