@@ -955,6 +955,30 @@ describe('EnvironmentVaultService', () => {
       expect(result.success).toBe(true);
       expect(result.data).toEqual({ A: '1', B: '2' });
     });
+
+    it('should quote/escape special values in dotenv format', async () => {
+      const vault = createPopulatedVault(testEnvName, {
+        M: 'line1\nline2#x',
+        P: ' pad ',
+      });
+      await EnvironmentVaultService.createVault(
+        testVaultPath,
+        testPassword,
+        vault.toJSON()
+      );
+      const file = fsMock.writeJSON.mock.calls[0][1];
+      fsMock.pathExists.mockResolvedValue(true);
+      fsMock.readJSON.mockResolvedValue(file);
+
+      const result = await EnvironmentVaultService.exportEnv(
+        testVaultPath,
+        testPassword,
+        testEnvName
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.data).toBe('M="line1\\nline2#x"\nP=" pad "\n');
+    });
   });
 
   describe('templateEnv', () => {

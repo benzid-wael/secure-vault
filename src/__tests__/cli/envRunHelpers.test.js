@@ -10,13 +10,16 @@ import {
   VAULTRC_FILENAME,
   buildChildEnv,
   toDotenv,
+  quoteDotenvValue,
   parseAllowlist,
+  parseSetPairs,
   readAllowlistFile,
   loadProjectConfig,
   applyProjectConfig,
   extractRunCommand,
   getRunCommand,
 } from '../../../bin/commands/envRunHelpers.js';
+import { EnvironmentVault } from '../../electron/models/EnvironmentVault.js';
 
 describe('buildChildEnv', () => {
   const parentEnv = {
@@ -64,11 +67,14 @@ describe('buildChildEnv', () => {
     expect(env.PATH).toBe('/vault/path');
   });
 
-  it('file mode injects no vault vars (they go to the file)', () => {
+  it('treats the legacy "file" mode as clean: vault vars injected, parent env not leaked', () => {
+    // file is no longer a population mode (writing a file is orthogonal).
+    // Any non-merge mode must inject vault vars and keep clean isolation —
+    // the old behavior (no vault vars + full parent passthrough) was the bug.
     const env = buildChildEnv({ mode: 'file', vars, parentEnv });
-    expect(env.API_URL).toBeUndefined();
-    expect(env.TOKEN).toBeUndefined();
-    expect(env.SECRET_FROM_PARENT).toBe('leak'); // still inherits parent
+    expect(env.API_URL).toBe('https://x'); // now injected
+    expect(env.TOKEN).toBe('abc');
+    expect(env.SECRET_FROM_PARENT).toBeUndefined(); // not leaked
   });
 
   it('CLEAN_ALLOWLIST covers the documented system vars', () => {
@@ -79,12 +85,96 @@ describe('buildChildEnv', () => {
 });
 
 describe('toDotenv', () => {
-  it('serializes key/value pairs with a trailing newline', () => {
+  it('serializes plain key/value pairs unquoted with a trailing newline', () => {
     expect(toDotenv({ A: '1', B: 'two' })).toBe('A=1\nB=two\n');
   });
 
   it('handles an empty map', () => {
     expect(toDotenv({})).toBe('\n');
+  });
+
+  it('leaves middle spaces and = signs unquoted', () => {
+    expect(toDotenv({ A: 'a b', DB: 'postgres://h?ssl=true' })).toBe(
+      'A=a b\nDB=postgres://h?ssl=true\n'
+    );
+  });
+
+  it('double-quotes and escapes values with newlines, quotes, # or edge whitespace', () => {
+    expect(toDotenv({ K: 'line1\nline2#x' })).toBe('K="line1\\nline2#x"\n');
+    expect(toDotenv({ K: 'has "quote"' })).toBe('K="has \\"quote\\""\n');
+    expect(toDotenv({ K: ' padded ' })).toBe('K=" padded "\n');
+    expect(toDotenv({ K: 'a\\b' })).toBe('K=a\\b\n'); // backslash alone: not quoted
+  });
+});
+
+describe('quoteDotenvValue', () => {
+  it('leaves plain values and the empty string unquoted', () => {
+    expect(quoteDotenvValue('plain')).toBe('plain');
+    expect(quoteDotenvValue('a b c')).toBe('a b c'); // middle spaces ok
+    expect(quoteDotenvValue('')).toBe('');
+  });
+
+  it('coerces null/undefined to an empty string', () => {
+    expect(quoteDotenvValue(null)).toBe('');
+    expect(quoteDotenvValue(undefined)).toBe('');
+  });
+
+  it('does not quote a value whose only special char is a backslash', () => {
+    expect(quoteDotenvValue('a\\b')).toBe('a\\b');
+  });
+
+  it('quotes and escapes carriage returns, quotes, # and edge whitespace', () => {
+    expect(quoteDotenvValue('a\rb')).toBe('"a\\rb"');
+    expect(quoteDotenvValue("'")).toBe('"\'"'); // single quote triggers quoting
+    expect(quoteDotenvValue('a#b')).toBe('"a#b"');
+    expect(quoteDotenvValue(' lead')).toBe('" lead"');
+    expect(quoteDotenvValue('a"b')).toBe('"a\\"b"');
+  });
+});
+
+describe('toDotenv <-> parseEnvFile round-trip', () => {
+  it('round-trips tricky values unchanged (write with toDotenv, read with parseEnvFile)', () => {
+    const obj = {
+      SIMPLE: 'value',
+      WITH_SPACES: 'a b c',
+      WITH_HASH: 'color#fff',
+      MULTILINE: 'line1\nline2',
+      WITH_QUOTE: 'say "hi"',
+      PADDED: '  pad  ',
+      URL: 'postgres://u:p@h:5432/db?ssl=true',
+      BACKSLASH: 'a\\b',
+    };
+    expect(EnvironmentVault.parseEnvFile(toDotenv(obj))).toEqual(obj);
+  });
+});
+
+describe('parseSetPairs', () => {
+  it('parses KEY=VALUE pairs into an object', () => {
+    expect(parseSetPairs(['A=1', 'B=two'])).toEqual({ A: '1', B: 'two' });
+  });
+
+  it('keeps everything after the first = in the value', () => {
+    expect(parseSetPairs(['URL=postgres://h?ssl=true'])).toEqual({
+      URL: 'postgres://h?ssl=true',
+    });
+  });
+
+  it('allows an empty value', () => {
+    expect(parseSetPairs(['EMPTY='])).toEqual({ EMPTY: '' });
+  });
+
+  it('later pairs override earlier ones', () => {
+    expect(parseSetPairs(['K=1', 'K=2'])).toEqual({ K: '2' });
+  });
+
+  it('returns {} for no pairs', () => {
+    expect(parseSetPairs()).toEqual({});
+    expect(parseSetPairs([])).toEqual({});
+  });
+
+  it('throws on a pair without = or with an empty key', () => {
+    expect(() => parseSetPairs(['NOEQUALS'])).toThrow(/expected KEY=VALUE/);
+    expect(() => parseSetPairs(['=value'])).toThrow(/expected KEY=VALUE/);
   });
 });
 

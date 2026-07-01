@@ -98,25 +98,23 @@ describe('vault env run (integration)', () => {
 
   it('file mode writes the env file, the child can read it, and it is deleted after', () => {
     const envFile = path.join(path.dirname(vaultPath), 'out.env');
-    const r = cli(
-      [
-        'run',
-        'dev',
-        '--inject',
-        'file',
-        '--out-file',
-        envFile,
-        '-v',
-        vaultPath,
-        '--',
-        NODE,
-        '-e',
-        // file mode inherits the parent env, so read the path from an env var
-        // (avoids ambiguity of passing it as a node script argument).
-        `process.stdout.write(require('fs').readFileSync(process.env.EF_PATH,'utf8'))`,
-      ],
-      { EF_PATH: envFile }
-    );
+    const r = cli([
+      'run',
+      'dev',
+      '--inject',
+      'file',
+      '--out-file',
+      envFile,
+      '-v',
+      vaultPath,
+      '--',
+      NODE,
+      '-e',
+      // File mode is now clean-isolated (vault vars are injected, but the
+      // parent env is NOT passed through), so the child cannot rely on an
+      // inherited env var to locate the file — read the literal path instead.
+      `process.stdout.write(require('fs').readFileSync(${JSON.stringify(envFile)},'utf8'))`,
+    ]);
     expect(r.status).toBe(0);
     // The child saw the decrypted vars via the file...
     expect(r.stdout).toContain('API_URL=https://api.example.com');
@@ -124,12 +122,281 @@ describe('vault env run (integration)', () => {
     expect(fs.existsSync(envFile)).toBe(false);
   });
 
+  it('file mode does not leak the parent env to the child (clean isolation)', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'out2.env');
+    const r = cli([
+      'run',
+      'dev',
+      '--inject',
+      'file',
+      '--out-file',
+      envFile,
+      '-v',
+      vaultPath,
+      '--',
+      ...PRINT_ENV,
+    ]);
+    expect(r.status).toBe(0);
+    const env = JSON.parse(r.stdout);
+    // Vault vars are injected into the process env...
+    expect(env.API_URL).toBe('https://api.example.com');
+    // ...but the parent's password must NOT leak (was the file-mode bug).
+    expect(env.VAULT_ENV_PASSWORD).toBeUndefined();
+    expect(fs.existsSync(envFile)).toBe(false);
+  });
+
+  it('--export writes the file, sets ENV_FILE_PATH, injects clean vars, and deletes after', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'exp.env');
+    const r = cli([
+      'run',
+      'dev',
+      '--export',
+      envFile,
+      '-v',
+      vaultPath,
+      '--',
+      NODE,
+      '-e',
+      // The child finds the file via ENV_FILE_PATH (no hardcoded path).
+      `const fs=require('fs');` +
+        `process.stdout.write('FILE:'+fs.readFileSync(process.env.ENV_FILE_PATH,'utf8'));` +
+        `process.stdout.write('ENVVAR:'+process.env.API_URL)`,
+    ]);
+    expect(r.status).toBe(0);
+    // File contains the resolved vars...
+    expect(r.stdout).toContain('FILE:');
+    expect(r.stdout).toContain('API_URL=https://api.example.com');
+    // ...and the vars are ALSO injected into the (clean) process env.
+    expect(r.stdout).toContain('ENVVAR:https://api.example.com');
+    // ENV_FILE_PATH points at the export path.
+    // File is securely deleted once the child exits.
+    expect(fs.existsSync(envFile)).toBe(false);
+  });
+
+  it('--export composes with --inject merge (file written + parent env inherited)', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'exp-merge.env');
+    const r = cli([
+      'run',
+      'dev',
+      '--inject',
+      'merge',
+      '--export',
+      envFile,
+      '-v',
+      vaultPath,
+      '--',
+      ...PRINT_ENV,
+    ]);
+    expect(r.status).toBe(0);
+    const env = JSON.parse(r.stdout);
+    expect(env.API_URL).toBe('https://api.example.com'); // vault var
+    expect(env.VAULT_ENV_PASSWORD).toBe(PASSWORD); // inherited (merge)
+    expect(env.ENV_FILE_PATH).toBe(envFile); // pointer set
+    expect(fs.existsSync(envFile)).toBe(false); // deleted after exit
+  });
+
+  it('--export securely deletes the file even when the child fails', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'exp-fail.env');
+    const r = cli([
+      'run',
+      'dev',
+      '--export',
+      envFile,
+      '-v',
+      vaultPath,
+      '--',
+      NODE,
+      '-e',
+      'process.exit(3)',
+    ]);
+    expect(r.status).toBe(3);
+    expect(fs.existsSync(envFile)).toBe(false);
+  });
+
+  it('--export refuses to overwrite an existing file without --force, leaving it intact', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'existing.env');
+    fs.writeFileSync(envFile, 'PRECIOUS=keepme\n');
+    const r = cli([
+      'run',
+      'dev',
+      '--export',
+      envFile,
+      '-v',
+      vaultPath,
+      '--',
+      NODE,
+      '-e',
+      '0',
+    ]);
+    expect(r.status).toBe(1);
+    expect(r.stdout + r.stderr).toMatch(/Refusing to overwrite/i);
+    // The pre-existing file must NOT be touched or deleted.
+    expect(fs.existsSync(envFile)).toBe(true);
+    expect(fs.readFileSync(envFile, 'utf8')).toBe('PRECIOUS=keepme\n');
+    fs.rmSync(envFile);
+  });
+
+  it('--export --force overwrites an existing file and securely deletes it after', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'existing2.env');
+    fs.writeFileSync(envFile, 'OLD=stuff\n');
+    const r = cli([
+      'run',
+      'dev',
+      '--export',
+      envFile,
+      '--force',
+      '-v',
+      vaultPath,
+      '--',
+      NODE,
+      '-e',
+      '0',
+    ]);
+    expect(r.status).toBe(0);
+    expect(fs.existsSync(envFile)).toBe(false);
+  });
+
+  it('--set injects user vars into the child env, layered under vault vars', () => {
+    const r = cli([
+      'run',
+      'dev',
+      '--set',
+      'FEATURE_FLAG=on',
+      '--set',
+      'API_URL=should-lose-to-vault',
+      '-v',
+      vaultPath,
+      '--',
+      ...PRINT_ENV,
+    ]);
+    expect(r.status).toBe(0);
+    const env = JSON.parse(r.stdout);
+    expect(env.FEATURE_FLAG).toBe('on'); // user var injected
+    expect(env.API_URL).toBe('https://api.example.com'); // vault wins on conflict
+  });
+
+  it('--set values are written into the --export file alongside vault vars', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'with-set.env');
+    const r = cli([
+      'run',
+      'dev',
+      '--set',
+      'FEATURE_FLAG=on',
+      '--export',
+      envFile,
+      '-v',
+      vaultPath,
+      '--',
+      NODE,
+      '-e',
+      `process.stdout.write(require('fs').readFileSync(process.env.ENV_FILE_PATH,'utf8'))`,
+    ]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('FEATURE_FLAG=on');
+    expect(r.stdout).toContain('API_URL=https://api.example.com');
+    expect(fs.existsSync(envFile)).toBe(false);
+  });
+
+  it('--env-file loads extra vars, and --set overrides --env-file', () => {
+    const extra = path.join(path.dirname(vaultPath), 'extra.env');
+    fs.writeFileSync(extra, 'FROM_FILE=filevalue\nOVERRIDE_ME=fromfile\n');
+    const r = cli([
+      'run',
+      'dev',
+      '--env-file',
+      extra,
+      '--set',
+      'OVERRIDE_ME=fromset',
+      '-v',
+      vaultPath,
+      '--',
+      ...PRINT_ENV,
+    ]);
+    fs.rmSync(extra);
+    expect(r.status).toBe(0);
+    const env = JSON.parse(r.stdout);
+    expect(env.FROM_FILE).toBe('filevalue'); // loaded from --env-file
+    expect(env.OVERRIDE_ME).toBe('fromset'); // --set beats --env-file
+  });
+
+  it('exits 1 on a malformed --set pair', () => {
+    const r = cli([
+      'run',
+      'dev',
+      '--set',
+      'NOEQUALS',
+      '-v',
+      vaultPath,
+      '--',
+      NODE,
+      '-e',
+      '0',
+    ]);
+    expect(r.status).toBe(1);
+    expect(r.stdout + r.stderr).toMatch(/expected KEY=VALUE/);
+  });
+
+  it('--dry-run with --export reports the path but writes no file', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'dry.env');
+    const r = cli([
+      'run',
+      'dev',
+      '--export',
+      envFile,
+      '--dry-run',
+      '-v',
+      vaultPath,
+    ]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/env also written to/);
+    expect(fs.existsSync(envFile)).toBe(false); // dry-run never writes
+  });
+
+  it('.vaultrc inject:"file" is honored as deprecated and routed to --export', () => {
+    const rcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-rc-'));
+    fs.writeFileSync(
+      path.join(rcDir, '.vaultrc'),
+      JSON.stringify({ inject: 'file' })
+    );
+    const envFile = path.join(rcDir, 'rc.env');
+    try {
+      const r = spawnSync(
+        NODE,
+        [
+          CLI,
+          'env',
+          'run',
+          'dev',
+          '--export',
+          envFile,
+          '-v',
+          vaultPath,
+          '--',
+          ...PRINT_ENV,
+        ],
+        {
+          encoding: 'utf8',
+          cwd: rcDir,
+          env: { ...process.env, VAULT_ENV_PASSWORD: PASSWORD },
+        }
+      );
+      expect(r.status).toBe(0);
+      expect(r.stderr).toMatch(/--inject file` is deprecated/);
+      const env = JSON.parse(r.stdout);
+      expect(env.API_URL).toBe('https://api.example.com'); // vault var injected
+      expect(env.VAULT_ENV_PASSWORD).toBeUndefined(); // file -> clean isolation
+      expect(fs.existsSync(envFile)).toBe(false); // deleted after exit
+    } finally {
+      fs.rmSync(rcDir, { recursive: true, force: true });
+    }
+  });
+
   it('exits 127 when the command is not found', () => {
     const r = cli(['run', 'dev', '-v', vaultPath, '--', 'no-such-cmd-xyz-123']);
     expect(r.status).toBe(127);
   });
 
-  it('rejects --inject file without --out-file', () => {
+  it('rejects --inject file without a file target', () => {
     const r = cli([
       'run',
       'dev',
@@ -143,7 +410,52 @@ describe('vault env run (integration)', () => {
       '0',
     ]);
     expect(r.status).toBe(1);
-    expect(r.stdout + r.stderr).toMatch(/--out-file/);
+    expect(r.stdout + r.stderr).toMatch(/--export <path> is required/);
+  });
+
+  it('warns that --inject file is deprecated but still works (routed to --export)', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'legacy-file.env');
+    const r = cli([
+      'run',
+      'dev',
+      '--inject',
+      'file',
+      '--out-file',
+      envFile,
+      '-v',
+      vaultPath,
+      '--',
+      ...PRINT_ENV,
+    ]);
+    expect(r.status).toBe(0);
+    // Deprecation warnings go to stderr, never stdout (stdout stays parseable).
+    expect(r.stderr).toMatch(/--inject file` is deprecated/);
+    expect(r.stderr).toMatch(/--out-file` is deprecated/);
+    const env = JSON.parse(r.stdout);
+    expect(env.API_URL).toBe('https://api.example.com'); // vault var injected
+    expect(env.VAULT_ENV_PASSWORD).toBeUndefined(); // clean isolation
+    expect(env.ENV_FILE_PATH).toBe(envFile); // pointer set
+    expect(fs.existsSync(envFile)).toBe(false); // deleted after exit
+  });
+
+  it('treats --out-file alone as a deprecated alias of --export', () => {
+    const envFile = path.join(path.dirname(vaultPath), 'legacy-outfile.env');
+    const r = cli([
+      'run',
+      'dev',
+      '--out-file',
+      envFile,
+      '-v',
+      vaultPath,
+      '--',
+      NODE,
+      '-e',
+      `process.stdout.write(require('fs').readFileSync(process.env.ENV_FILE_PATH,'utf8'))`,
+    ]);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toMatch(/--out-file` is deprecated/);
+    expect(r.stdout).toContain('API_URL=https://api.example.com');
+    expect(fs.existsSync(envFile)).toBe(false);
   });
 
   it('errors when no command is given', () => {

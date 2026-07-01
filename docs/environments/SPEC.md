@@ -3,7 +3,7 @@
 > Feature: Securely manage, version, and inject environment variables from an encrypted
 > `.env.vault` file into development tools, build processes, and CI/CD pipelines.
 >
-> Status: **v1.5 delivered** · Revision 6
+> Status: **v1.5 delivered** · Revision 8
 
 ---
 
@@ -62,7 +62,7 @@ that require one.
 | Encryption               | Reuse `CryptographyService` | AES-256-GCM, PBKDF2 SHA-512, 100k iterations                  |
 | Primary interface        | CLI (`vault env *`)         | Works everywhere; no UI dependency                            |
 | Process injection        | `vault env run` wrapper     | Child process spawn; secrets never written to disk by default |
-| Delivery for build tools | `--env-file` flag           | Temp `.env` file created for child lifetime, then wiped       |
+| Delivery for build tools | `--export <path>` flag      | Temp `.env` created for child lifetime, then securely wiped   |
 | Daemon                   | CLI-only (v1)               | Agent/mount mode deferred to v2                               |
 
 ---
@@ -722,22 +722,46 @@ To undo a rollback, rollback again to the version before it.
 
 USAGE
 vault env run [env] [--vault <path>]
-[--inject clean|merge|file]
-[--out-file <path>]
+[--inject clean|merge]
+[--export <path>] [--force]
+[--set <KEY=VALUE>]... [--env-file <path>]
 [--allowlist <comma-separated-vars>]
 [--allowlist-file <path>]
 [--dry-run]
 [--] <command>...
 
-FLAGS
---inject <mode>
-clean (default) Only vault vars + allowlisted system vars (PATH, HOME, SHELL, USER, TMPDIR)
-merge Vault vars merged into inherited process.env
-file Write --out-file, spawn, then securely delete the file
+`run` has two independent axes (see §11):
+(1) PROCESS-ENV POPULATION — how the child's environment is built (--inject)
+(2) FILE DELIVERY — whether a .env is also written to disk (--export)
+These compose freely: e.g. clean-isolated env AND an on-disk file at once.
 
---out-file <path>
-Path to write a temporary .env file. Required when --inject=file.
-The file is created 0600 before spawn and securely deleted after child exits.
+FLAGS
+--inject <mode> (population axis)
+clean (default) Only vault vars + allowlisted system vars (PATH, HOME, SHELL, USER, TMPDIR)
+merge Vault vars merged into the inherited process.env
+(In every mode the vault vars are injected into the process env.)
+
+--export <path> (file-delivery axis)
+Also write the resolved env to a temp .env at <path> (created 0600),
+set ENV_FILE_PATH in the child so tools can locate it, then securely
+delete the file after the child exits (success OR failure). Composes
+with --inject clean|merge.
+
+--force
+Overwrite the --export target if it already exists. By default an
+existing file is left untouched and the run aborts — because the target
+is securely deleted on exit, silently clobbering a real .env would
+destroy it.
+
+--set <KEY=VALUE> (repeatable)
+Add an explicit variable to the run. Injected into the child AND written
+to the --export file, layered UNDER the vault vars (vault wins on
+conflict). Distinct from --allowlist/merge, which only pass parent-env
+values through and never enter the exported file.
+
+--env-file <path>
+Load extra KEY=VALUE pairs from a .env file (parsed exactly like
+`vault env import`). Same placement as --set; --set overrides --env-file.
 
 --allowlist <vars>
 Additional system vars to allow through in clean mode (comma-separated).
@@ -749,6 +773,12 @@ Defaults to .vault-allowlist in CWD if present; explicit path must exist.
 --dry-run
 Print the resolved environment without spawning the command.
 Vault vars are marked with '+'; sensitive values are masked as \*\*\*\*.
+
+DEPRECATED (removed in v2.0)
+--inject file Was a third "mode" that conflated population with file
+delivery. Now an alias for `--inject clean --export <path>`;
+emits a stderr deprecation warning. Use --export instead.
+--out-file <path> Alias of --export <path>; emits a deprecation warning.
 
 ENV VARS
 VAULT_ENV Default environment name (overridden by positional arg or .vaultrc)
@@ -762,25 +792,33 @@ A .vaultrc JSON file at the project root (walks up to git root) sets defaults
 for any of: inject, env, name, vault, allowlistFile.
 
 DESCRIPTION
-Decrypts the env vault, resolves templates, validates required vars,
-and spawns the command with environment variables injected according to
-the --inject mode. The child process inherits stdio.
+Decrypts the env vault, resolves templates, validates required vars, builds
+the child environment per --inject, optionally writes a temp .env per
+--export, and spawns the command (inheriting stdio).
 
-On exit, all temp files are securely deleted and decrypted data is zeroed.
+On exit, any --export file is securely deleted and decrypted data is zeroed.
 
 EXAMPLES
 
-# Inject env vars into npm start (clean mode)
+# Inject env vars into npm start (clean mode, no file on disk)
 
 vault env run development -- npm start
 
-# Merge mode for tools that need full parent env
+# Merge mode for tools that need the full parent env
 
 vault env run development --inject merge -- npx react-native run-ios
 
-# Temp .env file for react-native-config build
+# Clean-isolated env AND a temp .env for a file-based build tool
 
-vault env run staging --inject file --out-file .env -- npx react-native run-ios
+vault env run staging --export .env -- npx react-native run-ios
+
+# Add an explicit var (injected + written to the export file)
+
+vault env run staging --set FEATURE_FLAG=on --export .env -- npm run build
+
+# Load extra vars from a file; --set overrides them
+
+vault env run staging --env-file .env.local --set NODE_ENV=test -- npm test
 
 # Clean mode with additional system vars allowed
 
@@ -1095,23 +1133,25 @@ User CLI Child Process
 
 ```
 
-### 7.3 CLI Runner (file mode for build tools)
+### 7.3 CLI Runner (--export, for file-based build tools)
 
 ```
 
 User CLI Filesystem Child Process
 │ │ │ │
 ├─ vault env run ────→│ │ │
-│ staging --env-file │ │ │
+│ staging --export │ │ │
 │ .env -- react- │ │ │
 │ native run-ios │ │ │
 │ ├─ decrypt vault │ │
 │ ├─ resolve templates │ │
+│ ├─ abort if .env exists│ │
+│ │ (unless --force) │ │
 │ ├─ write .env ──────────→│ │
-│ │ (chmod 600) │ │
+│ │ (chmod 600, escaped) │ │
 │ │ │ │
-│ ├─ set REACT*NATIVE* │ │
-│ │ ENV_PATH=.env │ │
+│ ├─ build clean env + │ │
+│ │ ENV_FILE_PATH=.env │ │
 │ │ │ │
 │ ├─ spawn ───────────────→│──── .env ─────────→│
 │ │ │ │
@@ -1319,50 +1359,78 @@ With `--strict`, warnings are promoted to errors and the command fails.
 
 ---
 
-## 11. Injection Modes
+## 11. Injection Model
 
-### 11.1 Clean Mode (Default)
+`run` has **two independent axes**. Earlier revisions modeled file output as a
+third `--inject` value (`file`), which conflated them; that is now decoupled
+(see §16.9).
+
+| Axis                       | Flag                    | Question it answers                     |
+| -------------------------- | ----------------------- | --------------------------------------- |
+| (1) Process-env population | `--inject clean\|merge` | How is the child's `process.env` built? |
+| (2) File delivery          | `--export <path>`       | Is a `.env` also written to disk?       |
+
+In **all** cases the resolved vault vars (plus any `--set`/`--env-file`
+additions) are injected into the child's process env. The axes compose: e.g.
+`--inject clean --export .env` gives a clean-isolated env **and** an on-disk
+file.
+
+### 11.1 Population: Clean (default)
 
 ```
 cleanEnv = {
   ...allowlist,       // PATH, HOME, SHELL, USER, TMPDIR + custom --allowlist
-  ...vaultEnv         // resolved env vars from the vault
+  ...userVars,        // --env-file then --set (under vault)
+  ...vaultEnv         // resolved env vars from the vault (win on collision)
 }
 ```
 
 - System vars on the allowlist are inherited from the parent process.
 - All other parent env vars are stripped.
-- Vault vars override allowlist vars if there's a collision.
+- Vault vars override allowlist and user vars if there's a collision.
 
-### 11.2 Merge Mode
+### 11.2 Population: Merge
 
 ```
 mergedEnv = {
   ...process.env,     // all parent env vars
-  ...vaultEnv         // vault vars override parent
+  ...userVars,        // --env-file then --set
+  ...vaultEnv         // vault vars override parent and user vars
 }
 ```
 
 - Full inheritance of parent environment.
 - Vault vars take precedence.
 
-### 11.3 File Mode
+### 11.3 File Delivery (`--export <path>`)
 
 ```
-1. Resolve vault path
-2. Decrypt vault, resolve env
-3. Write .env file at --env-file path (chmod 600)
-4. Build child env:
-     cleanEnv (or mergedEnv if --inject merge)
-     + ENV_FILE_PATH=<path>   // set so child tools can locate it
-5. Spawn child
-6. On child exit:
-     a. Overwrite file with random data (3 passes)
-     b. Unlink file
-     c. Zero decrypted data in memory
+1. Build the child env per §11.1/§11.2 and set ENV_FILE_PATH=<path>.
+2. If <path> exists and --force was NOT given → abort (do not overwrite).
+3. Write the resolved vault + user vars to <path> as dotenv (chmod 600).
+   Values with newlines/quotes/# or edge whitespace are quoted+escaped so
+   they round-trip through `vault env import` (§16.10).
+4. Spawn the child (stdio inherited).
+5. On child exit (success OR failure):
+     a. Overwrite the file with random data (3 passes), then unlink.
+     b. Zero decrypted data in memory.
 ```
 
-The `ENV_FILE_PATH` env var allows tools that accept an env file path to find it.
+`ENV_FILE_PATH` lets tools that accept an env-file path locate the file. Only
+vault vars and explicit `--set`/`--env-file` additions are written — ambient
+allowlist/merge passthrough never lands in the file.
+
+> **Note (secure-delete caveat).** The 3-pass overwrite is best-effort: on
+> SSDs and copy-on-write filesystems (APFS, btrfs) wear-leveling means the
+> original blocks may not be overwritten in place. A `SIGKILL` of the parent
+> (or power loss) before the child exits can also leave the file on disk; the
+> startup orphan scan only covers temp dirs, not arbitrary `--export` paths.
+
+### 11.4 Deprecated: `--inject file` / `--out-file`
+
+`--inject file` (with `--out-file`) was the original file-delivery mechanism.
+It is now an alias for `--inject clean --export <out-file>`, emits a stderr
+deprecation warning, and is **removed in v2.0**. Use `--export` instead.
 
 ---
 
@@ -1388,7 +1456,7 @@ The `ENV_FILE_PATH` env var allows tools that accept an env file path to find it
 
 ### 12.3 Temp File Cleanup
 
-When `--inject file` or `--env-file` is used:
+When `--export <path>` (or the deprecated `--inject file` / `--out-file`) is used:
 
 1. File is created with `fs.open(path, 'w', 0o600)` — owner read/write only.
 2. On child exit (success or failure):
@@ -1496,7 +1564,7 @@ the vault, and `vault env get API_URL -e staging --clip` copies the value to cli
 
 **Dependencies**: v0.5
 
-**Exit criteria**: A React Native developer can run `vault env run staging --env-file .env -- npx react-native run-ios` with no plaintext `.env` on disk afterward. CI user can run `vault env validate prod --strict` in a pre-deploy hook.
+**Exit criteria**: A React Native developer can run `vault env run staging --export .env -- npx react-native run-ios` with no plaintext `.env` on disk afterward. CI user can run `vault env validate prod --strict` in a pre-deploy hook.
 
 ---
 
@@ -1912,6 +1980,47 @@ explaining the cross-module spy. Risk if left: a future fs-extra update that
 wraps `readFileSync` (e.g., for promisification) silently breaks the test
 or — worse — makes the test pass against fs-extra while production drifts.
 
+### 16.9 `--inject file` conflated population with file delivery
+
+**Where seen:** old §11.3 (File Mode), §6.3 `run` flags, implementation in
+`bin/commands/env.js` + `buildChildEnv` in `bin/commands/envRunHelpers.js`.
+
+**Divergence:** the old spec said file mode built `cleanEnv (or mergedEnv if
+--inject merge) + ENV_FILE_PATH`. The implementation did neither: `file` mode
+returned the **unfiltered parent env**, injected **no** vault vars, and never
+set `ENV_FILE_PATH`. The flag also can't express "merged env AND a file"
+because `--inject` is a single value, so the spec's own "(or mergedEnv if
+--inject merge)" was unrepresentable.
+
+**RESOLVED** — population (`--inject clean|merge`) and file delivery
+(`--export <path>`) are now separate axes (§11). Vault vars are always
+injected; `ENV_FILE_PATH` is always set when a file is written. `--inject
+file`/`--out-file` are soft-deprecated aliases of `--export` (stderr warning,
+removed in v2.0). Added `--set`/`--env-file` for explicit user vars and
+`--force` for the overwrite guard.
+
+### 16.10 Exported `.env` values were not escaped (round-trip / data loss)
+
+**Where seen:** old `toDotenv` (`bin/commands/envRunHelpers.js`) and the file
+write in `vault env run`.
+
+**Two issues:** (a) values were written raw `KEY=value`, so a value with a
+newline, quote, or leading/trailing whitespace produced a malformed file that
+`vault env import` (`EnvironmentVault.parseEnvFile`) could not read back
+identically; (b) the file was written with no existence check and securely
+deleted on exit, so pointing `--export`/`--out-file` at a real `.env`
+destroyed it.
+
+**RESOLVED** — `toDotenv` now double-quotes and escapes (`\\ \" \n \r`) values
+that need it, and `parseEnvFile` decodes those escapes for double-quoted
+values, making writer and reader a matched pair (verified by a round-trip
+test). The write now aborts on an existing target unless `--force` is given.
+
+> **Also resolved:** `vault env export --format dotenv` (stdout) now shares the
+> same serializer. The escaping helper lives in `src/utils/dotenv.js` and is
+> used by both the CLI runner (`--export`) and `EnvironmentVaultService.exportEnv`,
+> so exported and run-injected files quote/escape identically.
+
 ---
 
 ## 17. Appendix: Comparison to 1Password Environments
@@ -1974,12 +2083,13 @@ or — worse — makes the test pass against fs-extra while production drifts.
 
 ## Appendix C: Changelog
 
-| Date       | Revision | Author  | Changes                                                                                                                                                                                                                                                                                                                                       |
-| ---------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-05-30 | 1        | wbenzid | Initial draft                                                                                                                                                                                                                                                                                                                                 |
-| 2026-05-26 | 2        | wbenzid | Add §16 Known Issues & Pending Reconciliations (8 items from v0.1.0-rc.5 e2e validation)                                                                                                                                                                                                                                                      |
-| 2026-06-06 | 3        | wbenzid | Codify var-level vs env-level command split (§6.1, §6.1.1); align all §6.3 usage/examples and §7 flows to the implementation; mark §16.1–16.3 RESOLVED (option b)                                                                                                                                                                             |
-| 2026-06-06 | 4        | wbenzid | Document password resolution (§6.2.1: precedence, mutual exclusion, exit codes); update §12.5; add `PASSWORD_*` codes to Appendix B; mark §16.5 RESOLVED (docs)                                                                                                                                                                               |
-| 2026-06-06 | 5        | wbenzid | Document walk-up + git-root vault discovery (§5.2/§5.3); mark §16.6 RESOLVED. Fix duplicate §6.1 heading (now §6.1.1/6.1.2/6.1.3) and stale cross-refs                                                                                                                                                                                        |
-| 2026-06-11 | 6        | wbenzid | Mark v1.5 Composition delivered (resolver: `extends` layering + `{{env:name/KEY}}`/`{{env:self/KEY}}` refs + full validation engine); add `.bak`/atomic-write + `.deleted.<ts>` (§5.4); reserve `self` env name (§4.5/§8); add milestone status legend + v0.5/v1.0/v2.x markers; note Q1/Q4 status in §15                                     |
-| 2026-06-15 | 7        | wbenzid | Mark v1.0 hardening complete in §13.3 (3-pass temp cleanup, orphan scan, distinct error codes 2–14 with symbolic emission); add `show` fields, `diff` old→new, `history` date col, spec limit enforcement, `--description`, `--quiet` to §13.4 delivered; close §16.5 (error codes); add numeric exit code column + status note to Appendix B |
+| Date       | Revision | Author  | Changes                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-05-30 | 1        | wbenzid | Initial draft                                                                                                                                                                                                                                                                                                                                                                          |
+| 2026-05-26 | 2        | wbenzid | Add §16 Known Issues & Pending Reconciliations (8 items from v0.1.0-rc.5 e2e validation)                                                                                                                                                                                                                                                                                               |
+| 2026-06-06 | 3        | wbenzid | Codify var-level vs env-level command split (§6.1, §6.1.1); align all §6.3 usage/examples and §7 flows to the implementation; mark §16.1–16.3 RESOLVED (option b)                                                                                                                                                                                                                      |
+| 2026-06-06 | 4        | wbenzid | Document password resolution (§6.2.1: precedence, mutual exclusion, exit codes); update §12.5; add `PASSWORD_*` codes to Appendix B; mark §16.5 RESOLVED (docs)                                                                                                                                                                                                                        |
+| 2026-06-06 | 5        | wbenzid | Document walk-up + git-root vault discovery (§5.2/§5.3); mark §16.6 RESOLVED. Fix duplicate §6.1 heading (now §6.1.1/6.1.2/6.1.3) and stale cross-refs                                                                                                                                                                                                                                 |
+| 2026-06-11 | 6        | wbenzid | Mark v1.5 Composition delivered (resolver: `extends` layering + `{{env:name/KEY}}`/`{{env:self/KEY}}` refs + full validation engine); add `.bak`/atomic-write + `.deleted.<ts>` (§5.4); reserve `self` env name (§4.5/§8); add milestone status legend + v0.5/v1.0/v2.x markers; note Q1/Q4 status in §15                                                                              |
+| 2026-06-15 | 7        | wbenzid | Mark v1.0 hardening complete in §13.3 (3-pass temp cleanup, orphan scan, distinct error codes 2–14 with symbolic emission); add `show` fields, `diff` old→new, `history` date col, spec limit enforcement, `--description`, `--quiet` to §13.4 delivered; close §16.5 (error codes); add numeric exit code column + status note to Appendix B                                          |
+| 2026-06-30 | 8        | wbenzid | Decouple `run` into two axes — population (`--inject clean\|merge`) vs file delivery (`--export <path>`); rewrite §6.3 `run` flags and §11 (now "Injection Model"); add `--set`/`--env-file`/`--force`; soft-deprecate `--inject file`/`--out-file` (removed v2.0); add §16.9 (file-mode conflation RESOLVED) and §16.10 (value escaping + overwrite guard RESOLVED); update §7.3 flow |

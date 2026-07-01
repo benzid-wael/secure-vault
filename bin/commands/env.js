@@ -15,6 +15,7 @@ import {
   buildChildEnv,
   toDotenv,
   parseAllowlist,
+  parseSetPairs,
   readAllowlistFile,
   loadProjectConfig,
   applyProjectConfig,
@@ -1275,14 +1276,39 @@ export function registerEnvCommand(program) {
     .option('--password-file <path>', 'Read vault password from a file')
     .option('--password-stdin', 'Read vault password from stdin')
     .addOption(
-      new Option('--inject <mode>', 'Injection mode: clean | merge | file')
+      new Option(
+        '--inject <mode>',
+        'Population mode: clean | merge (file is a deprecated alias of --export)'
+      )
         .default('clean')
         .env('VAULT_INJECT')
     )
     .option(
       '--out-file <path>',
-      'Temp .env path to write (required for --inject file). Named --out-file ' +
-        'because Node/Bun reserve --env-file as a built-in flag.'
+      '[deprecated, removed in v2.0] alias of --export <path>.'
+    )
+    .option(
+      '--export <path>',
+      'Also write the resolved env to a temp .env at <path> (0600), set ' +
+        'ENV_FILE_PATH for the child, and securely delete it on exit. ' +
+        'Composes with --inject clean|merge.'
+    )
+    .option(
+      '--force',
+      'Overwrite the --export / --out-file target if it already exists ' +
+        '(by default an existing file is left untouched and the run aborts).'
+    )
+    .option(
+      '--set <pair>',
+      'Add an explicit KEY=VALUE to the run (repeatable). Injected into the ' +
+        'child and included in --export output; layered under vault vars.',
+      (val, prev) => prev.concat(val),
+      []
+    )
+    .option(
+      '--env-file <path>',
+      'Load extra KEY=VALUE pairs from a .env file. Same placement as --set ' +
+        '(injected + exported, under vault vars; --set overrides --env-file).'
     )
     .option(
       '--allowlist <vars>',
@@ -1328,16 +1354,41 @@ export function registerEnvCommand(program) {
         process.exit(1);
       }
 
-      const mode = options.inject;
-      if (!INJECT_MODES.includes(mode)) {
+      // `--inject file` and `--out-file` are deprecated aliases for the
+      // orthogonal `--export` flag (to be removed in v2.0). `file` is no longer
+      // a population mode — it maps to clean and writes the file via --export.
+      const requestedInject = options.inject;
+      if (!INJECT_MODES.includes(requestedInject)) {
         console.error(
-          chalk.red(`Invalid --inject mode "${mode}" (clean|merge|file)`)
+          chalk.red(`Invalid --inject mode "${requestedInject}" (clean|merge)`)
         );
         process.exit(1);
       }
-      if (mode === 'file' && !options.outFile) {
+      const legacyFileMode = requestedInject === 'file';
+      const mode = legacyFileMode ? 'clean' : requestedInject;
+
+      if (legacyFileMode) {
         console.error(
-          chalk.red('--out-file <path> is required for --inject file')
+          chalk.yellow(
+            'warning: `--inject file` is deprecated and will be removed in ' +
+              'v2.0. Use `--export <path>` (clean is the default population mode).'
+          )
+        );
+      }
+      if (options.outFile) {
+        console.error(
+          chalk.yellow(
+            'warning: `--out-file` is deprecated and will be removed in v2.0. ' +
+              'Use `--export <path>`.'
+          )
+        );
+      }
+
+      // Single file target: --export (preferred) or the legacy --out-file.
+      const exportTarget = options.export ?? options.outFile;
+      if (legacyFileMode && !exportTarget) {
+        console.error(
+          chalk.red('--export <path> is required for --inject file')
         );
         process.exit(1);
       }
@@ -1358,6 +1409,28 @@ export function registerEnvCommand(program) {
 
         const vars = exportResult.data;
 
+        // Explicit user-supplied additions: --env-file first, then --set
+        // overrides it. These are injected into the child AND written to the
+        // --export file, but layered UNDER the vault vars (vault wins). This is
+        // distinct from --allowlist / merge, which only let parent-env values
+        // through to the process env and never enter the exported file.
+        let userVars = {};
+        if (options.envFile) {
+          const userEnvFilePath = path.resolve(options.envFile);
+          let content;
+          try {
+            content = fs.readFileSync(userEnvFilePath, 'utf-8');
+          } catch (err) {
+            throw new Error(
+              `Cannot read --env-file "${userEnvFilePath}": ${err.message}`
+            );
+          }
+          userVars = EnvironmentVault.parseEnvFile(content);
+        }
+        userVars = { ...userVars, ...parseSetPairs(options.set) };
+
+        const injectedVars = { ...userVars, ...vars };
+
         // Resolve allowlist file: explicit flag (must exist) or CWD default (optional).
         const allowlistFilePath = options.allowlistFile
           ? path.resolve(options.allowlistFile)
@@ -1368,10 +1441,19 @@ export function registerEnvCommand(program) {
 
         const childEnv = buildChildEnv({
           mode,
-          vars,
+          vars: injectedVars,
           parentEnv: process.env,
           allowlist: [...parseAllowlist(options.allowlist), ...fileAllowlist],
         });
+
+        // File delivery is orthogonal to the population mode: a temp .env is
+        // written whenever a target was given via --export or the legacy
+        // --out-file / --inject file (resolved together as exportTarget).
+        const exportPath = exportTarget ? path.resolve(exportTarget) : null;
+
+        // Let the child locate the written file (fixes the long-standing
+        // missing-pointer bug where file mode never set this).
+        if (exportPath) childEnv.ENV_FILE_PATH = exportPath;
 
         if (options.dryRun) {
           // Build a sensitivity map from showEnv; inherited vars default to sensitive.
@@ -1387,10 +1469,9 @@ export function registerEnvCommand(program) {
             }
           }
 
-          const modeLabel =
-            mode === 'file'
-              ? `${mode} (vars written to ${options.outFile ?? '<out-file>'})`
-              : mode;
+          const modeLabel = exportPath
+            ? `${mode} (env also written to ${exportPath})`
+            : mode;
           log(
             chalk.bold(
               `\nDry run — env: ${chalk.cyan(envName)}  mode: ${chalk.cyan(modeLabel)}\n`
@@ -1414,14 +1495,25 @@ export function registerEnvCommand(program) {
           return;
         }
 
-        let envFilePath = null;
-        if (mode === 'file') {
-          envFilePath = path.resolve(options.outFile);
-          fs.writeFileSync(envFilePath, toDotenv(vars), { mode: 0o600 });
+        if (exportPath) {
+          // Guard against clobbering a real file: since we securely delete the
+          // target on exit, silently overwriting an existing file would destroy
+          // it. Require --force to opt in.
+          if (fs.existsSync(exportPath) && !options.force) {
+            console.error(
+              chalk.red(
+                `Refusing to overwrite existing file ${exportPath} ` +
+                  `(it would be securely deleted when the command exits). ` +
+                  `Pass --force to override.`
+              )
+            );
+            process.exit(1);
+          }
+          fs.writeFileSync(exportPath, toDotenv(injectedVars), { mode: 0o600 });
         }
 
         const cleanup = () => {
-          if (envFilePath) secureDelete(envFilePath);
+          if (exportPath) secureDelete(exportPath);
         };
 
         const child = spawn(command[0], command.slice(1), {

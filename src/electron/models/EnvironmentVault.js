@@ -299,10 +299,22 @@ export class EnvironmentVault {
       const key = match[1];
       let value = match[2];
 
-      if (
-        (value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))
-      ) {
+      const isDoubleQuoted =
+        value.length >= 2 && value.startsWith('"') && value.endsWith('"');
+      const isSingleQuoted =
+        value.length >= 2 && value.startsWith("'") && value.endsWith("'");
+
+      if (isDoubleQuoted) {
+        // Decode the escapes written by toDotenv()/quoteDotenvValue():
+        // \n \r \t -> control chars; \" \\ -> the literal char.
+        value = value.slice(1, -1).replace(/\\([\\nrt"])/g, (_, c) => {
+          if (c === 'n') return '\n';
+          if (c === 'r') return '\r';
+          if (c === 't') return '\t';
+          return c; // \" -> "  and  \\ -> \
+        });
+      } else if (isSingleQuoted) {
+        // Single quotes are literal (no escape processing).
         value = value.slice(1, -1);
       }
 

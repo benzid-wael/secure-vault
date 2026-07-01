@@ -14,10 +14,15 @@ export const INJECT_MODES = ['clean', 'merge', 'file'];
 /**
  * Build the environment object for the spawned child process.
  *
- * - clean  (default): only the vault vars + an allowlist of system vars
- * - merge:            vault vars layered on top of the inherited environment
- * - file:             no vault vars injected (they go to a temp file instead);
- *                     the child inherits the parent environment
+ * Population is a single axis with two modes; writing a `.env` file to disk is
+ * an orthogonal concern handled by the caller (see `--export`), not a mode here.
+ *
+ * - clean (default): only the vault vars + an allowlist of system vars
+ * - merge:           vault vars layered on top of the inherited environment
+ *
+ * Vault vars are ALWAYS injected. Any unrecognized mode (e.g. the legacy
+ * `file`, kept working as a deprecated alias at the run layer) falls back to
+ * clean — it never silently passes the full parent env through unfiltered.
  */
 export function buildChildEnv({
   mode = 'clean',
@@ -28,11 +33,8 @@ export function buildChildEnv({
   if (mode === 'merge') {
     return { ...parentEnv, ...vars };
   }
-  if (mode === 'file') {
-    return { ...parentEnv };
-  }
 
-  // clean
+  // clean (also the safe fallback for any non-merge mode)
   const allowed = new Set([...CLEAN_ALLOWLIST, ...allowlist]);
   const base = {};
   for (const key of allowed) {
@@ -41,13 +43,26 @@ export function buildChildEnv({
   return { ...base, ...vars };
 }
 
-/** Serialize a key/value map to dotenv format. */
-export function toDotenv(vars) {
-  return (
-    Object.entries(vars)
-      .map(([key, value]) => `${key}=${value}`)
-      .join('\n') + '\n'
-  );
+// Dotenv serialization is shared with `vault env export` (the electron
+// service), so it lives in src/utils/dotenv.js. Re-exported here for the
+// CLI runner and existing importers.
+export { quoteDotenvValue, toDotenv } from '../../src/utils/dotenv.js';
+
+/**
+ * Parse repeatable `--set KEY=VALUE` pairs into an object. The value may itself
+ * contain `=` (only the first `=` is the separator). Throws on a pair with no
+ * `=` or an empty key. Later pairs override earlier ones for the same key.
+ */
+export function parseSetPairs(pairs = []) {
+  const out = {};
+  for (const pair of pairs) {
+    const eq = pair.indexOf('=');
+    if (eq <= 0) {
+      throw new Error(`Invalid --set "${pair}" (expected KEY=VALUE)`);
+    }
+    out[pair.slice(0, eq)] = pair.slice(eq + 1);
+  }
+  return out;
 }
 
 /** Parse a comma-separated allowlist string into a clean array. */
