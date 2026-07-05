@@ -197,6 +197,93 @@ command.
 > writes atomically, so an interrupted save can never corrupt the vault.
 > Deleting an environment also leaves a timestamped `<vault>.deleted.<ts>` copy.
 
+#### Delivering secrets to files (`file`, templates, `apply`)
+
+`run --export` covers tools that read a single `.env`. Native mobile builds
+(iOS/Android, Firebase, signing) need **several typed files** instead — a
+decoded `GoogleService-Info.plist`, an `.xcconfig`, a keystore. Three commands
+cover that, and none of them require the vault to understand the target file
+format.
+
+**Store a file _into_ the vault** — `set --in` reads a file as the value, and
+`--encode base64` handles binary blobs (keystores, Firebase plists) that don't
+survive as text:
+
+```bash
+vault env set GOOGLE_PLIST --in GoogleService-Info.plist --encode base64 -e dev
+vault env set NOTES --in release-notes.txt -e dev        # text file, stored as-is
+```
+
+**Materialize one variable back _out_ to a file** — `file` writes a single
+value to disk (`0600` by default), optionally base64-decoding it:
+
+```bash
+vault env file GOOGLE_PLIST --out ios/GoogleService-Info.plist --decode base64 -e dev
+vault env file API_URL --out .env.local --mode 0640 -e dev
+```
+
+**Render any config format with a template.** A `.vtpl` file is plain text in
+_any_ format with `{{KEY}}` placeholders; vault substitutes resolved values and
+writes the result (output path = the template path minus `.vtpl`). Vault never
+parses the format, so the same mechanism produces `.xcconfig`, `Info.plist`,
+`gradle.properties`, XML, JSON — anything.
+
+```ini
+# ios/Secrets.xcconfig.vtpl
+API_URL = {{API_URL}}
+SENTRY_DSN = {{SENTRY_DSN}}
+```
+
+- A **missing key is an error**, never a silent blank.
+- The delimiter `{{ }}` deliberately avoids `$( )` / `${ }`, so a template can
+  contain the build system's own tokens (`$(inherited)`, `${VAR}`) untouched.
+- Substitution is **single-pass**: a value that itself contains `{{OTHER}}` is
+  not re-expanded (so one secret cannot pull in another).
+- For values with format-special characters, add a filter:
+  `{{SECRET | json}}`, `{{SECRET | xml}}`, `{{CERT | base64}}`.
+
+**Deliver everything at once with a manifest.** List all artifacts in `.vaultrc`
+under `deliver`, then `vault env apply` writes them all and `vault env clean`
+securely removes them. Each entry is exactly one of `format`, `from`, or
+`template`:
+
+```jsonc
+{
+  "env": "dev",
+  "deliver": [
+    // native serializer (dotenv|json); optional "keys" subset
+    {
+      "path": ".env.development",
+      "format": "dotenv",
+      "keys": ["API_URL", "SENTRY_DSN"],
+    },
+    // blob: one variable, written verbatim (optionally base64-decoded)
+    {
+      "path": "ios/GoogleService-Info.plist",
+      "from": "GOOGLE_PLIST",
+      "decode": "base64",
+    },
+    // template: renders the .vtpl to ios/Secrets.xcconfig
+    { "template": "ios/Secrets.xcconfig.vtpl" },
+  ],
+}
+```
+
+```bash
+vault env apply            # write every artifact (env from arg / .vaultrc "env" / VAULT_ENV)
+vault env apply --dry-run  # resolve + validate, but write nothing
+vault env clean            # securely remove exactly the declared artifacts
+```
+
+Artifact paths resolve relative to the `.vaultrc` location, so `apply`/`clean`
+behave identically from the project root or any subdirectory. `clean` removes
+only the declared outputs — a `.vtpl` template source is never deleted.
+
+> **These files are real deliveries, not temp files.** Unlike `run --export`,
+> `file` and `apply` leave the files in place for the build tool to read; use
+> `clean` (or add them to `.gitignore`) when you're done. Add every delivered
+> path to `.gitignore` so a decoded secret is never committed.
+
 ## Where data is stored
 
 Vaults live in a single location shared with the desktop app:
