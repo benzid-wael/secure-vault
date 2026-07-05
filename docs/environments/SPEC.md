@@ -3,7 +3,7 @@
 > Feature: Securely manage, version, and inject environment variables from an encrypted
 > `.env.vault` file into development tools, build processes, and CI/CD pipelines.
 >
-> Status: **v1.5 delivered** · Revision 8
+> Status: **v1.5 delivered** · Revision 9
 
 ---
 
@@ -80,6 +80,9 @@ that require one.
 - Pre-flight validation of required variables
 - Export to `.env` format and `.env.example` (keys only)
 - CLI-only operation — no Electron UI dependency
+- _(planned, v1.8+)_ Materialize vars as decoded files (blobs) and render
+  arbitrary config files from `.vtpl` templates (§8.5); declarative delivery
+  manifest — one env → N artifacts (see `MOBILE-INTEGRATION-GAPS.md`)
 
 ### 2.2 Non-Goals (v1)
 
@@ -906,6 +909,11 @@ vault env export production > .env # SECURITY: delete after use!
 
 ```
 
+> **Output formats.** Formats beyond `dotenv`/`json` are delivered by **file
+> templating** (`.vtpl`, §8.5), not by adding new `--format` values — vault does
+> not own third-party build-config formats. See
+> `docs/environments/MOBILE-INTEGRATION-GAPS.md` §4.A.
+
 #### `vault env template`
 
 ```
@@ -1249,6 +1257,35 @@ return input
 
 ```
 
+### 8.5 File Templating (`.vtpl`) — planned (v1.8)
+
+Distinct from the value-level references above. A `.vtpl` file is a plain-text
+template **on disk**, in any format (`xcconfig`, `Info.plist`,
+`gradle.properties`, `xml`, JSON…), containing `{{KEY}}` placeholders that are
+substituted with resolved env values at render time, producing `file.<ext>`
+(output path = template path minus `.vtpl`).
+
+**Decision**: vault _renders templates_ rather than shipping native format
+emitters — it never parses or owns a third-party format. `dotenv` remains the
+one native serializer vault owns (§6.3 `export`). See
+`docs/environments/MOBILE-INTEGRATION-GAPS.md` §4.A for the full rationale.
+
+- **Delimiter `{{KEY}}`** (bare key) — deliberately distinct from `$( )`/`${ }`
+  so a template can carry the target format's own interpolation tokens
+  untouched, and distinct in intent from the namespaced value-refs
+  `{{env:…}}`/`{{vault:…}}` above: those resolve **inside stored values**;
+  `.vtpl` keys resolve against the **already-resolved env map** at file-render
+  time.
+- **Single-pass substitution** — a substituted value is never re-scanned, so one
+  secret cannot inject a `{{OTHER_KEY}}` reference to exfiltrate another. This is
+  the deliberate opposite of §8.3 rule 3, which recurses for value-refs.
+- **Missing key → hard error.** Raw substitution by default; opt-in escaping
+  filters `{{KEY | json|xml|base64}}` for values with format-special chars.
+
+Rendering is driven by the delivery manifest (`.vaultrc`) via `vault env apply`
+(v1.8) and, later, `vault env mount` (v2.0) — see MOBILE-INTEGRATION-GAPS.md
+§4.F / §7.
+
 ---
 
 ## 9. Environment Layering
@@ -1499,13 +1536,13 @@ When `--export <path>` (or the deprecated `--inject file` / `--out-file`) is use
 ### 13.1 Milestone Overview
 
 ```
-v0.5        v1.0          v1.5           v2.0            v2.5            v3.0
-│           │             │              │               │               │
-Foundation  Developer     Composition    Agent & Mount   Integration     North Star
-            CLI
-                     ▲               ▲                               ▲
-                     │               │                               │
-                     MVP            Power User                       Vision
+v0.5        v1.0        v1.5        v1.8         v1.9      v2.0          v2.5         v3.0
+│           │           │           │            │         │             │            │
+Foundation  Developer   Composition Native cfg   Scaffold  Agent &       Integration  North Star
+            CLI                     + files      & DX      Mount
+                   ▲          ▲          ▲                                        ▲
+                   │          │          │                                        │
+                   MVP       Power User  Mobile-native                           Vision
 ```
 
 > **Legend:** ✅ delivered · ◑ partial (see note) · ☐ not started. Status
@@ -1601,24 +1638,79 @@ command (recovery is currently a manual `cp <vault>.bak <vault>`).
 
 ---
 
+### 13.4.1 v1.8 — Native config & file secrets
+
+> **Goal**: Make secure-vault first-class for native iOS/Android and for the
+> Firebase/signing files every mobile app needs — **without** the v2 daemon.
+
+**Status:** ☐ Not started.
+
+| Deliverable                           | Description                                                                    |
+| ------------------------------------- | ------------------------------------------------------------------------------ |
+| `vault env file <KEY> --out`          | Materialize a var to a file, optional `--decode base64`, mode `0600` (blob)    |
+| `.vtpl` file templating               | Render any text format via `{{KEY}}` substitution + opt-in filters (§8.5)      |
+| Delivery manifest + `apply` / `clean` | `.vaultrc` "one env → N artifacts"; write all / wipe all                       |
+| Known file secrets                    | `GoogleService-Info.plist` / `google-services.json` recognized in the manifest |
+
+**Dependencies**: v1.5
+
+**Exit criteria**: one `vault env apply` drops a `.env`, a decoded
+`GoogleService-Info.plist`, and a rendered `.xcconfig` where the iOS/Android
+build expects them; `vault env clean` removes exactly those. Retires the bespoke
+`run-fastlane-with-vault.sh`. Detail: MOBILE-INTEGRATION-GAPS.md §4.A/§4.B/§4.F,
+tasks 1–3.
+
+---
+
+### 13.4.2 v1.9 — Scaffolding & DX
+
+> **Goal**: Make the v1.8 delivery adoptable across repos in one command.
+
+**Status:** ☐ Not started.
+
+| Deliverable                            | Description                                                                     |
+| -------------------------------------- | ------------------------------------------------------------------------------- |
+| `vault env init --preset react-native` | Scaffold `.vaultrc` manifest, `.gitignore`, `.vtpl` starters, build-phase snips |
+| `vault env doctor`                     | Verify envfile presence, gitignore coverage, manifest validity; actionable fix  |
+
+**Dependencies**: v1.8
+
+**Exit criteria**: a fresh RN repo is wired for vault delivery via one preset
+command, and `vault env doctor` reports green. Detail:
+MOBILE-INTEGRATION-GAPS.md §4.G, tasks 4–5.
+
+---
+
 ### 13.5 v2.0 — Agent & Mount
 
 > **Goal**: Long-running dev server support with persistent file mounts.
 
 **Status:** ☐ Not started.
 
-| Deliverable                           | Description                                               |
-| ------------------------------------- | --------------------------------------------------------- |
-| `vault env agent start\|stop\|status` | Background daemon with session-based unlock               |
-| Session auto-lock                     | Lock on inactivity timeout (configurable, default 30 min) |
-| `vault env agent lock\|unlock`        | Manual session control                                    |
-| `vault env mount <env> --path <file>` | Write + maintain a temp `.env` at the given path          |
-| File watch                            | Re-create mounted file if deleted externally              |
-| `vault env agent mounts`              | List active mounts                                        |
-| Secure shutdown                       | All mounted files wiped on agent stop                     |
-| macOS launchd integration             | Plist for auto-start on login                             |
+| Deliverable                           | Description                                                                                                                                                 |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vault env agent start\|stop\|status` | Background daemon with session-based unlock                                                                                                                 |
+| Session auto-lock                     | Lock on inactivity timeout (configurable, default 30 min)                                                                                                   |
+| `vault env agent lock\|unlock`        | Manual session control                                                                                                                                      |
+| `vault env mount <env>`               | Consume the delivery manifest (§13.4.1); fan out + watch every artifact, wiped on lock                                                                      |
+| Persistent mount is opt-in            | Default GUI story is run-scoped delivery; persistent mount needs an explicit flag + warning (highest-risk mode)                                             |
+| Security invariants (G23–G28)         | Request-scoped protocol (no enumeration / dump-all), spawn-based delivery, HW-backed decrypt-on-demand, conservative lock, audit log + per-release approval |
+| File watch                            | Re-create mounted file if deleted externally                                                                                                                |
+| `vault env agent mounts`              | List active mounts                                                                                                                                          |
+| Secure shutdown                       | All mounted files wiped on agent stop                                                                                                                       |
+| macOS launchd integration             | Plist for auto-start on login                                                                                                                               |
 
-**Dependencies**: v1.5
+**Dependencies**: v1.9 (mount consumes the v1.8 delivery manifest; §13.4.1)
+
+> **Design gate (G12):** resolve the auto-lock ↔ live-mount contract _before_
+> implementing this milestone — does auto-lock wipe live mounts? The exit
+> criterion below does not hold until this is decided. See
+> MOBILE-INTEGRATION-GAPS.md §4.D / §5 and task 6.
+>
+> **Security invariants are preconditions, not follow-ups.** A naive agent
+> (listening socket + dump-all + persistent mount) is _strictly worse than v1_
+> (invariant I3). Build only with G23–G28 in place. Full threat model:
+> MOBILE-INTEGRATION-GAPS.md §5.
 
 **Exit criteria**: A developer starts the agent once at the start of the day, mounts their env to `.env`, and the file stays live until they lock or the agent auto-locks.
 
@@ -2083,13 +2175,14 @@ test). The write now aborts on an existing target unless `--force` is given.
 
 ## Appendix C: Changelog
 
-| Date       | Revision | Author  | Changes                                                                                                                                                                                                                                                                                                                                                                                |
-| ---------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-05-30 | 1        | wbenzid | Initial draft                                                                                                                                                                                                                                                                                                                                                                          |
-| 2026-05-26 | 2        | wbenzid | Add §16 Known Issues & Pending Reconciliations (8 items from v0.1.0-rc.5 e2e validation)                                                                                                                                                                                                                                                                                               |
-| 2026-06-06 | 3        | wbenzid | Codify var-level vs env-level command split (§6.1, §6.1.1); align all §6.3 usage/examples and §7 flows to the implementation; mark §16.1–16.3 RESOLVED (option b)                                                                                                                                                                                                                      |
-| 2026-06-06 | 4        | wbenzid | Document password resolution (§6.2.1: precedence, mutual exclusion, exit codes); update §12.5; add `PASSWORD_*` codes to Appendix B; mark §16.5 RESOLVED (docs)                                                                                                                                                                                                                        |
-| 2026-06-06 | 5        | wbenzid | Document walk-up + git-root vault discovery (§5.2/§5.3); mark §16.6 RESOLVED. Fix duplicate §6.1 heading (now §6.1.1/6.1.2/6.1.3) and stale cross-refs                                                                                                                                                                                                                                 |
-| 2026-06-11 | 6        | wbenzid | Mark v1.5 Composition delivered (resolver: `extends` layering + `{{env:name/KEY}}`/`{{env:self/KEY}}` refs + full validation engine); add `.bak`/atomic-write + `.deleted.<ts>` (§5.4); reserve `self` env name (§4.5/§8); add milestone status legend + v0.5/v1.0/v2.x markers; note Q1/Q4 status in §15                                                                              |
-| 2026-06-15 | 7        | wbenzid | Mark v1.0 hardening complete in §13.3 (3-pass temp cleanup, orphan scan, distinct error codes 2–14 with symbolic emission); add `show` fields, `diff` old→new, `history` date col, spec limit enforcement, `--description`, `--quiet` to §13.4 delivered; close §16.5 (error codes); add numeric exit code column + status note to Appendix B                                          |
-| 2026-06-30 | 8        | wbenzid | Decouple `run` into two axes — population (`--inject clean\|merge`) vs file delivery (`--export <path>`); rewrite §6.3 `run` flags and §11 (now "Injection Model"); add `--set`/`--env-file`/`--force`; soft-deprecate `--inject file`/`--out-file` (removed v2.0); add §16.9 (file-mode conflation RESOLVED) and §16.10 (value escaping + overwrite guard RESOLVED); update §7.3 flow |
+| Date       | Revision | Author  | Changes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-05-30 | 1        | wbenzid | Initial draft                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 2026-05-26 | 2        | wbenzid | Add §16 Known Issues & Pending Reconciliations (8 items from v0.1.0-rc.5 e2e validation)                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 2026-06-06 | 3        | wbenzid | Codify var-level vs env-level command split (§6.1, §6.1.1); align all §6.3 usage/examples and §7 flows to the implementation; mark §16.1–16.3 RESOLVED (option b)                                                                                                                                                                                                                                                                                                                                                         |
+| 2026-06-06 | 4        | wbenzid | Document password resolution (§6.2.1: precedence, mutual exclusion, exit codes); update §12.5; add `PASSWORD_*` codes to Appendix B; mark §16.5 RESOLVED (docs)                                                                                                                                                                                                                                                                                                                                                           |
+| 2026-06-06 | 5        | wbenzid | Document walk-up + git-root vault discovery (§5.2/§5.3); mark §16.6 RESOLVED. Fix duplicate §6.1 heading (now §6.1.1/6.1.2/6.1.3) and stale cross-refs                                                                                                                                                                                                                                                                                                                                                                    |
+| 2026-06-11 | 6        | wbenzid | Mark v1.5 Composition delivered (resolver: `extends` layering + `{{env:name/KEY}}`/`{{env:self/KEY}}` refs + full validation engine); add `.bak`/atomic-write + `.deleted.<ts>` (§5.4); reserve `self` env name (§4.5/§8); add milestone status legend + v0.5/v1.0/v2.x markers; note Q1/Q4 status in §15                                                                                                                                                                                                                 |
+| 2026-06-15 | 7        | wbenzid | Mark v1.0 hardening complete in §13.3 (3-pass temp cleanup, orphan scan, distinct error codes 2–14 with symbolic emission); add `show` fields, `diff` old→new, `history` date col, spec limit enforcement, `--description`, `--quiet` to §13.4 delivered; close §16.5 (error codes); add numeric exit code column + status note to Appendix B                                                                                                                                                                             |
+| 2026-06-30 | 8        | wbenzid | Decouple `run` into two axes — population (`--inject clean\|merge`) vs file delivery (`--export <path>`); rewrite §6.3 `run` flags and §11 (now "Injection Model"); add `--set`/`--env-file`/`--force`; soft-deprecate `--inject file`/`--out-file` (removed v2.0); add §16.9 (file-mode conflation RESOLVED) and §16.10 (value escaping + overwrite guard RESOLVED); update §7.3 flow                                                                                                                                    |
+| 2026-07-05 | 9        | wbenzid | Record file-templating decision (§8.5): vault renders `.vtpl` templates with `{{KEY}}` substitution + opt-in escaping filters instead of native format emitters; add export output-format guardrail (§6.3) and planned goal (§2.1); add v1.8/v1.9 mobile-native milestones (§13.4.1/§13.4.2) and update the §13.1 timeline; expand §13.5 v2.0 mount to consume the delivery manifest and fold in the agent security invariants (G23–G28) + the G12 lock↔mount design gate. Detail in MOBILE-INTEGRATION-GAPS.md §4/§6/§7 |
