@@ -38,6 +38,7 @@ import {
   normalizeManifest,
   renderDeliverEntry,
 } from './envDeliverHelpers.js';
+import { getPreset, scaffoldPreset } from './envScaffold.js';
 // Password-resolution helpers live in src/utils/password.js so they can be unit
 // tested without importing the CLI entry tree (SPEC.md §16.7). Imported here for
 // internal use and re-exported below for the command layer / existing importers.
@@ -321,8 +322,15 @@ export function registerEnvCommand(program) {
       '--description <text>',
       'Optional description for the vault environments'
     )
+    .option(
+      '--preset <name>',
+      'Scaffold project files for a framework (e.g. react-native)'
+    )
     .action(async (options) => {
       try {
+        // Validate the preset up front so a typo fails before vault creation.
+        const preset = options.preset ? getPreset(options.preset) : null;
+
         const vaultPassword = await resolvePassword(
           options,
           'Enter vault password:',
@@ -396,6 +404,26 @@ export function registerEnvCommand(program) {
         step.succeed(
           chalk.green(`Environment vault created at ${result.path}`)
         );
+
+        if (preset) {
+          const report = await scaffoldPreset(preset, { cwd: process.cwd() });
+          for (const f of report.written) log(chalk.green(`  scaffolded ${f}`));
+          for (const f of report.skipped) {
+            log(chalk.yellow(`  skipped ${f} (already exists)`));
+          }
+          if (report.gitignoreAdded.length) {
+            log(
+              chalk.green(
+                `  updated .gitignore (+${report.gitignoreAdded.length} entries)`
+              )
+            );
+          }
+          log(
+            chalk.cyan(
+              `\nNext steps: see ${chalk.bold('SECURE_VAULT_SETUP.md')}.`
+            )
+          );
+        }
       } catch (error) {
         console.error(chalk.red(error.message));
         process.exit(1);
