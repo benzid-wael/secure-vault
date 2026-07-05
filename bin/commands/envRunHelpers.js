@@ -143,10 +143,15 @@ const VAULTRC_KEYS = ['inject', 'env', 'name', 'vault', 'allowlistFile'];
 
 /**
  * Walk from startDir upward looking for a .vaultrc file, stopping at a git
- * root (presence of .git) or the filesystem root. Returns the parsed config
- * object, or {} if no file is found. Throws on JSON parse errors.
+ * root (presence of .git) or the filesystem root. Returns `{ config, dir }`
+ * where `dir` is the directory the file was found in (null when none was
+ * found — `config` is then `{}`). Throws on read / JSON parse errors.
+ *
+ * `dir` matters for the delivery manifest: artifact paths are resolved relative
+ * to the .vaultrc location, not the current working directory, so `apply`/`clean`
+ * behave the same whether invoked from the project root or a subdirectory.
  */
-export function loadProjectConfig(startDir = process.cwd()) {
+export function findProjectConfig(startDir = process.cwd()) {
   let dir = path.resolve(startDir);
   while (true) {
     const candidate = path.join(dir, VAULTRC_FILENAME);
@@ -158,7 +163,7 @@ export function loadProjectConfig(startDir = process.cwd()) {
         throw new Error(`Cannot read ${candidate}: ${err.message}`);
       }
       try {
-        return JSON.parse(raw);
+        return { config: JSON.parse(raw), dir };
       } catch (err) {
         throw new Error(`Invalid JSON in ${candidate}: ${err.message}`);
       }
@@ -169,7 +174,15 @@ export function loadProjectConfig(startDir = process.cwd()) {
     if (parent === dir) break;
     dir = parent;
   }
-  return {};
+  return { config: {}, dir: null };
+}
+
+/**
+ * Convenience wrapper returning just the parsed config (or {} if none found).
+ * Preserves the original `loadProjectConfig` contract for existing callers.
+ */
+export function loadProjectConfig(startDir = process.cwd()) {
+  return findProjectConfig(startDir).config;
 }
 
 /**

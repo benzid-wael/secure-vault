@@ -18,6 +18,7 @@ import {
   parseSetPairs,
   readAllowlistFile,
   loadProjectConfig,
+  findProjectConfig,
   applyProjectConfig,
   secureDelete,
   cleanupOrphanTempDirs,
@@ -28,6 +29,13 @@ import {
   parseEditorContent,
   openInEditor,
 } from './envEditHelpers.js';
+import {
+  parseFileMode,
+  decodeValue,
+  writeArtifact,
+  normalizeManifest,
+  renderDeliverEntry,
+} from './envDeliverHelpers.js';
 // Password-resolution helpers live in src/utils/password.js so they can be unit
 // tested without importing the CLI entry tree (SPEC.md §16.7). Imported here for
 // internal use and re-exported below for the command layer / existing importers.
@@ -785,6 +793,162 @@ export function registerEnvCommand(program) {
           await copyToClipboard(text, 'export');
         }
         console.log(text);
+      } catch (error) {
+        console.error(chalk.red(error.message));
+        process.exit(1);
+      }
+    });
+
+  env
+    .command('file')
+    .description('Materialize a single variable to a file (optionally decoded)')
+    .argument('<key>', 'Variable name to materialize')
+    .requiredOption('-o, --out <path>', 'Destination file path')
+    .option('-e, --env <name>', 'Environment name (or set VAULT_ENV)')
+    .option('--decode <codec>', 'Decode the value before writing (base64)')
+    .option('--mode <octal>', 'File mode for the written file', '0600')
+    .option('-n, --name <name>', 'Vault name')
+    .option('-v, --vault <path>', 'Exact vault file path')
+    .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
+    .action(async (key, options) => {
+      try {
+        // Parse the mode before touching the vault so a bad --mode fails fast.
+        const mode = parseFileMode(options.mode);
+        const { vaultPath, vaultPassword } = await loadVault(options);
+        const envName = requireEnvName(options.env);
+
+        const result = await EnvironmentVaultService.getEnv(
+          vaultPath,
+          vaultPassword,
+          envName,
+          key
+        );
+        if (!result.success) {
+          console.error(chalk.red(result.error));
+          process.exit(1);
+        }
+
+        const content = decodeValue(result.data.value, options.decode);
+        await writeArtifact(options.out, content, { mode });
+        console.log(
+          chalk.green(
+            `Wrote ${chalk.cyan(key)} → ${options.out} (mode ${options.mode})`
+          )
+        );
+      } catch (error) {
+        console.error(chalk.red(error.message));
+        process.exit(1);
+      }
+    });
+
+  env
+    .command('apply')
+    .description(
+      'Write every artifact declared in the .vaultrc delivery manifest'
+    )
+    .argument('[envName]', 'Environment (or .vaultrc "env" / VAULT_ENV)')
+    .option('-n, --name <name>', 'Vault name')
+    .option('-v, --vault <path>', 'Exact vault file path')
+    .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
+    .option('--dry-run', 'Resolve and render, but write nothing')
+    .action(async (envArg, options) => {
+      try {
+        // Artifact paths are relative to the .vaultrc directory, so `apply`
+        // behaves the same from the project root or any subdirectory.
+        const { config, dir } = findProjectConfig();
+        const manifest = normalizeManifest(config);
+        if (manifest.entries.length === 0) {
+          console.error(
+            chalk.red(
+              'No delivery manifest found — add a "deliver" array to .vaultrc.'
+            )
+          );
+          process.exit(1);
+        }
+        const baseDir = dir || process.cwd();
+        const resolvePath = (p) =>
+          path.isAbsolute(p) ? p : path.join(baseDir, p);
+
+        const envName = requireEnvName(envArg ?? manifest.env);
+        // Let .vaultrc supply vault/name when not given on the CLI.
+        const { vaultPath, vaultPassword } = await loadVault({
+          ...options,
+          vault: options.vault ?? config.vault,
+          name: options.name ?? config.name,
+        });
+        const result = await EnvironmentVaultService.exportEnv(
+          vaultPath,
+          vaultPassword,
+          envName,
+          'json'
+        );
+        if (!result.success) {
+          console.error(chalk.red(result.error));
+          process.exit(1);
+        }
+        const vars = result.data;
+        const readTemplate = (p) => fs.readFileSync(resolvePath(p), 'utf-8');
+
+        for (const entry of manifest.entries) {
+          // Render first (validates missing vars / templates) so a dry run is a
+          // real pre-flight check, not just a path listing.
+          const content = renderDeliverEntry(entry, vars, readTemplate);
+          if (options.dryRun) {
+            console.log(
+              chalk.gray(`would write ${entry.path} (${entry.kind})`)
+            );
+            continue;
+          }
+          await writeArtifact(resolvePath(entry.path), content, {
+            mode: entry.mode,
+          });
+          console.log(chalk.green(`wrote ${entry.path}`));
+        }
+      } catch (error) {
+        console.error(chalk.red(error.message));
+        process.exit(1);
+      }
+    });
+
+  env
+    .command('clean')
+    .description('Securely remove artifacts declared in the .vaultrc manifest')
+    .option('--dry-run', 'Show what would be removed, but remove nothing')
+    .action(async (options) => {
+      try {
+        const { config, dir } = findProjectConfig();
+        const manifest = normalizeManifest(config);
+        if (manifest.entries.length === 0) {
+          console.error(
+            chalk.red(
+              'No delivery manifest found — add a "deliver" array to .vaultrc.'
+            )
+          );
+          process.exit(1);
+        }
+        const baseDir = dir || process.cwd();
+        const resolvePath = (p) =>
+          path.isAbsolute(p) ? p : path.join(baseDir, p);
+
+        let removed = 0;
+        for (const entry of manifest.entries) {
+          const outPath = resolvePath(entry.path);
+          if (!fs.existsSync(outPath)) continue;
+          if (options.dryRun) {
+            console.log(chalk.gray(`would remove ${entry.path}`));
+            continue;
+          }
+          secureDelete(outPath);
+          console.log(chalk.green(`removed ${entry.path}`));
+          removed += 1;
+        }
+        if (!options.dryRun && removed === 0) {
+          console.log(chalk.gray('nothing to remove'));
+        }
       } catch (error) {
         console.error(chalk.red(error.message));
         process.exit(1);
