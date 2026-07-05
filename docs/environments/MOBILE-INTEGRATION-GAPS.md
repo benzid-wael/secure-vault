@@ -538,7 +538,15 @@ parentheses map back to §3/§4. Versions follow the §6 sequencing
     "all-day GUI session survives" (soft lock) and "walking away locks" (hard
     lock), and the activity definition defeats synthetic keep-alive (G28).
 
-- [ ] **Task 7: Agent daemon + session unlock (invariants baked in)** (G9, G23–G25, G28)
+- [~] **Task 7: Agent daemon + session unlock (invariants baked in)** (G9, G23–G25, G28) — **PARTIAL (7a preview)**
+  - **7a done:** two-tier lock (`src/agent/lockState.js`), request-scoped protocol - lock enforcement (`src/agent/sessionManager.js` — G23, I2, G28), daemon over
+    a 0700 Unix socket (`src/agent/daemon.js`), and `vault env agent
+start/stop/status/lock/unlock`. Design in `AGENT-DESIGN.md`.
+  - **7b remaining (required before production, per I3):** process hardening
+    (`RLIMIT_CORE=0`, `PT_DENY_ATTACH`/`ptrace_scope`, `mlock`, hardened runtime),
+    peer-cred (G24), spawn-based delivery (G24), HW-backed KEK + decrypt-on-demand
+    (G25), audit log + sensitive-env approval (G27). Node can't do the hardening
+    or peer-cred natively — needs a small addon or a launchd/entitlements wrapper.
   - **Goal**: `vault env agent start` + session-based unlock + `agent lock|unlock`
     (launchd) so GUI builds never prompt, satisfying the §4-I invariants from
     day one.

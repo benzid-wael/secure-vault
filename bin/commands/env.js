@@ -40,6 +40,14 @@ import {
 } from './envDeliverHelpers.js';
 import { getPreset, scaffoldPreset } from './envScaffold.js';
 import { checkStructure, checkResolution, hasErrors } from './envDoctor.js';
+import { EnvironmentResolver } from '../../src/electron/services/EnvironmentResolver.js';
+import { SessionManager } from '../../src/agent/sessionManager.js';
+import {
+  agentPaths,
+  startDaemonServer,
+  sendRequest,
+  isDaemonRunning,
+} from '../../src/agent/daemon.js';
 // Password-resolution helpers live in src/utils/password.js so they can be unit
 // tested without importing the CLI entry tree (SPEC.md §16.7). Imported here for
 // internal use and re-exported below for the command layer / existing importers.
@@ -1146,6 +1154,200 @@ export function registerEnvCommand(program) {
         }
 
         if (hasErrors(results)) process.exit(1);
+      } catch (error) {
+        console.error(chalk.red(error.message));
+        process.exit(1);
+      }
+    });
+
+  // ── Agent (v2.0 slice 7a): a session daemon so GUI builds never re-prompt.
+  // Security policy (request-scoped protocol, two-tier lock) lives in
+  // SessionManager; these commands are the thin client + process control.
+  const agent = env
+    .command('agent')
+    .description('Background session daemon (start/stop/status/lock/unlock)');
+
+  agent
+    .command('run')
+    .description('[internal] run the agent daemon in the foreground')
+    .option('-n, --name <name>', 'Vault name')
+    .option('-v, --vault <path>', 'Exact vault file path')
+    .action(async (options) => {
+      try {
+        const vaultPath = await resolveVaultPath(options);
+        if (!(await EnvironmentVaultService.vaultExists(vaultPath))) {
+          console.error(chalk.red(`Vault file does not exist at ${vaultPath}`));
+          process.exit(1);
+        }
+        const { socket, pid } = agentPaths();
+
+        // Key custody (7a): decrypt on unlock, hold the resolver in memory.
+        // 7b swaps this for a hardware-backed decrypt-on-demand KEK.
+        const unlockVault = async (password) => {
+          const loaded = await EnvironmentVaultService.loadVault(
+            vaultPath,
+            password
+          );
+          if (!loaded.success) throw new Error(loaded.error);
+          const resolver = new EnvironmentResolver(loaded.data);
+          return (name) => resolver.resolveEnvironment(name);
+        };
+
+        const session = new SessionManager();
+        const server = await startDaemonServer({
+          session,
+          socketPath: socket,
+          unlockVault,
+          onShutdown: () => {
+            fs.removeSync(pid);
+            process.exit(0);
+          },
+        });
+        await fs.writeFile(pid, String(process.pid), { mode: 0o600 });
+
+        const stop = () => server.close();
+        process.on('SIGINT', stop);
+        process.on('SIGTERM', stop);
+        log(chalk.green(`agent listening on ${server.socketPath}`));
+      } catch (error) {
+        console.error(chalk.red(error.message));
+        process.exit(1);
+      }
+    });
+
+  agent
+    .command('start')
+    .description('Start the agent daemon in the background')
+    .option('-n, --name <name>', 'Vault name')
+    .option('-v, --vault <path>', 'Exact vault file path')
+    .action(async (options) => {
+      try {
+        const { socket } = agentPaths();
+        if (await isDaemonRunning(socket)) {
+          log(chalk.yellow('agent is already running.'));
+          return;
+        }
+        const vaultPath = await resolveVaultPath(options);
+        const args = [process.argv[1], 'env', 'agent', 'run', '-v', vaultPath];
+        const child = spawn(process.execPath, args, {
+          detached: true,
+          stdio: 'ignore',
+        });
+        child.unref();
+
+        // Wait for the socket to come up so we can report honestly.
+        const deadline = Date.now() + 5000;
+        while (Date.now() < deadline) {
+          if (await isDaemonRunning(socket)) {
+            log(chalk.green('agent started.'));
+            log(
+              chalk.yellow(
+                'preview: holds the key in memory, not yet hardened ' +
+                  '(no mlock/anti-ptrace/HW-KEK). See AGENT-DESIGN.md §7.'
+              )
+            );
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        console.error(chalk.red('agent did not come up within 5s.'));
+        process.exit(1);
+      } catch (error) {
+        console.error(chalk.red(error.message));
+        process.exit(1);
+      }
+    });
+
+  agent
+    .command('stop')
+    .description('Stop the agent daemon (wipes mounts, drops the key)')
+    .action(async () => {
+      const { socket } = agentPaths();
+      if (!(await isDaemonRunning(socket))) {
+        log(chalk.gray('agent is not running.'));
+        return;
+      }
+      try {
+        await sendRequest(socket, { verb: 'shutdown' });
+        log(chalk.green('agent stopped.'));
+      } catch (error) {
+        console.error(chalk.red(error.message));
+        process.exit(1);
+      }
+    });
+
+  agent
+    .command('status')
+    .description('Show agent session status (metadata only)')
+    .action(async () => {
+      const { socket } = agentPaths();
+      if (!(await isDaemonRunning(socket))) {
+        log(chalk.gray('agent is not running.'));
+        return;
+      }
+      try {
+        const res = await sendRequest(socket, { verb: 'status' });
+        const d = res.data || {};
+        log(
+          `agent: ${chalk.cyan(d.status)} · ` +
+            `mounts ${d.mountsLive ? 'live' : 'none'} · ` +
+            `up ${Math.round((d.uptimeMs || 0) / 1000)}s`
+        );
+      } catch (error) {
+        console.error(chalk.red(error.message));
+        process.exit(1);
+      }
+    });
+
+  agent
+    .command('unlock')
+    .description('Unlock the agent session (prompts for the vault password)')
+    .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
+    .action(async (options) => {
+      const { socket } = agentPaths();
+      if (!(await isDaemonRunning(socket))) {
+        console.error(
+          chalk.red(
+            'agent is not running. Start it with `vault env agent start`.'
+          )
+        );
+        process.exit(1);
+      }
+      try {
+        const vaultPassword = await resolvePassword(
+          options,
+          'Enter vault password:',
+          { failFn: passwordFailFn }
+        );
+        const res = await sendRequest(socket, {
+          verb: 'unlock',
+          password: vaultPassword,
+        });
+        if (!res.ok) {
+          console.error(chalk.red(res.error));
+          process.exit(1);
+        }
+        log(chalk.green('agent unlocked.'));
+      } catch (error) {
+        console.error(chalk.red(error.message));
+        process.exit(1);
+      }
+    });
+
+  agent
+    .command('lock')
+    .description('Lock the agent session now (wipes mounts, drops the key)')
+    .action(async () => {
+      const { socket } = agentPaths();
+      if (!(await isDaemonRunning(socket))) {
+        log(chalk.gray('agent is not running.'));
+        return;
+      }
+      try {
+        await sendRequest(socket, { verb: 'lock' });
+        log(chalk.green('agent locked.'));
       } catch (error) {
         console.error(chalk.red(error.message));
         process.exit(1);

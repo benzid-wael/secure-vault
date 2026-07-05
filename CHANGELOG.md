@@ -10,6 +10,21 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ## [Unreleased] — [0.1.8] — 2026-07-05
 
+### Added — v2.0 · Agent (slice 7a, developer preview)
+
+- **`vault env agent start|stop|status|lock|unlock`** — a background session
+  daemon so unlocked builds don't re-prompt. Enforces the resolved security
+  contract: two-tier lock (soft idle-lock keeps mounts + refuses new requests;
+  hard lock on sleep/max-lifetime/explicit wipes them; the idle timer resets only
+  on user-authenticated actions — G28), a **request-scoped protocol** (`status`
+  is metadata-only, `get-env` serves one named env / key subset, no enumeration
+  or dump-all — G23), over a newline-JSON Unix socket in a `0700` dir.
+  `VAULT_AGENT_DIR` overrides the runtime location.
+- **Preview caveat:** the key is held in memory and the process is **not yet
+  hardened** (no `mlock`/anti-ptrace/HW-KEK, no peer-cred, no spawn-based
+  delivery) — those land in 7b and are required before production use. See
+  `docs/environments/AGENT-DESIGN.md` §7.
+
 ### Added — v1.8 · Native config & file secrets
 
 Deliver secrets into native mobile builds (iOS/Android, Firebase, signing)

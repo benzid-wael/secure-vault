@@ -75,13 +75,37 @@ the security-critical transitions are unit-tested with zero platform coupling:
 
 ## 7. Slicing plan
 
-| Slice  | Scope                                                                                                                                            | Gaps              |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- |
-| **7a** | Lock state machine (pure) + `agent start/stop/status/lock/unlock`, in-memory key, spawn-based delivery, request-scoped protocol, hardening flags | G9, G23, G24, G28 |
-| **7b** | HW-backed KEK + decrypt-on-demand; audit log + sensitive-env approval                                                                            | G25, G27          |
-| **8**  | `mount <env>` consuming the manifest; file-watch; wipe-on-lock                                                                                   | G11, G18, G26     |
+| Slice  | Scope                                                                                                              | Gaps          | Status      |
+| ------ | ------------------------------------------------------------------------------------------------------------------ | ------------- | ----------- |
+| **7a** | Lock state machine + `agent start/stop/status/lock/unlock`, in-memory key, request-scoped protocol over a 0700 UDS | G9, G23, G28  | **partial** |
+| **7b** | HW-backed KEK + decrypt-on-demand; audit log + sensitive-env approval; process hardening                           | G24, G25, G27 | not started |
+| **8**  | `mount <env>` consuming the manifest; file-watch; wipe-on-lock                                                     | G11, G18, G26 | not started |
 
-Slice 7a lands the **contract and the protocol invariants** (the parts that must
-be right from day one); 7b hardens key custody; 8 adds mount. Non-goals per §5.8
-stand: same-UID memory scrape and current-run secret theft are mitigated, not
-eliminated — only isolation (§5.7) removes the escalation path.
+### 7a — delivered vs. deferred (be honest: this is a PREVIEW, not production)
+
+**Delivered:** the two-tier lock contract (`lockState.js`), the request-scoped
+protocol and lock enforcement (`sessionManager.js` — `status` is metadata-only,
+`get-env` serves one named env / key subset, no enumeration or dump-all, reads
+never reset the idle timer), and the daemon transport (`daemon.js`: newline-JSON
+over a Unix socket in a `0700` dir, socket `0600`, lock-on-shutdown) with the
+`vault env agent …` commands.
+
+**Deferred to 7b — and required before this is production-safe:**
+
+- **Process hardening** — `RLIMIT_CORE=0`, `PT_DENY_ATTACH` / `ptrace_scope`,
+  `mlock`, hardened runtime. Node has no native API for these; they need a small
+  native addon or a launchd/entitlements wrapper. Until then the in-memory key is
+  scrapeable by a same-UID debugger — no worse than the design's stated non-goal
+  (§5.8), but the mitigations aren't in place yet.
+- **Peer credentials (G24)** — Node can't read `SO_PEERCRED`/`LOCAL_PEERCRED`
+  without an addon. Today's defenses are the `0700` socket dir + request-scoping
+  (peer-cred is a speed-bump, not a boundary, per §3).
+- **Spawn-based delivery (G24)** — 7a delivers over the socket; the
+  agent-forks-the-child model is a later refinement for `run`/`mount`.
+- **HW-backed KEK + decrypt-on-demand (G25)** and **audit/approval (G27)**.
+
+Because of the above, treat 7a as a **developer preview**: it proves the contract
+and the protocol invariants (the parts that must be right from day one, I3), but
+it is **not** yet the hardened agent the threat model requires. Non-goals per
+§5.8 stand — same-UID memory scrape and current-run secret theft are mitigated,
+not eliminated; only isolation (§5.7) removes the escalation path.
