@@ -32,6 +32,8 @@ import {
 import {
   parseFileMode,
   decodeValue,
+  encodeValue,
+  ENCODERS,
   writeArtifact,
   normalizeManifest,
   renderDeliverEntry,
@@ -465,6 +467,8 @@ export function registerEnvCommand(program) {
     .option('--password-file <path>', 'Read vault password from a file')
     .option('--password-stdin', 'Read vault password from stdin')
     .option('-e, --env <name>', 'Environment name (or set VAULT_ENV)')
+    .option('--in <path>', 'Read the value from a file instead of the argument')
+    .option('--encode <codec>', 'Encode the value before storing (base64)')
     .option('--public', 'Mark variable as non-sensitive')
     .option('--required', 'Mark variable as required (checked by validate)')
     .option('--extends <parent>', 'Set this environment to extend <parent>')
@@ -472,10 +476,33 @@ export function registerEnvCommand(program) {
     .option('--description <text>', 'Set environment description')
     .action(async (key, value, options) => {
       try {
-        if (value === undefined && !process.stdin.isTTY) {
+        // Validate --encode before touching the vault so a typo fails fast.
+        if (options.encode && !ENCODERS.includes(options.encode)) {
           console.error(
             chalk.red(
-              'No value provided. Pass a value argument when running non-interactively.'
+              `Unknown encode "${options.encode}" (supported: ${ENCODERS.join(', ')})`
+            )
+          );
+          process.exit(1);
+        }
+        if (options.in !== undefined && value !== undefined) {
+          console.error(
+            chalk.red(
+              'Provide either a value argument or --in <path>, not both.'
+            )
+          );
+          process.exit(1);
+        }
+
+        const fromFile = options.in !== undefined;
+        // The editor is only for the "no value, no file" interactive case.
+        const interactive = value === undefined && !fromFile;
+
+        if (interactive && !process.stdin.isTTY) {
+          console.error(
+            chalk.red(
+              'No value provided. Pass a value argument or --in <path> ' +
+                'when running non-interactively.'
             )
           );
           process.exit(1);
@@ -484,7 +511,20 @@ export function registerEnvCommand(program) {
         const { vaultPath, vaultPassword, vault } = await loadVault(options);
         const envName = requireEnvName(options.env);
 
-        if (value === undefined) {
+        if (fromFile) {
+          // Ingest a file as the value — base64 for binary blobs (Firebase
+          // plists, keystores) that `env file --decode` later materializes.
+          let buf;
+          try {
+            buf = await fs.readFile(options.in);
+          } catch (err) {
+            console.error(
+              chalk.red(`Cannot read --in file "${options.in}": ${err.message}`)
+            );
+            process.exit(1);
+          }
+          value = encodeValue(buf, options.encode);
+        } else if (interactive) {
           let previousValue;
           try {
             previousValue = vault.getActiveVersion(envName)?.vars?.[key];
@@ -498,6 +538,9 @@ export function registerEnvCommand(program) {
             log(chalk.yellow('Empty value — nothing changed.'));
             return;
           }
+        } else if (options.encode) {
+          // Encode an inline value argument too (symmetry with --in).
+          value = encodeValue(value, options.encode);
         }
 
         const spinner = oraQuiet(`Setting ${key}...`).start();
@@ -891,7 +934,13 @@ export function registerEnvCommand(program) {
           process.exit(1);
         }
         const vars = result.data;
-        const readTemplate = (p) => fs.readFileSync(resolvePath(p), 'utf-8');
+        const readTemplate = (p) => {
+          try {
+            return fs.readFileSync(resolvePath(p), 'utf-8');
+          } catch (err) {
+            throw new Error(`Cannot read template "${p}": ${err.message}`);
+          }
+        };
 
         for (const entry of manifest.entries) {
           // Render first (validates missing vars / templates) so a dry run is a

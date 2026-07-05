@@ -41,6 +41,26 @@ export function decodeValue(value, decode) {
   throw new Error(`Unknown decode "${decode}" (supported: base64)`);
 }
 
+/** Codecs a stored value may be encoded with on the way in (`set --encode`). */
+export const ENCODERS = ['base64'];
+
+/**
+ * Encode raw bytes (or a string) into a storable string value — the inverse of
+ * decodeValue, used by `set --in --encode` to ingest a file as a vault var.
+ * Vault values are strings, so this always returns a string: the base64 text
+ * for binary blobs, or the UTF-8 text when no encoding is requested.
+ */
+export function encodeValue(input, encode) {
+  const buf = Buffer.isBuffer(input)
+    ? input
+    : Buffer.from(input == null ? '' : String(input), 'utf-8');
+  if (!encode) return buf.toString('utf-8');
+  if (encode === 'base64') return buf.toString('base64');
+  throw new Error(
+    `Unknown encode "${encode}" (supported: ${ENCODERS.join(', ')})`
+  );
+}
+
 /**
  * Write delivered content to `outPath`, creating the parent directory if needed.
  * The file mode is enforced with an explicit chmod so it is deterministic even

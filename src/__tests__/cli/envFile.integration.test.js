@@ -140,3 +140,103 @@ describe('vault env file (integration)', () => {
     expect(fs.existsSync(out)).toBe(false);
   });
 });
+
+describe('vault env set --in / --encode (blob ingestion)', () => {
+  it('ingests a binary file as base64 and round-trips via env file --decode', () => {
+    const src = path.join(workDir, 'src-keystore.bin');
+    const original = Buffer.from([0xde, 0xad, 0xbe, 0xef, 0x00, 0x7f]);
+    fs.writeFileSync(src, original);
+
+    const setR = cli([
+      'set',
+      'KEYSTORE',
+      '--in',
+      src,
+      '--encode',
+      'base64',
+      '-e',
+      'dev',
+      '-v',
+      vaultPath,
+    ]);
+    expect(setR.status).toBe(0);
+
+    // Stored value is the base64 text.
+    const getR = cli(['get', 'KEYSTORE', '-e', 'dev', '-v', vaultPath]);
+    expect(getR.stdout.trim()).toBe(original.toString('base64'));
+
+    // Materialize it back and confirm byte-for-byte fidelity.
+    const out = path.join(workDir, 'out-keystore.bin');
+    const fileR = cli([
+      'file',
+      'KEYSTORE',
+      '--out',
+      out,
+      '--decode',
+      'base64',
+      '-e',
+      'dev',
+      '-v',
+      vaultPath,
+    ]);
+    expect(fileR.status).toBe(0);
+    expect(fs.readFileSync(out).equals(original)).toBe(true);
+  });
+
+  it('ingests a text file without encoding', () => {
+    const src = path.join(workDir, 'note.txt');
+    fs.writeFileSync(src, 'line1\nline2\n');
+    const r = cli(['set', 'NOTE', '--in', src, '-e', 'dev', '-v', vaultPath]);
+    expect(r.status).toBe(0);
+    const getR = cli(['get', 'NOTE', '-e', 'dev', '-v', vaultPath]);
+    expect(getR.stdout).toContain('line1');
+  });
+
+  it('rejects passing both a value and --in', () => {
+    const src = path.join(workDir, 'note.txt');
+    const r = cli([
+      'set',
+      'X',
+      'inline',
+      '--in',
+      src,
+      '-e',
+      'dev',
+      '-v',
+      vaultPath,
+    ]);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/either a value argument or --in/);
+  });
+
+  it('fails fast on an unknown --encode', () => {
+    const r = cli([
+      'set',
+      'X',
+      'v',
+      '--encode',
+      'rot13',
+      '-e',
+      'dev',
+      '-v',
+      vaultPath,
+    ]);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/Unknown encode "rot13"/);
+  });
+
+  it('errors clearly when --in points at a missing file', () => {
+    const r = cli([
+      'set',
+      'X',
+      '--in',
+      path.join(workDir, 'nope.bin'),
+      '-e',
+      'dev',
+      '-v',
+      vaultPath,
+    ]);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/Cannot read --in file/);
+  });
+});

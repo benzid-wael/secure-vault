@@ -178,6 +178,15 @@ describe('vault env apply / clean (integration)', () => {
     expect(r.stderr).toMatch(/undefined variable "DOES_NOT_EXIST"/);
   });
 
+  it('fails clearly when a template file is missing', () => {
+    fs.rmSync(path.join(projectDir, 'ios/Secrets.xcconfig.vtpl'));
+    const r = cli(['apply']);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(
+      /Cannot read template "ios\/Secrets.xcconfig.vtpl"/
+    );
+  });
+
   it('fails clearly on an invalid manifest', () => {
     fs.writeFileSync(
       path.join(projectDir, '.vaultrc'),
