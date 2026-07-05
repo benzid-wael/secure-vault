@@ -8,6 +8,7 @@ import {
   DEFAULT_FILE_MODE,
   parseFileMode,
   decodeValue,
+  encodeValue,
   writeArtifact,
   normalizeDeliverEntry,
   normalizeManifest,
@@ -54,6 +55,35 @@ describe('decodeValue', () => {
 
   it('throws on an unknown decode', () => {
     expect(() => decodeValue('x', 'rot13')).toThrow(/Unknown decode "rot13"/);
+  });
+});
+
+describe('encodeValue', () => {
+  it('returns UTF-8 text when no encoding is requested', () => {
+    expect(encodeValue('plain')).toBe('plain');
+    expect(encodeValue(Buffer.from('buf'))).toBe('buf');
+    expect(encodeValue(null)).toBe('');
+  });
+
+  it('base64-encodes a Buffer of binary bytes', () => {
+    const bytes = Buffer.from([0x00, 0xff, 0x10]);
+    expect(encodeValue(bytes, 'base64')).toBe(bytes.toString('base64'));
+  });
+
+  it('base64-encodes a string via its UTF-8 bytes', () => {
+    expect(encodeValue('hello', 'base64')).toBe('aGVsbG8=');
+  });
+
+  it('round-trips with decodeValue', () => {
+    const bytes = Buffer.from('secret\x00blob');
+    const stored = encodeValue(bytes, 'base64');
+    const back = decodeValue(stored, 'base64');
+    // Buffer.isBuffer narrows the string|Buffer union for both TS and runtime.
+    expect(Buffer.isBuffer(back) && back.equals(bytes)).toBe(true);
+  });
+
+  it('throws on an unknown encoder', () => {
+    expect(() => encodeValue('x', 'rot13')).toThrow(/Unknown encode "rot13"/);
   });
 });
 
