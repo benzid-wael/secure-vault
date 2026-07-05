@@ -428,3 +428,243 @@ request-scoped delivery, no enumeration, HW-backed decrypt-on-demand, audited
 approval, conservative lock — and be explicit that against a same-UID
 contaminated build the agent _reduces_ blast radius but only **isolation**
 (container/VM/sandbox/CI) _eliminates_ the escalation path (§5.7).
+
+---
+
+## 7. Task breakdown
+
+Agile decomposition of the §6 tracks. Each task is a deployable unit; gap IDs in
+parentheses map back to §3/§4. Versions follow the §6 sequencing
+(v1.8/v1.9/v2.0/v2.5+).
+
+### Milestone v1.8 — Native config & file secrets (no daemon)
+
+- [ ] **Task 1: Templating engine + opt-in escaping filters** (G1, G2)
+  - **Goal**: Render `file.<ext>.vtpl` → `file.<ext>` by substituting `{{KEY}}`
+    placeholders from the resolved env map, keeping vault fully format-agnostic.
+  - **Constraints**: `{{KEY}}` delimiter only (leave target-format `$()`/`${}`
+    tokens untouched); single-pass substitution (never re-scan a substituted
+    value → no cross-secret injection); missing key = hard error; raw
+    substitution by default with opt-in `{{KEY | json|xml|base64}}` filters.
+    dotenv stays a separate native serializer (`src/utils/dotenv.js`), untouched.
+  - **Dependencies**: None.
+  - **Implementation Guidance**: The filter functions are the _only_ place any
+    format knowledge lives — keep them opt-in, never auto-detect format from
+    extension. Reuse the `quoteDotenvValue` edge-case test pattern per filter.
+    Anti-pattern to reject: per-format serializers (the discarded emitter design).
+  - **Validation**: A `.vtpl` with `$(inherited)` and `${...}` renders those
+    tokens intact; a value containing `{{X}}` is not recursively expanded;
+    `| json` on a value with `"`/newline yields valid JSON; unknown key fails
+    loudly (non-zero exit).
+
+- [ ] **Task 2: Materialize variable → decoded file (blob delivery)** (G6, G7)
+  - **Goal**: `vault env file <KEY> --out <path> [--decode base64] [--mode 0600]`
+    writes a single var's value to disk verbatim (optionally base64-decoded) with
+    `run --export` secure-cleanup semantics.
+  - **Constraints**: Default mode `0600`; reuse the existing export temp-file/wipe
+    path. Recognize known file secrets (`GoogleService-Info.plist`,
+    `google-services.json`) so they land where Xcode/Gradle expect for local GUI
+    dev, not only CI. Never write plaintext world-readable before `chmod`.
+  - **Dependencies**: None (parallel to Task 1).
+  - **Implementation Guidance**: Replaces the hand-rolled `base64 -d` in
+    `run-fastlane-with-vault.sh`. Share the `--export` lifecycle from
+    `bin/commands/envRunHelpers.js`. Blob delivery = whole file is one var; use
+    for entirely-secret/binary/large files (templates handle mostly-static files).
+  - **Validation**: A base64 var decodes to a byte-identical binary at `0600`;
+    cleanup fires on the same trigger as `run --export`; a materialized Firebase
+    plist is accepted by a sample build.
+
+- [ ] **Task 3: Delivery manifest + `apply`/`clean`** (G17, G18-ready)
+  - **Goal**: Extend `.vaultrc` with a `deliver` manifest ("one env → N
+    artifacts"); add `vault env apply [env]` (write all) and `vault env clean`
+    (wipe all).
+  - **Constraints**: Three entry kinds by field present — `format` (native
+    dotenv), `from` (+optional `decode`, blob), `template` (`.vtpl`; `out`
+    defaults to path minus `.vtpl`). Validate the manifest, fail clearly on
+    unknown format/key. `apply` idempotent; `clean` wipes exactly what `apply`
+    wrote. Manifest schema/validator is a standalone module so v2 `mount` reuses
+    it verbatim.
+  - **Dependencies**: Tasks 1, 2.
+  - **Implementation Guidance**: The piece that retires
+    `run-fastlane-with-vault.sh`. Do not couple `apply` to any daemon.
+  - **Validation**: One sample manifest produces a `.env`, a decoded Firebase
+    plist, and a rendered `xcconfig` in a single command; `clean` removes exactly
+    those; an invalid manifest is rejected with an actionable message.
+
+### Milestone v1.9 — Adoptability
+
+- [ ] **Task 4: `init --preset react-native` scaffolder** (G19)
+  - **Goal**: Scaffold a starter `.vaultrc` manifest, `.gitignore` entries,
+    `.vtpl` starter templates, and Xcode/Gradle build-phase snippets.
+  - **Constraints**: Never overwrite existing files without confirmation;
+    generated `.gitignore` covers every artifact the starter manifest emits.
+  - **Dependencies**: Task 3.
+  - **Implementation Guidance**: Reference the Superxpense layout (RN 0.82 + Expo,
+    iOS CocoaPods, Android Gradle flavors) for defaults. Snippets reference the
+    same commands `doctor` checks for.
+  - **Validation**: Running the preset in a clean RN repo yields a manifest
+    `apply` accepts and a gap-free `.gitignore`; re-running is non-destructive.
+
+- [ ] **Task 5: `doctor` for mobile wiring** (G20)
+  - **Goal**: Verify envfile presence, `.gitignore` coverage, manifest validity
+    (and later agent/mount status), emitting actionable fixes.
+  - **Constraints**: Diagnostic-only — never mutates the vault or secrets; every
+    failed check prints a concrete remediation; non-zero exit on any failure.
+  - **Dependencies**: Task 3.
+  - **Implementation Guidance**: Build a check registry so v2 agent/mount checks
+    slot in later. Reuse Task 3's manifest validator rather than re-parsing.
+  - **Validation**: Detects a manifest artifact missing from `.gitignore`; detects
+    an invalid manifest; exits non-zero on any failure, zero when clean.
+
+### Milestone v2.0 — Agent & Mount (security-gated)
+
+- [ ] **Task 6: Define the auto-lock ↔ live-mount contract (design gate)** (G12)
+  - **Goal**: Decide, in writing, what auto-lock does to live mounts — resolving
+    §5.4/§5.5 before any daemon code exists.
+  - **Constraints**: Must satisfy the §13.5 "mount stays live all day" criterion
+    without defeating auto-lock (G28). Choose among: (a) keep mounts live across
+    lock / block only new unlocks, (b) count build-time reads as activity,
+    (c) require biometric re-unlock.
+  - **Dependencies**: None — but hard-blocks Tasks 7 & 8.
+  - **Implementation Guidance**: The doc names this a mandatory pre-implementation
+    gate. Document the chosen option + residual risk in SPEC; the conservative-
+    lock rule (G28) constrains the answer.
+  - **Validation**: SPEC records a single chosen option with rationale; the choice
+    preserves both "all-day GUI session survives" and "idle/sleep locks".
+
+- [ ] **Task 7: Agent daemon + session unlock (invariants baked in)** (G9, G23–G25, G28)
+  - **Goal**: `vault env agent start` + session-based unlock + `agent lock|unlock`
+    (launchd) so GUI builds never prompt, satisfying the §4-I invariants from
+    day one.
+  - **Constraints** (non-negotiable): request-scoped protocol only — no
+    `list-envs`, no `dump-all`, `agent status` returns metadata never values
+    (G23); prefer spawn-based delivery over a listening socket,
+    `SO_PEERCRED`/`LOCAL_PEERCRED` a speed bump only (G24); HW-backed KEK,
+    decrypt one env on demand, never all resident (G25); conservative auto-lock
+    on authenticated activity + hard max lifetime + lock on sleep/screen-lock
+    (G28). Must not regress below v1's zero-ambient-authority (I3).
+  - **Dependencies**: Task 6.
+  - **Implementation Guidance**: SPEC §13.5. Harden the process: `RLIMIT_CORE=0`,
+    `PT_DENY_ATTACH`/`ptrace_scope`, `mlock`, hardened runtime, no
+    `get-task-allow`. Document non-goals (§5.8). Reject in review any verb
+    returning more than the one authorized env.
+  - **Validation**: An arbitrary same-UID process cannot enumerate or drain other
+    envs via the protocol; `agent status` exposes no values; core dumps disabled
+    and ptrace denied on-platform; idle/sleep triggers lock per Task 6.
+
+- [ ] **Task 8: `mount` consumes the delivery manifest** (G11, G18, G26)
+  - **Goal**: Replace `export >` with `mount <env>` that reads the Task-3
+    manifest, fans out every artifact, watches them, and wipes on secure
+    shutdown/lock.
+  - **Constraints**: Highest-risk mode — opt-in behind an explicit flag +
+    warning; minimal keys; `0600` in a `0700` dir; wiped on lock per Task 6
+    (G26). Default GUI story stays run-scoped delivery (mode B); persistent mount
+    (mode C) is not the default. Reuse the Task-3 manifest schema, not a separate
+    `--path` model.
+  - **Dependencies**: Tasks 3, 6, 7.
+  - **Implementation Guidance**: Unifies with `apply` so one manifest drives both
+    v1.8 file delivery and v2 mount. The warning copy must state the B→C posture
+    downgrade explicitly.
+  - **Validation**: One `mount` produces every manifest artifact with correct
+    perms; lock wipes all live mounts per Task 6; persistent mount requires the
+    explicit flag and prints the warning; without it the GUI path defaults to
+    wrapped run-scoped delivery.
+
+- [ ] **Task 9: Audit log + per-release approval for sensitive envs** (G27)
+  - **Goal**: Append-only audit log (env, PID, requesting binary, timestamp) and
+    per-release biometric approval for prod/signing envs.
+  - **Constraints**: Log append-only / tamper-evident; approval gate for
+    sensitive envs only; combine with decrypt-on-demand (G25); approval prompt
+    not spoofable by synthetic activity. Record the requesting _binary_, not just
+    PID (PIDs recycle).
+  - **Dependencies**: Task 7.
+  - **Implementation Guidance**: Ties into the biometric path (Task 12) but the
+    log itself is independent and ships with the agent.
+  - **Validation**: Every sensitive-env access appends an entry; a prod/signing
+    unlock requires explicit approval; a same-UID process cannot silently rewrite
+    the log in place (or tampering is detectable).
+
+- [ ] **Task 10: Signing-asset delivery** (G8)
+  - **Goal**: Extend blob materialization (Task 2) to the signing set — Apple
+    `.p8`/`.mobileprovision`, Android `.jks`, Play `.json` — with documented
+    Fastlane wiring.
+  - **Constraints**: Non-interactive build phases use the agent session (Task 7).
+    Provisioning/cert _management_ (à la `match`) stays out of scope — vault only
+    stores & materializes.
+  - **Dependencies**: Tasks 2, 7.
+  - **Implementation Guidance**: Removes the base64-by-hand steps from
+    `run-fastlane-with-vault.sh`; document the exact env wiring (`ENVFILE`,
+    keystore paths).
+  - **Validation**: A Fastlane release consumes vault-materialized signing assets
+    end-to-end with no manual base64; assets are `0600` and wiped after the run.
+
+- [ ] **Task 11: Xcode & Gradle build-phase triggers** (G14, G15)
+  - **Goal**: A documented Xcode Run Script phase and a Gradle task / `init.gradle`
+    snippet that call `vault env apply` to render `.vtpl` artifacts at
+    build/configure time.
+  - **Constraints**: Both run non-interactively via the agent session (Task 7);
+    with a persistent mount the file is already present, making the phase
+    optional. Xcode phase survives the sandboxed build-phase environment; Gradle
+    runs at configure time.
+  - **Dependencies**: Tasks 1, 3, 7.
+  - **Implementation Guidance**: Distribute snippets via the Task-4 preset. A full
+    Gradle plugin is out of scope — a task/snippet suffices.
+  - **Validation**: A sample Xcode build renders its `.vtpl` `xcconfig`/plist into
+    `DERIVED_FILE_DIR` with no prompt; a sample Gradle configure phase renders
+    `gradle.properties` from the vault non-interactively.
+
+### Milestone v2.5 / v3 — Frictionless, IDE, CI parity
+
+- [ ] **Task 12: Biometric / keychain unlock** (G10)
+  - **Goal**: Secure Enclave/Keychain biometric unlock so re-unlock after
+    auto-lock is a fingerprint, not a password.
+  - **Constraints**: KEK non-exportable / hardware-backed (storage option 4,
+    §5.5) with keychain-ACL-bound-to-binary as the floor (option 3); combine with
+    decrypt-on-demand so a scraped agent yields at most the currently-open env.
+  - **Dependencies**: Task 7.
+  - **Implementation Guidance**: SPEC §13.7. Pull earlier if Task 6's contract
+    forces frequent re-unlocks; makes conservative auto-lock painless.
+  - **Validation**: Re-unlock after auto-lock completes via Touch ID with no typed
+    password; the KEK is confirmed non-exportable on-platform.
+
+- [ ] **Task 13: CI parity — clean export + vault sync** (G21, G22)
+  - **Goal**: `export --ci` (strip comments/metadata) and `pull`/`push` for a
+    committed-encrypted-vault workflow.
+  - **Constraints**: `--ci` output free of comment/metadata lines that break
+    strict parsers; `pull`/`push` formalizes the existing "commit `.env.vault`,
+    share password out-of-band" pattern without weakening encryption.
+  - **Dependencies**: None (export) / Task 3 helpful.
+  - **Implementation Guidance**: SPEC §13.6. Superxpense already commits
+    `.env.vault`, so `pull`/`push` is largely formalization — match that
+    convention.
+  - **Validation**: `--ci` output has no comment/metadata lines and parses in a
+    strict CI consumer; `pull` then `push` round-trips an encrypted vault with no
+    plaintext leak.
+
+- [ ] **Task 14: Expo prebuild survival** (G13)
+  - **Goal**: Ensure injected native values survive `expo prebuild`, which
+    regenerates native projects and drops them.
+  - **Constraints**: Re-apply the manifest's native artifacts after prebuild
+    regenerates iOS/Android.
+  - **Dependencies**: Tasks 1, 3.
+  - **Implementation Guidance**: An Expo config plugin or prebuild post-hook that
+    re-runs `apply`; test against RN 0.82 + Expo.
+  - **Validation**: `expo prebuild` followed by a build retains all
+    vault-injected native values.
+
+- [ ] **Task 15: VSCode / JetBrains plugin** (G16)
+  - **Goal**: IDE plugin for inline resolve and run-from-palette.
+  - **Constraints**: Goes through the agent session (no plaintext in the plugin);
+    respects request-scoped delivery.
+  - **Dependencies**: Task 7.
+  - **Implementation Guidance**: SPEC §14.2. Lowest priority; scope tightly to
+    resolve + run.
+  - **Validation**: The plugin resolves an env and launches a run through the
+    agent without exposing values in editor state or logs.
+
+### Critical path
+
+Task 6 (lock↔mount contract) hard-gates Tasks 7–8. Tasks 1–5 (v1.8/v1.9) are
+fully daemon-independent and carry the most immediate value for Superxpense. The
+invariants in Task 7 (G23–G28) are part of its definition-of-done, not a
+follow-up — a naive agent regresses below v1.
