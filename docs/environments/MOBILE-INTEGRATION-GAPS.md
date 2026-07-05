@@ -169,13 +169,17 @@ template.
 
 - **G11 `[v2]`** — `mount <env> --path` + file-watch + secure-shutdown wipe
   replaces `export >`. Closed by v2.0 as specified.
-- **G12 `[v2]` — fix before building §13.5**: define what **auto-lock** does to
-  **live mounts**. If lock wipes them, an all-day GUI session breaks after the
-  30-min idle timeout (file vanishes → next ⌘R fails). Options: (a) keep mounts
-  live across lock, only block _new_ unlocks; (b) count build-time file reads as
-  "activity"; (c) require biometric (G10) so re-unlock is frictionless. The
-  §13.5 exit criterion ("stays live all day") does not hold until this is nailed.
-  See §5.4/§5.5 for the trade-off and §4-I/G28 for the conservative-lock rule.
+- **G12 `[v2]` — RESOLVED (decision of record, see SPEC §13.5):** a **two-tier
+  lock**. _Soft lock_ (idle timeout) drops the key and refuses **new** requests
+  but **leaves live mounts in place** — the file is already on disk (I1), so
+  wiping mid-build breaks the all-day session for no gain, while refusing new
+  requests preserves containment (I2). _Hard lock_ (sleep, screen-lock, max
+  session lifetime, explicit `agent lock`) **securely wipes** mounts and drops
+  the key. The idle timer resets on **user-authenticated actions only** — never
+  raw IPC or file reads (that closes the G28 synthetic-activity attack) — and a
+  **hard max session lifetime** caps exposure. This satisfies the §13.5 "stays
+  live all day" criterion _and_ the conservative-lock rule (§4-I/G28). Persistent
+  mount stays opt-in + warned; default GUI is run-scoped (mode B, §5.4).
 - **G13 `[v2.5+]`** — Expo config plugin / prebuild hook so injected native
   values survive `expo prebuild`.
 
@@ -518,19 +522,21 @@ parentheses map back to §3/§4. Versions follow the §6 sequencing
 
 ### Milestone v2.0 — Agent & Mount (security-gated)
 
-- [ ] **Task 6: Define the auto-lock ↔ live-mount contract (design gate)** (G12)
+- [x] **Task 6: Define the auto-lock ↔ live-mount contract (design gate)** (G12) — **DONE**
   - **Goal**: Decide, in writing, what auto-lock does to live mounts — resolving
     §5.4/§5.5 before any daemon code exists.
-  - **Constraints**: Must satisfy the §13.5 "mount stays live all day" criterion
-    without defeating auto-lock (G28). Choose among: (a) keep mounts live across
-    lock / block only new unlocks, (b) count build-time reads as activity,
-    (c) require biometric re-unlock.
-  - **Dependencies**: None — but hard-blocks Tasks 7 & 8.
-  - **Implementation Guidance**: The doc names this a mandatory pre-implementation
-    gate. Document the chosen option + residual risk in SPEC; the conservative-
-    lock rule (G28) constrains the answer.
-  - **Validation**: SPEC records a single chosen option with rationale; the choice
-    preserves both "all-day GUI session survives" and "idle/sleep locks".
+  - **Decision (of record, SPEC §13.5):** a **two-tier lock**. _Soft lock_ (idle
+    timeout) drops the key and refuses new requests but leaves live mounts in
+    place (I1: file already on disk; I2: no new envs). _Hard lock_ (sleep,
+    screen-lock, max session lifetime, explicit `agent lock`) securely wipes
+    mounts + drops the key. Idle timer resets on user-authenticated actions only
+    (never raw IPC/file reads → closes G28); hard max session lifetime caps
+    exposure. Persistent mount opt-in + warned; default GUI is run-scoped (mode
+    B). Re-unlock via password, or Touch ID once G10 lands.
+  - **Dependencies**: None — unblocks Tasks 7 & 8.
+  - **Validation**: ✅ SPEC §13.5 records the contract; it preserves both
+    "all-day GUI session survives" (soft lock) and "walking away locks" (hard
+    lock), and the activity definition defeats synthetic keep-alive (G28).
 
 - [ ] **Task 7: Agent daemon + session unlock (invariants baked in)** (G9, G23–G25, G28)
   - **Goal**: `vault env agent start` + session-based unlock + `agent lock|unlock`

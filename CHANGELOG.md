@@ -67,8 +67,9 @@ materializes files, and never parses a third-party build-config format.
 
 ### Docs
 
-- SPEC bumped to Revision 9: new §8.5 (File Templating), §6.3 output-format
-  guardrail, and the v1.8/v1.9 milestones (§13.4.1/§13.4.2).
+- SPEC at Revision 10: new §8.5 (File Templating), §6.3 output-format guardrail,
+  the v1.8/v1.9 milestones (§13.4.1/§13.4.2), and the resolved v2.0 G12
+  lock↔mount contract (§13.5).
 - New `docs/environments/MOBILE-INTEGRATION-GAPS.md` gap analysis + task
   breakdown.
 - `README.cli.md`: "Delivering secrets to files" section.

@@ -3,7 +3,7 @@
 > Feature: Securely manage, version, and inject environment variables from an encrypted
 > `.env.vault` file into development tools, build processes, and CI/CD pipelines.
 >
-> Status: **v1.5 delivered** · Revision 9
+> Status: **v1.5 delivered** · Revision 10
 
 ---
 
@@ -1702,17 +1702,35 @@ MOBILE-INTEGRATION-GAPS.md §4.G, tasks 4–5.
 
 **Dependencies**: v1.9 (mount consumes the v1.8 delivery manifest; §13.4.1)
 
-> **Design gate (G12):** resolve the auto-lock ↔ live-mount contract _before_
-> implementing this milestone — does auto-lock wipe live mounts? The exit
-> criterion below does not hold until this is decided. See
-> MOBILE-INTEGRATION-GAPS.md §4.D / §5 and task 6.
+> **Lock ↔ mount contract (G12 — RESOLVED, decision of record).** "Auto-lock"
+> is two events with different semantics:
+>
+> - **Soft lock (idle timeout):** drop the master key from memory and refuse all
+>   _new_ requests (no new env decryption, no new mounts). **Live mounts are left
+>   in place.** The file is already on disk — the secret is forfeit (invariant
+>   I1) — so wiping mid-build breaks the all-day session for no real gain, while
+>   refusing new requests still enforces containment (I2).
+> - **Hard lock (sleep, screen-lock, max session lifetime, explicit
+>   `agent lock`):** securely wipe all mounts _and_ drop the key. These are the
+>   "user walked away / session too old" moments where at-rest exposure matters.
+>
+> Two rules keep the idle timer honest (this is G28): **activity is
+> user-authenticated actions only** — raw IPC requests and mounted-file reads do
+> **not** reset it, so synthetic traffic can't keep the session alive — and a
+> **hard maximum session lifetime** caps exposure regardless of activity.
+> Re-unlock after a soft lock is a password, or Touch ID once G10 lands.
+> Persistent mount stays opt-in + warned; the default GUI path is run-scoped
+> delivery (mode B, §5.4). See MOBILE-INTEGRATION-GAPS.md §4.D / §5.4 / task 6.
 >
 > **Security invariants are preconditions, not follow-ups.** A naive agent
 > (listening socket + dump-all + persistent mount) is _strictly worse than v1_
 > (invariant I3). Build only with G23–G28 in place. Full threat model:
 > MOBILE-INTEGRATION-GAPS.md §5.
 
-**Exit criteria**: A developer starts the agent once at the start of the day, mounts their env to `.env`, and the file stays live until they lock or the agent auto-locks.
+**Exit criteria**: A developer starts the agent once at the start of the day and
+mounts their env; the file stays live through idle periods (soft lock does not
+wipe) and all-day work, and is wiped on sleep / screen-lock / max-lifetime / an
+explicit lock.
 
 ---
 
@@ -2185,4 +2203,5 @@ test). The write now aborts on an existing target unless `--force` is given.
 | 2026-06-11 | 6        | wbenzid | Mark v1.5 Composition delivered (resolver: `extends` layering + `{{env:name/KEY}}`/`{{env:self/KEY}}` refs + full validation engine); add `.bak`/atomic-write + `.deleted.<ts>` (§5.4); reserve `self` env name (§4.5/§8); add milestone status legend + v0.5/v1.0/v2.x markers; note Q1/Q4 status in §15                                                                                                                                                                                                                 |
 | 2026-06-15 | 7        | wbenzid | Mark v1.0 hardening complete in §13.3 (3-pass temp cleanup, orphan scan, distinct error codes 2–14 with symbolic emission); add `show` fields, `diff` old→new, `history` date col, spec limit enforcement, `--description`, `--quiet` to §13.4 delivered; close §16.5 (error codes); add numeric exit code column + status note to Appendix B                                                                                                                                                                             |
 | 2026-06-30 | 8        | wbenzid | Decouple `run` into two axes — population (`--inject clean\|merge`) vs file delivery (`--export <path>`); rewrite §6.3 `run` flags and §11 (now "Injection Model"); add `--set`/`--env-file`/`--force`; soft-deprecate `--inject file`/`--out-file` (removed v2.0); add §16.9 (file-mode conflation RESOLVED) and §16.10 (value escaping + overwrite guard RESOLVED); update §7.3 flow                                                                                                                                    |
+| 2026-07-05 | 10       | wbenzid | Resolve the G12 lock↔mount contract in §13.5 (two-tier lock: soft idle-lock keeps live mounts + refuses new requests, hard lock on sleep/screen-lock/max-lifetime wipes; idle timer resets only on user-authenticated actions per G28). Design gate for v2.0 Tasks 7–8 now closed                                                                                                                                                                                                                                        |
 | 2026-07-05 | 9        | wbenzid | Record file-templating decision (§8.5): vault renders `.vtpl` templates with `{{KEY}}` substitution + opt-in escaping filters instead of native format emitters; add export output-format guardrail (§6.3) and planned goal (§2.1); add v1.8/v1.9 mobile-native milestones (§13.4.1/§13.4.2) and update the §13.1 timeline; expand §13.5 v2.0 mount to consume the delivery manifest and fold in the agent security invariants (G23–G28) + the G12 lock↔mount design gate. Detail in MOBILE-INTEGRATION-GAPS.md §4/§6/§7 |
