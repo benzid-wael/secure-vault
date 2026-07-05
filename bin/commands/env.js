@@ -39,6 +39,7 @@ import {
   renderDeliverEntry,
 } from './envDeliverHelpers.js';
 import { getPreset, scaffoldPreset } from './envScaffold.js';
+import { checkStructure, checkResolution, hasErrors } from './envDoctor.js';
 // Password-resolution helpers live in src/utils/password.js so they can be unit
 // tested without importing the CLI entry tree (SPEC.md §16.7). Imported here for
 // internal use and re-exported below for the command layer / existing importers.
@@ -1026,6 +1027,125 @@ export function registerEnvCommand(program) {
         if (!options.dryRun && removed === 0) {
           console.log(chalk.gray('nothing to remove'));
         }
+      } catch (error) {
+        console.error(chalk.red(error.message));
+        process.exit(1);
+      }
+    });
+
+  env
+    .command('doctor')
+    .description('Diagnose the .vaultrc delivery wiring (read-only)')
+    .argument('[envName]', 'Environment to resolve variables against')
+    .option('-n, --name <name>', 'Vault name')
+    .option('-v, --vault <path>', 'Exact vault file path')
+    .option('--password <password>', 'Vault password (non-interactive)')
+    .option('--password-file <path>', 'Read vault password from a file')
+    .option('--password-stdin', 'Read vault password from stdin')
+    .action(async (envArg, options) => {
+      try {
+        const { config, dir } = findProjectConfig();
+        if (!dir) {
+          console.log(
+            chalk.yellow('No .vaultrc found — nothing to diagnose.') +
+              chalk.gray(
+                '\n  Run `vault env init --preset <name>` to scaffold one.'
+              )
+          );
+          return;
+        }
+        const baseDir = dir;
+        let gitignore = '';
+        try {
+          gitignore = fs.readFileSync(
+            path.join(baseDir, '.gitignore'),
+            'utf-8'
+          );
+        } catch {
+          // No .gitignore — coverage checks will flag artifacts as unignored.
+        }
+
+        const { results, manifest } = checkStructure({
+          config,
+          baseDir,
+          gitignore,
+        });
+
+        // A vault must exist for delivery to work at all.
+        const vaultPath = EnvironmentVaultService.resolveVaultPath({
+          vault: options.vault ?? config.vault,
+          name: options.name ?? config.name,
+        });
+        if (
+          !vaultPath ||
+          !(await EnvironmentVaultService.vaultExists(vaultPath))
+        ) {
+          results.push({
+            level: 'warn',
+            title: 'No environment vault found',
+            fix: 'Create one with `vault env init` (or pass -v/--name).',
+          });
+        }
+
+        // Deep check: only when the vault is unlockable without a prompt, so
+        // `doctor` stays a zero-friction lint by default.
+        const canUnlock = vaultPath && hasNonInteractivePassword(options);
+        const envName = envArg ?? manifest?.env ?? process.env.VAULT_ENV;
+        if (manifest?.entries.length && canUnlock && envName) {
+          try {
+            const { vaultPassword } = await loadVault({
+              ...options,
+              vault: vaultPath,
+            });
+            const exported = await EnvironmentVaultService.exportEnv(
+              vaultPath,
+              vaultPassword,
+              envName,
+              'json'
+            );
+            if (exported.success) {
+              const readTemplate = (p) =>
+                fs.readFileSync(path.join(baseDir, p), 'utf-8');
+              results.push(
+                ...checkResolution(manifest, exported.data, readTemplate)
+              );
+            } else {
+              results.push({
+                level: 'warn',
+                title: 'Could not resolve variables',
+                detail: exported.error,
+              });
+            }
+          } catch (err) {
+            results.push({
+              level: 'warn',
+              title: 'Variable resolution skipped',
+              detail: err.message,
+            });
+          }
+        } else if (manifest?.entries.length && !canUnlock) {
+          results.push({
+            level: 'info',
+            title: 'Variable resolution skipped',
+            detail:
+              'Provide a password (--password-stdin, --password-file, or ' +
+              'VAULT_ENV_PASSWORD) to check every manifest variable resolves.',
+          });
+        }
+
+        const symbol = {
+          ok: chalk.green('✔'),
+          info: chalk.blue('ℹ'),
+          warn: chalk.yellow('⚠'),
+          error: chalk.red('✖'),
+        };
+        for (const r of results) {
+          console.log(`${symbol[r.level] || '-'} ${r.title}`);
+          if (r.detail) console.log(chalk.gray(`    ${r.detail}`));
+          if (r.fix) console.log(chalk.gray(`    fix: ${r.fix}`));
+        }
+
+        if (hasErrors(results)) process.exit(1);
       } catch (error) {
         console.error(chalk.red(error.message));
         process.exit(1);

@@ -284,6 +284,43 @@ only the declared outputs — a `.vtpl` template source is never deleted.
 > `clean` (or add them to `.gitignore`) when you're done. Add every delivered
 > path to `.gitignore` so a decoded secret is never committed.
 
+#### Scaffolding & health checks (`init --preset`, `doctor`)
+
+Wire up a project in one step with a preset — it creates the vault **and** the
+supporting files:
+
+```bash
+vault env init --preset react-native
+```
+
+This writes a starter `.vaultrc` manifest, an `ios/Config/Secrets.xcconfig.vtpl`
+template, a `SECURE_VAULT_SETUP.md` with next steps (including Xcode Run Script
+and Gradle snippets), and `.gitignore` entries for every delivered artifact.
+It never overwrites existing files (they're reported as skipped) and only adds
+the `.gitignore` lines that are missing.
+
+Check that the wiring is sound at any time with `doctor` — it's read-only and
+never touches your secrets:
+
+```bash
+vault env doctor            # structural checks, no password needed
+vault env doctor -e dev     # + verify every manifest variable resolves (needs a password)
+```
+
+`doctor` reports:
+
+- **manifest validity** — the `deliver` array parses and every entry is well-formed;
+- **templates present** — each `.vtpl` referenced by the manifest exists;
+- **.gitignore coverage** — every delivered artifact is ignored (a warning if not,
+  so a decoded secret can't be committed by accident);
+- **vault present** — an environment vault is discoverable;
+- **variable resolution** — when a password is available
+  (`--password-stdin`/`--password-file`/`VAULT_ENV_PASSWORD`), every variable the
+  manifest references actually exists in the environment.
+
+Only real breakage (invalid manifest, missing template, unresolved variables)
+makes `doctor` exit non-zero; coverage nits are warnings.
+
 ## Where data is stored
 
 Vaults live in a single location shared with the desktop app:

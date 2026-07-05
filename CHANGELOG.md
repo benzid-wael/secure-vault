@@ -44,6 +44,21 @@ materializes files, and never parses a third-party build-config format.
   - Artifact paths resolve relative to the `.vaultrc` location, so both commands
     behave identically from the project root or any subdirectory.
 
+### Added — v1.9 · Scaffolding & DX
+
+- **`vault env init --preset react-native`** — creates the vault and scaffolds a
+  ready-to-use setup: a starter `.vaultrc` manifest, an
+  `ios/Config/Secrets.xcconfig.vtpl` template, `SECURE_VAULT_SETUP.md` (with
+  Xcode/Gradle snippets), and `.gitignore` entries for the delivered artifacts.
+  Non-destructive (existing files are skipped, `.gitignore` reconciled
+  idempotently); an unknown preset fails before the vault is created.
+- **`vault env doctor`** — read-only diagnosis of the delivery wiring: manifest
+  validity, template files present, `.gitignore` coverage of delivered
+  artifacts, and a vault-present check. With a non-interactive password it also
+  verifies every variable the manifest references resolves in the environment.
+  Warnings pass; only real errors (invalid manifest, missing template,
+  unresolved variables) exit non-zero.
+
 ### Changed
 
 - `loadProjectConfig` is now a thin wrapper over a directory-aware
