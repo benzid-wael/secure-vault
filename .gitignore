@@ -32,3 +32,6 @@ config.bat
 # agents configs
 .agentsrc
 
+# docs
+*.pdf
+*.docx
