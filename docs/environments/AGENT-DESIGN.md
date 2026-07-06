@@ -75,11 +75,11 @@ the security-critical transitions are unit-tested with zero platform coupling:
 
 ## 7. Slicing plan
 
-| Slice  | Scope                                                                                                                                | Gaps          | Status      |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------ | ------------- | ----------- |
-| **7a** | Lock state machine + `agent start/stop/status/lock/unlock`, in-memory key, request-scoped protocol over a 0700 UDS                   | G9, G23, G28  | **partial** |
-| **7b** | Spawn-based delivery (`agent exec`, **done**); HW-backed KEK + decrypt-on-demand; audit log + approval; peer-cred; process hardening | G24, G25, G27 | in progress |
-| **8**  | `mount <env>` consuming the manifest; file-watch; wipe-on-lock                                                                       | G11, G18, G26 | **done**    |
+| Slice  | Scope                                                                                                                                                                        | Gaps          | Status      |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ----------- |
+| **7a** | Lock state machine + `agent start/stop/status/lock/unlock`, in-memory key, request-scoped protocol over a 0700 UDS                                                           | G9, G23, G28  | **partial** |
+| **7b** | Spawn-based delivery (`agent exec`, **done**) + audit log (`agent audit`, **done**); HW-backed KEK + decrypt-on-demand; sensitive-env approval; peer-cred; process hardening | G24, G25, G27 | in progress |
+| **8**  | `mount <env>` consuming the manifest; file-watch; wipe-on-lock                                                                                                               | G11, G18, G26 | **done**    |
 
 ### 7a — delivered vs. deferred (be honest: this is a PREVIEW, not production)
 
@@ -104,7 +104,12 @@ over a Unix socket in a `0700` dir, socket `0600`, lock-on-shutdown) with the
   the daemon forks the build as its own child with the scoped env injected, so the
   secret never crosses the socket nor touches disk. Closes the delivery-mechanism
   half of G24; peer-cred (the socket-hardening half) is still deferred above.
-- **HW-backed KEK + decrypt-on-demand (G25)** and **audit/approval (G27)**.
+- **Audit log (G27)** — **done** (`agent audit`, `auditLog.js`): append-only,
+  hash-chained, tamper-evident, resumes across restarts, records metadata only.
+  The sensitive-env **biometric approval** half of G27 is still deferred (needs
+  Secure Enclave / Touch ID — Task 12), as is client PID/binary attribution
+  (needs peer-cred, above).
+- **HW-backed KEK + decrypt-on-demand (G25)**.
 
 Because of the above, treat 7a as a **developer preview**: it proves the contract
 and the protocol invariants (the parts that must be right from day one, I3), but

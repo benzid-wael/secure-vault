@@ -75,6 +75,10 @@ export async function startDaemonServer({
           session.unlock(resolveEnv);
           return { ok: true, data: session.status() };
         } catch (err) {
+          // Record the rejected unlock (brute-force signal) before reporting it.
+          if (typeof session.noteFailedUnlock === 'function') {
+            session.noteFailedUnlock();
+          }
           return { ok: false, error: err.message };
         }
       case 'lock':

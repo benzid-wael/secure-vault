@@ -78,6 +78,7 @@ describe('createSpawnService.exec', () => {
       verb: 'get-env',
       env: 'dev',
       keys: undefined,
+      source: 'exec',
     });
     expect(spawnFn).toHaveBeenCalledWith(
       'node',

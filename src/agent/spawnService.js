@@ -36,6 +36,7 @@ export function createSpawnService({ session, spawnFn, buildChildEnv }) {
       verb: 'get-env',
       env: req.env,
       keys: req.keys,
+      source: 'exec',
     });
     if (!got.ok) {
       ctx.send({ ok: false, error: got.error });

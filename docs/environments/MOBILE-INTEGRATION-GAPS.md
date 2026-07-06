@@ -542,16 +542,19 @@ parentheses map back to §3/§4. Versions follow the §6 sequencing
   - **7a done:** two-tier lock (`src/agent/lockState.js`), request-scoped protocol - lock enforcement (`src/agent/sessionManager.js` — G23, I2, G28), daemon over
     a 0700 Unix socket (`src/agent/daemon.js`), and `vault env agent
 start/stop/status/lock/unlock`. Design in `AGENT-DESIGN.md`.
-  - **7b in progress:** spawn-based delivery **done** — `vault env agent exec
+  - **7b in progress:** (1) spawn-based delivery **done** — `vault env agent exec
 <env> -- <cmd>` (`src/agent/spawnService.js`) runs the build as the daemon's
     own child with the scoped env injected, so the secret never crosses the socket
-    and never touches disk (§5.4 mode A); refused while locked (I2). Closes the
-    delivery-mechanism half of G24.
+    and never touches disk (§5.4 mode A); refused while locked (I2); closes the
+    delivery-mechanism half of G24. (2) audit log **done** — append-only,
+    hash-chained (`src/agent/auditLog.js`, `vault env agent audit`), the
+    independent half of G27 (Task 9).
   - **7b remaining (required before production, per I3):** process hardening
     (`RLIMIT_CORE=0`, `PT_DENY_ATTACH`/`ptrace_scope`, `mlock`, hardened runtime),
     peer-cred (the socket-hardening half of G24), HW-backed KEK + decrypt-on-demand
-    (G25), audit log + sensitive-env approval (G27). Node can't do the hardening
-    or peer-cred natively — needs a small addon or a launchd/entitlements wrapper.
+    (G25), sensitive-env biometric approval (the other half of G27, needs Task 12).
+    Node can't do the hardening or peer-cred natively — needs a small addon or a
+    launchd/entitlements wrapper.
   - **Goal**: `vault env agent start` + session-based unlock + `agent lock|unlock`
     (launchd) so GUI builds never prompt, satisfying the §4-I invariants from
     day one.
@@ -599,7 +602,7 @@ start/stop/status/lock/unlock`. Design in `AGENT-DESIGN.md`.
     refused without `--force` and before unlock; the template _source_ survives a
     wipe.
 
-- [ ] **Task 9: Audit log + per-release approval for sensitive envs** (G27)
+- [~] **Task 9: Audit log + per-release approval for sensitive envs** (G27) — **PARTIAL (log done)**
   - **Goal**: Append-only audit log (env, PID, requesting binary, timestamp) and
     per-release biometric approval for prod/signing envs.
   - **Constraints**: Log append-only / tamper-evident; approval gate for
@@ -609,9 +612,18 @@ start/stop/status/lock/unlock`. Design in `AGENT-DESIGN.md`.
   - **Dependencies**: Task 7.
   - **Implementation Guidance**: Ties into the biometric path (Task 12) but the
     log itself is independent and ships with the agent.
-  - **Validation**: Every sensitive-env access appends an entry; a prod/signing
-    unlock requires explicit approval; a same-UID process cannot silently rewrite
-    the log in place (or tampering is detectable).
+  - **Log done:** `src/agent/auditLog.js` — append-only, **hash-chained**
+    (`verifyAuditLog` detects any in-place edit / splice), resumes across daemon
+    restarts. Wired into `sessionManager.js` (records unlock incl. rejected,
+    get-env with its source, explicit lock, auto-lock — metadata only, never
+    values) and surfaced by `vault env agent audit [--verify]`.
+  - **Remaining:** per-release **biometric approval** for sensitive envs (needs
+    Secure Enclave / Touch ID — Task 12) and **PID/binary attribution** (needs
+    `SO_PEERCRED` peer-cred, the native half of G24). The log records what is
+    knowable server-side without lying about client identity.
+  - **Validation**: ✅ Every unlock/env-access/lock appends an entry; tampering
+    (edit or splice) is detected by `--verify`; values never appear in the log.
+    ⏳ Sensitive-env approval gate pending Task 12.
 
 - [ ] **Task 10: Signing-asset delivery** (G8)
   - **Goal**: Extend blob materialization (Task 2) to the signing set — Apple

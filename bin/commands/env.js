@@ -47,6 +47,11 @@ import { createMountService } from '../../src/agent/mountService.js';
 import { watchMount } from '../../src/agent/mountWatch.js';
 import { createSpawnService } from '../../src/agent/spawnService.js';
 import {
+  AuditLog,
+  verifyAuditLog,
+  resumeAuditChain,
+} from '../../src/agent/auditLog.js';
+import {
   agentPaths,
   startDaemonServer,
   sendRequest,
@@ -1184,7 +1189,7 @@ export function registerEnvCommand(program) {
           console.error(chalk.red(`Vault file does not exist at ${vaultPath}`));
           process.exit(1);
         }
-        const { socket, pid } = agentPaths();
+        const { dir, socket, pid } = agentPaths();
 
         // Key custody (7a): decrypt on unlock, hold the resolver in memory.
         // 7b swaps this for a hardware-backed decrypt-on-demand KEK.
@@ -1198,11 +1203,25 @@ export function registerEnvCommand(program) {
           return (name) => resolver.resolveEnvironment(name);
         };
 
+        // Append-only, hash-chained audit log (G27), resumed across restarts so
+        // the chain is continuous. Metadata only — never values.
+        fs.ensureDirSync(dir);
+        fs.chmodSync(dir, 0o700);
+        const auditPath = path.join(dir, 'audit.log');
+        const auditLines = fs.existsSync(auditPath)
+          ? fs.readFileSync(auditPath, 'utf-8').split('\n')
+          : [];
+        const audit = new AuditLog({
+          sink: (line) => fs.appendFileSync(auditPath, line, { mode: 0o600 }),
+          ...resumeAuditChain(auditLines),
+        });
+
         // Live mounts are tracked so a lock (soft→hard) / shutdown wipes them,
         // and watched so a build deleting one re-materializes it.
         const registry = new MountRegistry({ secureDelete, watch: watchMount });
         const session = new SessionManager({
           onWipeMounts: () => registry.wipeAll(),
+          audit,
         });
         const mounts = createMountService({
           session,
@@ -1573,6 +1592,62 @@ export function registerEnvCommand(program) {
       } finally {
         process.off('SIGINT', onSignal);
         process.off('SIGTERM', onSignal);
+      }
+    });
+
+  agent
+    .command('audit')
+    .description('Show the agent audit log (append-only, hash-chained)')
+    .option('--verify', 'Verify the hash chain instead of printing entries')
+    .action((options) => {
+      const { dir } = agentPaths();
+      const auditPath = path.join(dir, 'audit.log');
+      if (!fs.existsSync(auditPath)) {
+        log(chalk.gray('no audit log yet.'));
+        return;
+      }
+      const lines = fs
+        .readFileSync(auditPath, 'utf-8')
+        .split('\n')
+        .filter((l) => l.trim());
+
+      if (options.verify) {
+        const res = verifyAuditLog(lines);
+        if (res.ok) {
+          log(
+            chalk.green(
+              `audit log OK — ${lines.length} entries, head ${res.head.slice(0, 12)}…`
+            )
+          );
+        } else {
+          console.error(
+            chalk.red(
+              `audit log TAMPERED at entry ${res.brokenAt} (${res.reason})`
+            )
+          );
+          process.exit(1);
+        }
+        return;
+      }
+
+      for (const line of lines) {
+        let entry;
+        try {
+          entry = JSON.parse(line);
+        } catch {
+          log(chalk.red(`  <unparseable> ${line}`));
+          continue;
+        }
+        const e = entry.event || {};
+        const parts = [
+          new Date(entry.ts).toISOString(),
+          e.type,
+          e.env ? e.env : '',
+          e.result ? `(${e.result})` : '',
+          e.source ? `via ${e.source}` : '',
+          e.tier ? `[${e.tier}]` : '',
+        ].filter(Boolean);
+        log(parts.join('  '));
       }
     });
 

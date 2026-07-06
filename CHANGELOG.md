@@ -38,6 +38,14 @@ Design detail for the environment-vault (`vault env`) features lives in
   child's stdout/stderr are relayed back to the CLI, the exit code propagates,
   and Ctrl-C tears the child down. Refused while locked (I2); `--merge` layers
   vault vars over the full env (default is `clean`, allowlist only).
+- **`vault env agent audit [--verify]`** — append-only, **hash-chained** audit
+  log (G27): every unlock (including rejected ones), env access (with its
+  source — mount/exec/raw), explicit lock, and auto-lock is recorded with
+  metadata only (type, env name, result — **never values**). Each entry hashes
+  the previous one, so editing or deleting any earlier entry is detectable;
+  `--verify` walks the chain and fails on the first break. The chain resumes
+  across daemon restarts. (Per-release biometric approval and client PID/binary
+  attribution need Secure Enclave / peer-cred and remain 7b.)
 - **Preview caveat:** the key is held in memory and the process is **not yet
   hardened** (no `mlock`/anti-ptrace/HW-KEK, no peer-cred) — those land in 7b and
   are required before production use. Spawn-based delivery (G24) is in via

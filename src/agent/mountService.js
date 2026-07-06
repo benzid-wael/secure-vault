@@ -40,7 +40,7 @@ export function createMountService({ session, registry, cwd, ops }) {
     // Render pulls vars through the session each time, so a locked session
     // refuses the mount and a watch-triggered rebuild uses current values.
     const renderEntry = (entry) => {
-      const got = session.handle({ verb: 'get-env', env });
+      const got = session.handle({ verb: 'get-env', env, source: 'mount' });
       if (!got.ok) throw new Error(got.error);
       return renderDeliverEntry(entry, got.data, readTemplate);
     };

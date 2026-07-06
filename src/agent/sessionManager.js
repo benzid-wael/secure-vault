@@ -30,10 +30,13 @@ export class SessionManager {
     config = DEFAULT_LOCK_CONFIG,
     clock = () => Date.now(),
     onWipeMounts = () => {},
+    audit = { record: () => {} },
   } = {}) {
     this._config = config;
     this._clock = clock;
     this._onWipeMounts = onWipeMounts;
+    // Append-only audit trail (G27). Records metadata only, never values.
+    this._audit = audit;
     this._lock = initialState();
     // Key custody: an env-name -> resolved-vars closure, set on unlock and
     // dropped on any lock. In 7a the caller decrypts the vault and passes this
@@ -52,6 +55,15 @@ export class SessionManager {
     if (effects.dropKey) this._resolveEnv = null;
   }
 
+  /** Record an audit event; auditing must never throw out of a session op. */
+  _rec(event) {
+    try {
+      this._audit.record(event);
+    } catch {
+      /* best-effort */
+    }
+  }
+
   /**
    * Acquire the session. `resolveEnv(name)` returns that env's resolved vars (or
    * throws if the env is unknown). This is the user-authenticated action that
@@ -64,11 +76,18 @@ export class SessionManager {
     const { state } = lockUnlock(this._lock, now);
     this._lock = state;
     this._resolveEnv = resolveEnv;
+    this._rec({ type: 'unlock', result: 'ok' });
     return { ok: true };
+  }
+
+  /** Record a rejected unlock (bad password) — the daemon catches these. */
+  noteFailedUnlock() {
+    this._rec({ type: 'unlock', result: 'refused' });
   }
 
   /** Explicit hard lock (also used for sleep / screen-lock): wipe + drop key. */
   lock() {
+    this._rec({ type: 'lock', result: 'ok' });
     const { state, effects } = hardLock(this._lock);
     this._lock = state;
     this._applyEffects(effects);
@@ -80,6 +99,14 @@ export class SessionManager {
     const { state, effects } = evaluate(this._lock, now, this._config);
     this._lock = state;
     this._applyEffects(effects);
+    // A real auto-lock transition (idle/lifetime) — distinct from an explicit
+    // `lock()`, which records its own event and doesn't route through tick.
+    if (effects.dropKey || effects.wipeMounts) {
+      this._rec({
+        type: 'auto-lock',
+        tier: effects.wipeMounts ? 'hard' : 'soft',
+      });
+    }
     return effects;
   }
 
@@ -116,10 +143,18 @@ export class SessionManager {
   }
 
   _getEnv(req) {
+    // `source` (mount / exec / undefined for a raw get-env) enriches the audit
+    // trail without ever recording the resolved values.
+    const source = req && typeof req.source === 'string' ? req.source : null;
+    const audit = (result) =>
+      this._rec({ type: 'get-env', env: req && req.env, result, source });
+
     if (!canServeNewRequest(this._lock)) {
+      audit('refused');
       return { ok: false, error: 'locked' };
     }
     if (!req.env || typeof req.env !== 'string') {
+      audit('error');
       return { ok: false, error: 'get-env requires an "env" name' };
     }
 
@@ -127,8 +162,11 @@ export class SessionManager {
     try {
       vars = this._resolveEnv(req.env);
     } catch (err) {
+      audit('error');
       return { ok: false, error: err.message };
     }
+
+    audit('ok');
 
     // Deliberately NOT recording activity: a build reading its env must not keep
     // the session alive (G28).
