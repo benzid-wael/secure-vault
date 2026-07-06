@@ -566,7 +566,7 @@ start/stop/status/lock/unlock`. Design in `AGENT-DESIGN.md`.
     envs via the protocol; `agent status` exposes no values; core dumps disabled
     and ptrace denied on-platform; idle/sleep triggers lock per Task 6.
 
-- [ ] **Task 8: `mount` consumes the delivery manifest** (G11, G18, G26)
+- [x] **Task 8: `mount` consumes the delivery manifest** (G11, G18, G26) — **DONE**
   - **Goal**: Replace `export >` with `mount <env>` that reads the Task-3
     manifest, fans out every artifact, watches them, and wipes on secure
     shutdown/lock.
@@ -579,10 +579,20 @@ start/stop/status/lock/unlock`. Design in `AGENT-DESIGN.md`.
   - **Implementation Guidance**: Unifies with `apply` so one manifest drives both
     v1.8 file delivery and v2 mount. The warning copy must state the B→C posture
     downgrade explicitly.
-  - **Validation**: One `mount` produces every manifest artifact with correct
-    perms; lock wipes all live mounts per Task 6; persistent mount requires the
-    explicit flag and prints the warning; without it the GUI path defaults to
-    wrapped run-scoped delivery.
+  - **Done**: `vault env agent mount|mounts|unmount` (`bin/commands/env.js`) over
+    `src/agent/mountService.js` (fans the Task-3 manifest out through the
+    request-scoped session — refused while locked, I2), `src/agent/mountRegistry.js`
+    (tracks the mount set, wiped as a group on hard lock/stop per Task 6), and
+    `src/agent/mountWatch.js` (re-materializes a mount a build deletes; stopped
+    before any secure delete so an unmount/wipe is never re-created). `mount`
+    requires `--force`; without it the CLI refuses and points to `vault env run`
+    (mode B). Reuses `normalizeManifest`/`renderDeliverEntry`/`writeArtifact`,
+    not a separate `--path` model.
+  - **Validation**: ✅ One `mount` produces every manifest artifact; hard lock
+    wipes all live mounts (integration test); a mount deleted out from under a
+    build is re-materialized (integration + `mountWatch` unit tests); mount is
+    refused without `--force` and before unlock; the template _source_ survives a
+    wipe.
 
 - [ ] **Task 9: Audit log + per-release approval for sensitive envs** (G27)
   - **Goal**: Append-only audit log (env, PID, requesting binary, timestamp) and

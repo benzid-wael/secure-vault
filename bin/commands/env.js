@@ -44,6 +44,7 @@ import { EnvironmentResolver } from '../../src/electron/services/EnvironmentReso
 import { SessionManager } from '../../src/agent/sessionManager.js';
 import { MountRegistry } from '../../src/agent/mountRegistry.js';
 import { createMountService } from '../../src/agent/mountService.js';
+import { watchMount } from '../../src/agent/mountWatch.js';
 import {
   agentPaths,
   startDaemonServer,
@@ -1195,8 +1196,9 @@ export function registerEnvCommand(program) {
           return (name) => resolver.resolveEnvironment(name);
         };
 
-        // Live mounts are tracked so a lock (soft→hard) / shutdown wipes them.
-        const registry = new MountRegistry({ secureDelete });
+        // Live mounts are tracked so a lock (soft→hard) / shutdown wipes them,
+        // and watched so a build deleting one re-materializes it.
+        const registry = new MountRegistry({ secureDelete, watch: watchMount });
         const session = new SessionManager({
           onWipeMounts: () => registry.wipeAll(),
         });
@@ -1381,7 +1383,24 @@ export function registerEnvCommand(program) {
     .command('mount')
     .description('Materialize the .vaultrc manifest as live files (opt-in)')
     .argument('[envName]', 'Environment (or .vaultrc "env" / VAULT_ENV)')
-    .action(async (envArg) => {
+    .option(
+      '--force',
+      'Acknowledge the highest-risk mode and mount anyway (required)'
+    )
+    .action(async (envArg, options) => {
+      // Persistent mount (mode C) is opt-in behind an explicit flag: the default
+      // GUI path is run-scoped delivery (mode B). See SPEC §13.5 / gap G26.
+      if (!options.force) {
+        console.error(
+          chalk.red(
+            'Refusing to mount without --force. mount is the highest-risk mode: ' +
+              'plaintext files live for the whole session, readable by any ' +
+              'same-UID process. Prefer `vault env run` for scoped delivery; ' +
+              're-run with --force to mount anyway.'
+          )
+        );
+        process.exit(1);
+      }
       const { socket } = agentPaths();
       if (!(await isDaemonRunning(socket))) {
         console.error(

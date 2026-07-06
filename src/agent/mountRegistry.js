@@ -2,26 +2,35 @@
  * MountRegistry — tracks the files the agent has materialized for live mounts so
  * they can be wiped as a set on lock / unmount (SPEC §13.5, G26).
  *
- * Pure bookkeeping: it holds absolute paths and a per-path `rebuild` closure
- * (used by the daemon's file-watch to re-materialize a mount deleted out from
- * under a build), and wipes via an injected `secureDelete` so it is unit-testable
+ * Bookkeeping over the mount lifecycle: it holds absolute paths, each with its
+ * `rebuild` closure and (when a `watch` function is injected) the live file-watch
+ * that re-materializes the mount if a build deletes it. It wipes via an injected
+ * `secureDelete` and watches via an injected `watch`, so it is unit-testable
  * without touching disk. It never renders or resolves anything itself.
+ *
+ * The watch is always stopped *before* a secure delete, so an intentional
+ * unmount / lock-wipe is never re-created by its own watcher.
  */
 export class MountRegistry {
-  constructor({ secureDelete }) {
+  constructor({ secureDelete, watch = null }) {
     if (typeof secureDelete !== 'function') {
       throw new TypeError(
         'MountRegistry requires a secureDelete(path) function'
       );
     }
     this._secureDelete = secureDelete;
-    /** absPath -> rebuild() */
+    // Optional (absPath, rebuild) => stop() — arms a file-watch per mount.
+    this._watch = typeof watch === 'function' ? watch : null;
+    /** absPath -> { rebuild, stop } */
     this._entries = new Map();
   }
 
-  /** Record a materialized artifact and how to rebuild it. */
+  /** Record a materialized artifact and how to rebuild it; arm its watch. */
   add(absPath, rebuild = () => {}) {
-    this._entries.set(absPath, rebuild);
+    const prior = this._entries.get(absPath);
+    if (prior && prior.stop) prior.stop();
+    const stop = this._watch ? this._watch(absPath, rebuild) : null;
+    this._entries.set(absPath, { rebuild, stop });
   }
 
   /** Absolute paths of every currently-tracked mount. */
@@ -38,21 +47,25 @@ export class MountRegistry {
     return this._entries.has(absPath);
   }
 
-  /** The rebuild closure for a path (used by file-watch), or undefined. */
+  /** The rebuild closure for a path (used by the watch), or undefined. */
   rebuildFor(absPath) {
-    return this._entries.get(absPath);
+    const entry = this._entries.get(absPath);
+    return entry ? entry.rebuild : undefined;
   }
 
-  /** Securely wipe and forget a single mount. */
+  /** Securely wipe and forget a single mount (stopping its watch first). */
   remove(absPath) {
-    if (!this._entries.has(absPath)) return;
+    const entry = this._entries.get(absPath);
+    if (!entry) return;
+    if (entry.stop) entry.stop();
     this._secureDelete(absPath);
     this._entries.delete(absPath);
   }
 
   /** Securely wipe and forget every mount (the lock / shutdown path). */
   wipeAll() {
-    for (const absPath of this._entries.keys()) {
+    for (const [absPath, entry] of this._entries) {
+      if (entry.stop) entry.stop();
       this._secureDelete(absPath);
     }
     this._entries.clear();

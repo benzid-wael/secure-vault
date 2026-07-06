@@ -25,8 +25,12 @@ Design detail for the environment-vault (`vault env`) features lives in
   `mounts` lists them, `unmount` securely wipes them (all, or one `--path`).
   Mounting pulls vars through the request-scoped session, so it is refused while
   locked (I2), and every mount is tracked so a hard lock / stop wipes the set as
-  a group (G26). `mount` prints the highest-risk-mode warning up front — prefer
-  `vault env run` for scoped delivery.
+  a group (G26). Mounts are **watched**: a file a build deletes out from under it
+  is re-materialized (the watch is stopped before any secure delete, so an
+  unmount / wipe is never re-created). `mount` is **opt-in behind `--force`** and
+  prints the highest-risk-mode warning — without it the CLI refuses and points to
+  `vault env run` for scoped delivery (the default GUI path, mode B). Completes
+  gap-doc Task 8 (G11/G18/G26).
 - **Preview caveat:** the key is held in memory and the process is **not yet
   hardened** (no `mlock`/anti-ptrace/HW-KEK, no peer-cred, no spawn-based
   delivery) — those land in 7b and are required before production use. See

@@ -11,6 +11,16 @@ const CLI = path.resolve(__dirname, '../../../bin/cli.js');
 const NODE = process.execPath;
 const PASSWORD = 'TestVault123!@#';
 
+const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+async function waitFor(pred, { timeout = 4000, interval = 25 } = {}) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (pred()) return true;
+    await delay(interval);
+  }
+  return false;
+}
+
 let workDir;
 let agentDir;
 let vaultPath;
@@ -119,7 +129,7 @@ describe('vault env agent (integration, spawns a real daemon)', () => {
     cli(['agent', 'start', '-v', vaultPath]);
     cli(['agent', 'unlock'], { withPassword: true });
 
-    const mount = cli(['agent', 'mount']);
+    const mount = cli(['agent', 'mount', '--force']);
     expect(mount.status).toBe(0);
     expect(mount.stdout).toMatch(/mounted .env.mounted/);
     expect(mount.stdout).toMatch(/highest-risk/); // the opt-in warning
@@ -141,10 +151,37 @@ describe('vault env agent (integration, spawns a real daemon)', () => {
     expect(fs.existsSync(path.join(workDir, 'app.xcconfig.vtpl'))).toBe(true);
   });
 
-  it('mount is refused before unlock (I2)', () => {
+  it('mount without --force is refused (opt-in gate, G26)', () => {
     cli(['agent', 'start', '-v', vaultPath]);
+    cli(['agent', 'unlock'], { withPassword: true });
+
     const r = cli(['agent', 'mount']);
     expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/--force/);
+    // nothing was materialized
+    expect(fs.existsSync(path.join(workDir, '.env.mounted'))).toBe(false);
+  });
+
+  it('mount is refused before unlock (I2)', () => {
+    cli(['agent', 'start', '-v', vaultPath]);
+    const r = cli(['agent', 'mount', '--force']);
+    expect(r.status).not.toBe(0);
     expect(r.stderr).toMatch(/locked/);
+  });
+
+  it('re-materializes a mounted file deleted out from under a build', async () => {
+    cli(['agent', 'start', '-v', vaultPath]);
+    cli(['agent', 'unlock'], { withPassword: true });
+    cli(['agent', 'mount', '--force']);
+
+    const mounted = path.join(workDir, '.env.mounted');
+    expect(fs.existsSync(mounted)).toBe(true);
+
+    fs.rmSync(mounted); // a build step clobbers the mount
+    const restored = await waitFor(() => fs.existsSync(mounted));
+    expect(restored).toBe(true);
+    expect(fs.readFileSync(mounted, 'utf-8')).toBe(
+      'API_URL=https://api.example.com\n'
+    );
   });
 });
