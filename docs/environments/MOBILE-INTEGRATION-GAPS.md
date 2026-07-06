@@ -554,7 +554,8 @@ start/stop/status/lock/unlock`. Design in `AGENT-DESIGN.md`.
     peer-cred (the socket-hardening half of G24), HW-backed KEK + decrypt-on-demand
     (G25), sensitive-env biometric approval (the other half of G27, needs Task 12).
     Node can't do the hardening or peer-cred natively — needs a small addon or a
-    launchd/entitlements wrapper.
+    launchd/entitlements wrapper. **See `AGENT-DESIGN.md` §8 for a plain-language
+    breakdown of each native gap and exactly why pure Node can't reach it.**
   - **Goal**: `vault env agent start` + session-based unlock + `agent lock|unlock`
     (launchd) so GUI builds never prompt, satisfying the §4-I invariants from
     day one.

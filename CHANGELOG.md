@@ -52,6 +52,14 @@ Design detail for the environment-vault (`vault env`) features lives in
   `agent exec`; peer-cred on the socket is still pending. See
   `docs/environments/AGENT-DESIGN.md` §7.
 
+### Docs
+
+- **`AGENT-DESIGN.md` §8 — "Why the rest of 7b can't ship in pure Node"**: a
+  plain-language breakdown of each deferred native capability (peer-cred, no
+  core dumps, anti-debug, `mlock`, hardened runtime, HW-backed KEK, biometric
+  approval) — what it is, the attack it blocks, why Node has no API for it, and
+  what it would take (native addon / launchd / entitlements / signing).
+
 ## [0.1.9] — 2026-07-05
 
 ### Added — v1.9 · Scaffolding & DX
