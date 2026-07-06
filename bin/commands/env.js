@@ -42,6 +42,8 @@ import { getPreset, scaffoldPreset } from './envScaffold.js';
 import { checkStructure, checkResolution, hasErrors } from './envDoctor.js';
 import { EnvironmentResolver } from '../../src/electron/services/EnvironmentResolver.js';
 import { SessionManager } from '../../src/agent/sessionManager.js';
+import { MountRegistry } from '../../src/agent/mountRegistry.js';
+import { createMountService } from '../../src/agent/mountService.js';
 import {
   agentPaths,
   startDaemonServer,
@@ -1193,11 +1195,32 @@ export function registerEnvCommand(program) {
           return (name) => resolver.resolveEnvironment(name);
         };
 
-        const session = new SessionManager();
+        // Live mounts are tracked so a lock (soft→hard) / shutdown wipes them.
+        const registry = new MountRegistry({ secureDelete });
+        const session = new SessionManager({
+          onWipeMounts: () => registry.wipeAll(),
+        });
+        const mounts = createMountService({
+          session,
+          registry,
+          cwd: process.cwd(),
+          ops: {
+            findProjectConfig,
+            normalizeManifest,
+            renderDeliverEntry,
+            writeArtifact,
+            readFile: (p) => fs.readFileSync(p, 'utf-8'),
+          },
+        });
         const server = await startDaemonServer({
           session,
           socketPath: socket,
           unlockVault,
+          handlers: {
+            mount: mounts.mount,
+            mounts: mounts.list,
+            unmount: mounts.unmount,
+          },
           onShutdown: () => {
             fs.removeSync(pid);
             process.exit(0);
@@ -1348,6 +1371,91 @@ export function registerEnvCommand(program) {
       try {
         await sendRequest(socket, { verb: 'lock' });
         log(chalk.green('agent locked.'));
+      } catch (error) {
+        console.error(chalk.red(error.message));
+        process.exit(1);
+      }
+    });
+
+  agent
+    .command('mount')
+    .description('Materialize the .vaultrc manifest as live files (opt-in)')
+    .argument('[envName]', 'Environment (or .vaultrc "env" / VAULT_ENV)')
+    .action(async (envArg) => {
+      const { socket } = agentPaths();
+      if (!(await isDaemonRunning(socket))) {
+        console.error(
+          chalk.red(
+            'agent is not running. Start it with `vault env agent start`.'
+          )
+        );
+        process.exit(1);
+      }
+      try {
+        const { config } = findProjectConfig();
+        const env = envArg ?? config.env ?? process.env.VAULT_ENV;
+        if (!env) {
+          console.error(
+            chalk.red('No environment (arg, .vaultrc "env", or VAULT_ENV).')
+          );
+          process.exit(1);
+        }
+        log(
+          chalk.yellow(
+            'mount is the highest-risk mode: plaintext files live for the whole ' +
+              'session, readable by any same-UID process. Prefer `vault env run` ' +
+              'for scoped delivery. Files are wiped on lock/stop.'
+          )
+        );
+        const res = await sendRequest(socket, { verb: 'mount', env });
+        if (!res.ok) {
+          console.error(chalk.red(res.error));
+          process.exit(1);
+        }
+        for (const p of res.data.mounted) log(chalk.green(`mounted ${p}`));
+      } catch (error) {
+        console.error(chalk.red(error.message));
+        process.exit(1);
+      }
+    });
+
+  agent
+    .command('mounts')
+    .description('List the files the agent currently has mounted')
+    .action(async () => {
+      const { socket } = agentPaths();
+      if (!(await isDaemonRunning(socket))) {
+        log(chalk.gray('agent is not running.'));
+        return;
+      }
+      try {
+        const res = await sendRequest(socket, { verb: 'mounts' });
+        const list = (res.data && res.data.mounts) || [];
+        if (list.length === 0) log(chalk.gray('no live mounts.'));
+        else for (const p of list) log(p);
+      } catch (error) {
+        console.error(chalk.red(error.message));
+        process.exit(1);
+      }
+    });
+
+  agent
+    .command('unmount')
+    .description('Securely remove mounted files (all, or one --path)')
+    .option('--path <path>', 'Unmount a single path (default: all)')
+    .action(async (options) => {
+      const { socket } = agentPaths();
+      if (!(await isDaemonRunning(socket))) {
+        log(chalk.gray('agent is not running.'));
+        return;
+      }
+      try {
+        await sendRequest(socket, { verb: 'unmount', path: options.path });
+        log(
+          chalk.green(
+            options.path ? `unmounted ${options.path}` : 'unmounted all.'
+          )
+        );
       } catch (error) {
         console.error(chalk.red(error.message));
         process.exit(1);

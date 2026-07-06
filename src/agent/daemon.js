@@ -45,6 +45,7 @@ export async function startDaemonServer({
   unlockVault,
   tickIntervalMs = 5000,
   onShutdown = () => {},
+  handlers = {},
 }) {
   await fs.ensureDir(path.dirname(socketPath));
   await fs.chmod(path.dirname(socketPath), 0o700);
@@ -52,6 +53,11 @@ export async function startDaemonServer({
   await fs.remove(socketPath);
 
   const dispatch = async (req) => {
+    // Injected control handlers (e.g. mount/mounts/unmount) take precedence over
+    // the built-in verbs; they capture the session + registry in their closures.
+    if (req && handlers[req.verb]) {
+      return handlers[req.verb](req);
+    }
     switch (req && req.verb) {
       case 'unlock':
         try {

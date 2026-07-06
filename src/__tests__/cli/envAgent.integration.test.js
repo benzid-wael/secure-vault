@@ -19,19 +19,40 @@ function cli(args, { withPassword = false } = {}) {
   const env = { ...process.env, VAULT_AGENT_DIR: agentDir };
   if (withPassword) env.VAULT_ENV_PASSWORD = PASSWORD;
   else delete env.VAULT_ENV_PASSWORD;
-  return spawnSync(NODE, [CLI, 'env', ...args], { encoding: 'utf8', env });
+  // Run in workDir so the spawned daemon inherits it as cwd and finds .vaultrc.
+  return spawnSync(NODE, [CLI, 'env', ...args], {
+    encoding: 'utf8',
+    env,
+    cwd: workDir,
+  });
 }
 
 beforeEach(() => {
   workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-agent-cli-'));
   agentDir = path.join(workDir, 'runtime');
   vaultPath = path.join(workDir, 'test.env.vault');
+  fs.mkdirSync(path.join(workDir, '.git')); // stop .vaultrc walk-up here
   cli(['init', '-v', vaultPath], { withPassword: true });
   cli(
     ['set', 'API_URL', 'https://api.example.com', '-e', 'dev', '-v', vaultPath],
     {
       withPassword: true,
     }
+  );
+  fs.writeFileSync(
+    path.join(workDir, 'app.xcconfig.vtpl'),
+    'API_URL = {{API_URL}}\n'
+  );
+  fs.writeFileSync(
+    path.join(workDir, '.vaultrc'),
+    JSON.stringify({
+      env: 'dev',
+      vault: vaultPath,
+      deliver: [
+        { path: '.env.mounted', format: 'dotenv', keys: ['API_URL'] },
+        { template: 'app.xcconfig.vtpl' },
+      ],
+    })
   );
 });
 
@@ -92,5 +113,38 @@ describe('vault env agent (integration, spawns a real daemon)', () => {
     const second = cli(['agent', 'start', '-v', vaultPath]);
     expect(second.status).toBe(0);
     expect(second.stdout).toMatch(/already running/);
+  });
+
+  it('mount materializes manifest files; lock wipes them', () => {
+    cli(['agent', 'start', '-v', vaultPath]);
+    cli(['agent', 'unlock'], { withPassword: true });
+
+    const mount = cli(['agent', 'mount']);
+    expect(mount.status).toBe(0);
+    expect(mount.stdout).toMatch(/mounted .env.mounted/);
+    expect(mount.stdout).toMatch(/highest-risk/); // the opt-in warning
+
+    expect(fs.readFileSync(path.join(workDir, '.env.mounted'), 'utf-8')).toBe(
+      'API_URL=https://api.example.com\n'
+    );
+    expect(fs.readFileSync(path.join(workDir, 'app.xcconfig'), 'utf-8')).toBe(
+      'API_URL = https://api.example.com\n'
+    );
+
+    expect(cli(['agent', 'mounts']).stdout).toMatch(/app.xcconfig/);
+
+    // Hard lock wipes the mounts.
+    cli(['agent', 'lock']);
+    expect(fs.existsSync(path.join(workDir, '.env.mounted'))).toBe(false);
+    expect(fs.existsSync(path.join(workDir, 'app.xcconfig'))).toBe(false);
+    // template source survives
+    expect(fs.existsSync(path.join(workDir, 'app.xcconfig.vtpl'))).toBe(true);
+  });
+
+  it('mount is refused before unlock (I2)', () => {
+    cli(['agent', 'start', '-v', vaultPath]);
+    const r = cli(['agent', 'mount']);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/locked/);
   });
 });
