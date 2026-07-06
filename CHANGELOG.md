@@ -31,9 +31,17 @@ Design detail for the environment-vault (`vault env`) features lives in
   prints the highest-risk-mode warning — without it the CLI refuses and points to
   `vault env run` for scoped delivery (the default GUI path, mode B). Completes
   gap-doc Task 8 (G11/G18/G26).
+- **`vault env agent exec <env> -- <cmd>`** — spawn-based delivery (G24): the
+  daemon runs the command as its own child with the scoped env injected, so the
+  secret **never crosses the socket and never touches disk** — it lives only in
+  the child's memory for the run (§5.4 mode A, the safest delivery mode). The
+  child's stdout/stderr are relayed back to the CLI, the exit code propagates,
+  and Ctrl-C tears the child down. Refused while locked (I2); `--merge` layers
+  vault vars over the full env (default is `clean`, allowlist only).
 - **Preview caveat:** the key is held in memory and the process is **not yet
-  hardened** (no `mlock`/anti-ptrace/HW-KEK, no peer-cred, no spawn-based
-  delivery) — those land in 7b and are required before production use. See
+  hardened** (no `mlock`/anti-ptrace/HW-KEK, no peer-cred) — those land in 7b and
+  are required before production use. Spawn-based delivery (G24) is in via
+  `agent exec`; peer-cred on the socket is still pending. See
   `docs/environments/AGENT-DESIGN.md` §7.
 
 ## [0.1.9] — 2026-07-05

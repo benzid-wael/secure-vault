@@ -19,6 +19,14 @@ import fs from 'fs-extra';
  */
 
 /**
+ * Sentinel an injected handler returns to signal "I have taken over this
+ * connection and will write my own (possibly streaming) responses" — the
+ * transport then skips its default one-shot response write. Used by the spawn
+ * service to relay a child's stdout/stderr back over the socket.
+ */
+export const STREAMING = Symbol('vault-agent-streaming');
+
+/**
  * Per-user runtime paths for the agent (socket + pidfile in a 0700 dir).
  * `VAULT_AGENT_DIR` overrides the location — useful for tests and for relocating
  * the runtime dir off a noexec/again tmpfs.
@@ -52,11 +60,13 @@ export async function startDaemonServer({
   // Clear a stale socket from a prior crash so bind() succeeds.
   await fs.remove(socketPath);
 
-  const dispatch = async (req) => {
-    // Injected control handlers (e.g. mount/mounts/unmount) take precedence over
-    // the built-in verbs; they capture the session + registry in their closures.
+  const dispatch = async (req, ctx) => {
+    // Injected control handlers (e.g. mount/mounts/unmount, exec) take precedence
+    // over the built-in verbs; they capture the session + registry in their
+    // closures. A streaming handler uses `ctx` to write its own responses and
+    // returns STREAMING so the transport skips the default response write.
     if (req && handlers[req.verb]) {
-      return handlers[req.verb](req);
+      return handlers[req.verb](req, ctx);
     }
     switch (req && req.verb) {
       case 'unlock':
@@ -82,6 +92,10 @@ export async function startDaemonServer({
   const server = net.createServer((conn) => {
     conn.setEncoding('utf8');
     let buf = '';
+    const ctx = {
+      conn,
+      send: (obj) => conn.write(`${JSON.stringify(obj)}\n`),
+    };
     conn.on('data', async (chunk) => {
       buf += chunk;
       let nl;
@@ -91,11 +105,12 @@ export async function startDaemonServer({
         if (!line.trim()) continue;
         let res;
         try {
-          res = await dispatch(JSON.parse(line));
+          res = await dispatch(JSON.parse(line), ctx);
         } catch (err) {
           res = { ok: false, error: `bad request: ${err.message}` };
         }
-        conn.write(`${JSON.stringify(res)}\n`);
+        // A streaming handler owns its own writes; don't double-respond.
+        if (res !== STREAMING) conn.write(`${JSON.stringify(res)}\n`);
       }
     });
     conn.on('error', () => {
@@ -169,6 +184,82 @@ export function sendRequest(socketPath, req, { timeoutMs = 5000 } = {}) {
           : err
       );
     });
+  });
+}
+
+/**
+ * Open a streaming request: send one request, relay every intermediate
+ * `{ stream, chunk }` event to `onEvent`, and resolve with the terminal
+ * `{ ok, ... }` message. Used by `agent exec` to stream a child's output.
+ *
+ * When `signal` aborts (the CLI caught Ctrl-C), the connection is destroyed —
+ * the daemon takes the child down on close — and the promise resolves with a
+ * conventional 130 exit so the caller can propagate it.
+ */
+export function streamRequest(
+  socketPath,
+  req,
+  { onEvent = () => {}, signal } = {}
+) {
+  return new Promise((resolve, reject) => {
+    const conn = net.connect(socketPath);
+    let buf = '';
+    let settled = false;
+    const settle = (fn, val) => {
+      if (settled) return;
+      settled = true;
+      fn(val);
+    };
+
+    const onAbort = () => {
+      try {
+        conn.destroy();
+      } catch {
+        /* already gone */
+      }
+      settle(resolve, { ok: true, data: { code: 130, signal: 'SIGINT' } });
+    };
+    if (signal) {
+      if (signal.aborted) return onAbort();
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    conn.setEncoding('utf8');
+    conn.on('connect', () => conn.write(`${JSON.stringify(req)}\n`));
+    conn.on('data', (chunk) => {
+      buf += chunk;
+      let nl;
+      while ((nl = buf.indexOf('\n')) !== -1) {
+        const line = buf.slice(0, nl);
+        buf = buf.slice(nl + 1);
+        if (!line.trim()) continue;
+        let msg;
+        try {
+          msg = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (msg && msg.stream) {
+          onEvent(msg);
+          continue;
+        }
+        settle(resolve, msg);
+        conn.end();
+        return;
+      }
+    });
+    conn.on('error', (err) => {
+      const code = err && 'code' in err ? err.code : undefined;
+      settle(
+        reject,
+        code === 'ENOENT' || code === 'ECONNREFUSED'
+          ? new Error('agent is not running')
+          : err
+      );
+    });
+    conn.on('close', () =>
+      settle(reject, new Error('agent closed the connection'))
+    );
   });
 }
 

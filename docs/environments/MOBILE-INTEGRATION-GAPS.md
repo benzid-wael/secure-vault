@@ -542,9 +542,14 @@ parentheses map back to §3/§4. Versions follow the §6 sequencing
   - **7a done:** two-tier lock (`src/agent/lockState.js`), request-scoped protocol - lock enforcement (`src/agent/sessionManager.js` — G23, I2, G28), daemon over
     a 0700 Unix socket (`src/agent/daemon.js`), and `vault env agent
 start/stop/status/lock/unlock`. Design in `AGENT-DESIGN.md`.
+  - **7b in progress:** spawn-based delivery **done** — `vault env agent exec
+<env> -- <cmd>` (`src/agent/spawnService.js`) runs the build as the daemon's
+    own child with the scoped env injected, so the secret never crosses the socket
+    and never touches disk (§5.4 mode A); refused while locked (I2). Closes the
+    delivery-mechanism half of G24.
   - **7b remaining (required before production, per I3):** process hardening
     (`RLIMIT_CORE=0`, `PT_DENY_ATTACH`/`ptrace_scope`, `mlock`, hardened runtime),
-    peer-cred (G24), spawn-based delivery (G24), HW-backed KEK + decrypt-on-demand
+    peer-cred (the socket-hardening half of G24), HW-backed KEK + decrypt-on-demand
     (G25), audit log + sensitive-env approval (G27). Node can't do the hardening
     or peer-cred natively — needs a small addon or a launchd/entitlements wrapper.
   - **Goal**: `vault env agent start` + session-based unlock + `agent lock|unlock`

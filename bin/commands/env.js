@@ -45,10 +45,12 @@ import { SessionManager } from '../../src/agent/sessionManager.js';
 import { MountRegistry } from '../../src/agent/mountRegistry.js';
 import { createMountService } from '../../src/agent/mountService.js';
 import { watchMount } from '../../src/agent/mountWatch.js';
+import { createSpawnService } from '../../src/agent/spawnService.js';
 import {
   agentPaths,
   startDaemonServer,
   sendRequest,
+  streamRequest,
   isDaemonRunning,
 } from '../../src/agent/daemon.js';
 // Password-resolution helpers live in src/utils/password.js so they can be unit
@@ -1214,6 +1216,13 @@ export function registerEnvCommand(program) {
             readFile: (p) => fs.readFileSync(p, 'utf-8'),
           },
         });
+        // Spawn-based delivery: the daemon runs the build as its own child with
+        // the scoped env injected (never over the socket, never on disk).
+        const spawner = createSpawnService({
+          session,
+          spawnFn: spawn,
+          buildChildEnv,
+        });
         const server = await startDaemonServer({
           session,
           socketPath: socket,
@@ -1222,6 +1231,7 @@ export function registerEnvCommand(program) {
             mount: mounts.mount,
             mounts: mounts.list,
             unmount: mounts.unmount,
+            exec: spawner.exec,
           },
           onShutdown: () => {
             fs.removeSync(pid);
@@ -1478,6 +1488,91 @@ export function registerEnvCommand(program) {
       } catch (error) {
         console.error(chalk.red(error.message));
         process.exit(1);
+      }
+    });
+
+  agent
+    .command('exec')
+    .description(
+      'Run a command with an env the agent injects (spawn-based delivery)'
+    )
+    .argument('[envName]', 'Environment (or .vaultrc "env" / VAULT_ENV)')
+    .argument('[command...]', 'Command to run (prefer after `--`)')
+    .option(
+      '--merge',
+      'Layer vault vars over the full environment (default: clean)'
+    )
+    .action(async (envArg, commandArg, options) => {
+      // The command comes from after the `--` wall (extractRunCommand) when one
+      // was present; otherwise fall back to the positional form.
+      const command = getRunCommand() ?? commandArg;
+      if (!command || command.length === 0) {
+        console.error(
+          chalk.red(
+            'No command specified. Usage: vault env agent exec <env> -- <cmd>'
+          )
+        );
+        process.exit(1);
+      }
+
+      const { socket } = agentPaths();
+      if (!(await isDaemonRunning(socket))) {
+        console.error(
+          chalk.red(
+            'agent is not running. Start it with `vault env agent start`.'
+          )
+        );
+        process.exit(1);
+      }
+
+      let env;
+      try {
+        const { config } = findProjectConfig();
+        env = envArg ?? config.env ?? process.env.VAULT_ENV;
+      } catch {
+        env = envArg ?? process.env.VAULT_ENV;
+      }
+      if (!env) {
+        console.error(
+          chalk.red('No environment (arg, .vaultrc "env", or VAULT_ENV).')
+        );
+        process.exit(1);
+      }
+
+      // Ctrl-C tears down the connection; the daemon then kills the child.
+      const controller = new AbortController();
+      const onSignal = () => controller.abort();
+      process.on('SIGINT', onSignal);
+      process.on('SIGTERM', onSignal);
+      try {
+        const res = await streamRequest(
+          socket,
+          {
+            verb: 'exec',
+            env,
+            argv: command,
+            mode: options.merge ? 'merge' : 'clean',
+          },
+          {
+            signal: controller.signal,
+            onEvent: (msg) => {
+              const data = Buffer.from(msg.chunk, 'base64');
+              if (msg.stream === 'stderr') process.stderr.write(data);
+              else process.stdout.write(data);
+            },
+          }
+        );
+        if (!res.ok) {
+          console.error(chalk.red(res.error));
+          process.exit(1);
+        }
+        process.exit(res.data.code ?? 0);
+      } catch (error) {
+        console.error(chalk.red(error.message));
+        process.exit(1);
+      } finally {
+        process.off('SIGINT', onSignal);
+        process.off('SIGTERM', onSignal);
       }
     });
 

@@ -121,11 +121,20 @@ export function getRunCommand() {
 export function extractRunCommand(argv) {
   runCommand = null;
 
-  // Locate the `env run` subcommand (options for `run` always follow `run`).
+  // Locate the subcommand whose trailing tokens are a command to execute:
+  // `env run` or `env agent exec`. Its options always follow the subcommand.
   let runPos = -1;
   for (let i = 0; i < argv.length - 1; i++) {
     if (argv[i] === 'env' && argv[i + 1] === 'run') {
       runPos = i + 1;
+      break;
+    }
+    if (
+      argv[i] === 'env' &&
+      argv[i + 1] === 'agent' &&
+      argv[i + 2] === 'exec'
+    ) {
+      runPos = i + 2;
       break;
     }
   }

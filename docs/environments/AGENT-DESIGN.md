@@ -75,11 +75,11 @@ the security-critical transitions are unit-tested with zero platform coupling:
 
 ## 7. Slicing plan
 
-| Slice  | Scope                                                                                                              | Gaps          | Status      |
-| ------ | ------------------------------------------------------------------------------------------------------------------ | ------------- | ----------- |
-| **7a** | Lock state machine + `agent start/stop/status/lock/unlock`, in-memory key, request-scoped protocol over a 0700 UDS | G9, G23, G28  | **partial** |
-| **7b** | HW-backed KEK + decrypt-on-demand; audit log + sensitive-env approval; process hardening                           | G24, G25, G27 | not started |
-| **8**  | `mount <env>` consuming the manifest; file-watch; wipe-on-lock                                                     | G11, G18, G26 | not started |
+| Slice  | Scope                                                                                                                                | Gaps          | Status      |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------ | ------------- | ----------- |
+| **7a** | Lock state machine + `agent start/stop/status/lock/unlock`, in-memory key, request-scoped protocol over a 0700 UDS                   | G9, G23, G28  | **partial** |
+| **7b** | Spawn-based delivery (`agent exec`, **done**); HW-backed KEK + decrypt-on-demand; audit log + approval; peer-cred; process hardening | G24, G25, G27 | in progress |
+| **8**  | `mount <env>` consuming the manifest; file-watch; wipe-on-lock                                                                       | G11, G18, G26 | **done**    |
 
 ### 7a — delivered vs. deferred (be honest: this is a PREVIEW, not production)
 
@@ -100,8 +100,10 @@ over a Unix socket in a `0700` dir, socket `0600`, lock-on-shutdown) with the
 - **Peer credentials (G24)** — Node can't read `SO_PEERCRED`/`LOCAL_PEERCRED`
   without an addon. Today's defenses are the `0700` socket dir + request-scoping
   (peer-cred is a speed-bump, not a boundary, per §3).
-- **Spawn-based delivery (G24)** — 7a delivers over the socket; the
-  agent-forks-the-child model is a later refinement for `run`/`mount`.
+- **Spawn-based delivery (G24)** — **done** (`agent exec`, `spawnService.js`):
+  the daemon forks the build as its own child with the scoped env injected, so the
+  secret never crosses the socket nor touches disk. Closes the delivery-mechanism
+  half of G24; peer-cred (the socket-hardening half) is still deferred above.
 - **HW-backed KEK + decrypt-on-demand (G25)** and **audit/approval (G27)**.
 
 Because of the above, treat 7a as a **developer preview**: it proves the contract
