@@ -24,8 +24,30 @@ export default defineConfig({
         entryFileNames: 'assets/[name].[hash].js',
         chunkFileNames: 'assets/[name].[hash].js',
         assetFileNames: 'assets/[name].[hash][extname]',
+        manualChunks(id) {
+          // Split vendor libraries into separate chunks
+          if (
+            id.includes('node_modules/react') ||
+            id.includes('node_modules/react-dom')
+          ) {
+            return 'react-vendor';
+          }
+          if (
+            id.includes('node_modules/@mui') ||
+            id.includes('node_modules/@emotion')
+          ) {
+            return 'ui-vendor';
+          }
+          if (
+            id.includes('node_modules/crypto-js') ||
+            id.includes('node_modules/bcryptjs')
+          ) {
+            return 'crypto-vendor';
+          }
+        },
       },
     },
+    chunkSizeWarningLimit: 600, // Adjust limit to account for initial bundle
   },
   server: {
     port: 3000,

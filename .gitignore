@@ -35,3 +35,7 @@ config.bat
 # docs
 *.pdf
 *.docx
+
+# vitepress build output & cache
+docs/.vitepress/dist
+docs/.vitepress/cache
