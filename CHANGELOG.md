@@ -8,7 +8,7 @@ Design detail for the environment-vault (`vault env`) features lives in
 [`docs/environments/SPEC.md`](docs/environments/SPEC.md); the CLI reference is
 [`README.cli.md`](README.cli.md).
 
-## [Unreleased]
+## [v0.2.0-rc.1] — 2026-07-10
 
 ### Added — v2.0 · Agent (slice 7a, developer preview)
 
