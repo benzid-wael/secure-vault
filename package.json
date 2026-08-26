@@ -99,7 +99,7 @@
     "@vitest/coverage-v8": "^4.1.8",
     "@vitest/ui": "^4.1.8",
     "concurrently": "^10.0.3",
-    "cross-env": "^7.0.3",
+    "cross-env": "^10.1.0",
     "electron": "^42.3.3",
     "electron-builder": "^26.15.2",
     "esbuild": "^0.28.0",
