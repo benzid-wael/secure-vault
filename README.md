@@ -1,5 +1,7 @@
 # Secure Password Manager
 
+[![Sponsor](https://img.shields.io/badge/sponsor-❤-ea4aaa?logo=githubsponsors)](https://github.com/sponsors/benzid-wael)
+
 A modern, secure password management application built with Electron and React, featuring strong encryption and a beautiful user interface.
 
 ## Features
@@ -263,6 +265,11 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Support
 
 If you encounter any issues or have questions, please open an issue on the GitHub repository.
+
+SecureVault is free and maintained in spare time. If it helps you, please
+[**sponsor it on GitHub**](https://github.com/sponsors/benzid-wael) ❤. Sponsorship pays for code
+signing, security work and new features.
+[More ways to help →](https://benzid-wael.github.io/secure-vault/support)
 
 ---
 
