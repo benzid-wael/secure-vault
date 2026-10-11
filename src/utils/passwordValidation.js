@@ -61,12 +61,3 @@ export const getPasswordRequirements = () => {
     'Avoid common passwords',
   ];
 };
-
-// Export for CommonJS (Electron) compatibility
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = {
-    getPasswordStrength,
-    validatePasswordStrength,
-    getPasswordRequirements,
-  };
-}
