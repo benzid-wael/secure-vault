@@ -14,6 +14,7 @@
     "type": "git",
     "url": "git+https://github.com/benzid-wael/secure-vault.git"
   },
+  "funding": "https://github.com/sponsors/benzid-wael",
   "engines": {
     "node": ">=20.10.0"
   },

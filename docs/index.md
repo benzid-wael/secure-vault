@@ -49,6 +49,10 @@ SecureVault stores everything in local, encrypted vaults. Pick the interface tha
 Read the [Getting started overview](/guide/getting-started) — it installs both the app and the CLI and explains how they share vaults.
 :::
 
+::: tip Free, open source, and kept alive by sponsors
+SecureVault has no ads, no accounts and no telemetry. If it keeps your secrets safe, [**sponsor it on GitHub**](https://github.com/sponsors/benzid-wael) ❤ or give it a ⭐ on [GitHub](https://github.com/benzid-wael/secure-vault). [How sponsorship helps →](/support)
+:::
+
 ## What it is (and isn't)
 
 SecureVault is a **local-first** secret manager: a desktop password manager for everyday logins, and a developer-focused CLI for managing `.env` secrets as encrypted, versioned vaults you can inject into any command. There is no server, no sync, and no account — you own the files, and you own the master password.
