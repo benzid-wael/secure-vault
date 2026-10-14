@@ -28,15 +28,11 @@ export class KeyRecoveryService extends IRecoveryMethod {
    * @returns {Promise<boolean>}
    */
   isValid(vaultName, metadata) {
-    if (
-      !!!metadata ||
-      !metadata?.salt ||
-      !metadata?.encryptedMasterPassword ||
-      !metadata?.encryptedRecoveryKey
-    ) {
-      return false;
-    }
-    return true;
+    return Boolean(
+      metadata?.salt &&
+        metadata.encryptedMasterPassword &&
+        metadata.encryptedRecoveryKey
+    );
   }
 
   /**

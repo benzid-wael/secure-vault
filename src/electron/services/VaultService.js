@@ -1,7 +1,7 @@
 import { Vault } from '../models/Vault.js';
 import { CryptographyService } from './CryptographyService.js';
 import { VaultFileService } from './VaultFileService.js';
-import { validatePasswordStrength } from '../utils/passwordValidation.js';
+import { validatePasswordStrength } from '../../utils/passwordValidation.js';
 import { KeyRecoveryService } from './recovery/KeyRecoveryService.js';
 import { PasswordRecoveryService } from './recovery/PasswordRecoveryService.js';
 import { RecoveryData } from './recovery/IRecoveryMethod.js';
@@ -42,37 +42,6 @@ export class VaultService {
     }
   }
 
-  async encryptVault(data, masterPassword, recoveryKey, oldPassword) {
-    const salt = CryptographyService.generateSalt();
-    const key = CryptographyService.deriveKey(masterPassword, salt);
-
-    // Generate recovery key
-    let recoveryMetadata = RecoveryKeyService.createRecoveryMetadata(
-      recoveryKey,
-      masterPassword,
-      salt
-    );
-
-    if (oldPassword) {
-      const currentKey = CryptographyService.deriveKey(oldPassword, salt);
-      const recoveryPassword = CryptographyService.encrypt(
-        { masterPassword },
-        currentKey
-      );
-      recoveryMetadata = {
-        ...recoveryMetadata,
-        recoveryPassword,
-      };
-    }
-
-    const encryptedData = CryptographyService.encrypt(vault.toJSON(), key);
-    return {
-      ...encryptedData,
-      salt: salt.toString('hex'),
-      recoveryMetadata,
-    };
-  }
-
   async createVault(vaultName, masterPassword) {
     if (await this.fileService.vaultExists(vaultName)) {
       throw new Error('Vault already exists');
@@ -111,7 +80,7 @@ export class VaultService {
   }
 
   async verifyPassword(vaultName, password, vaultPath = null) {
-    if (!!!vaultPath) {
+    if (!vaultPath) {
       vaultPath = this.fileService.getVaultPath(vaultName);
     }
     try {

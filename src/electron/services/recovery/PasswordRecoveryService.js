@@ -16,10 +16,8 @@ export class PasswordRecoveryService extends IRecoveryMethod {
    * @returns {Promise<boolean>}
    */
   isValid(vaultName, metadata) {
-    if (!!metadata && !metadata?.salt && !metadata?.encryptedMasterPassword) {
-      return false;
-    }
-    return true;
+    // Both fields are required; metadata with only one is as unusable as none.
+    return Boolean(metadata?.salt && metadata.encryptedMasterPassword);
   }
 
   /**

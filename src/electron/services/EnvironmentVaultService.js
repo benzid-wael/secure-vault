@@ -11,7 +11,7 @@ import { EnvironmentVault } from '../models/EnvironmentVault.js';
  */
 const SUSPICIOUS_VALUE_RE =
   /-----BEGIN |sk_live_|AKIA[0-9A-Z]{16}|[0-9a-f]{64,}/;
-import { validatePasswordStrength } from '../utils/passwordValidation.js';
+import { validatePasswordStrength } from '../../utils/passwordValidation.js';
 import { getAppDataPath, getEnvsDir } from '../utils/appPaths.js';
 import { toDotenv } from '../../utils/dotenv.js';
 

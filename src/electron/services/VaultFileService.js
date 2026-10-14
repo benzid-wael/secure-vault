@@ -71,9 +71,12 @@ export class VaultFileService {
     return this.readVaultPath(vaultPath);
   }
 
+  /**
+   * Every vault write is atomic: a crash mid-write leaves either the old file
+   * or the new one, never a truncated vault.
+   */
   async writeVaultFile(vaultName, data) {
-    const vaultPath = this.getVaultPath(vaultName);
-    return fs.writeJSON(vaultPath, data, { spaces: 2 });
+    return this.atomicWriteVaultFile(vaultName, data);
   }
 
   async atomicWriteVaultFile(vaultName, data) {

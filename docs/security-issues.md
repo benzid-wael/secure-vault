@@ -8,17 +8,26 @@ Audit performed 2026-06-15 covering the Electron desktop app (`src/`,
 Re-checked 2026-10-14. A finding marked **Resolved** keeps its original write-up
 below for context; everything else is still open.
 
-| ID           | Status                                                                         |
-| ------------ | ------------------------------------------------------------------------------ |
-| C1           | **Resolved** — vault-file log removed from `loadVault()`                       |
-| C2           | **Resolved** — password held by a main-process session, see the note under C2  |
-| C3           | **Resolved** — recovery-key log removed from `createDefaultVault()`            |
-| C4           | **Partly resolved** — see the note under C4                                    |
-| H1           | **Resolved** — `recover()` fixed end-to-end, see the note under H1             |
-| H2, H3       | **Resolved** — dead, broken services deleted                                   |
-| H4           | **Mitigated** — see the note under H4                                          |
-| H5           | **Resolved** — dead code removed; vault names contained, see the note under H5 |
-| M1–M6, L1–L4 | Open (not re-verified)                                                         |
+| ID     | Status                                                                         |
+| ------ | ------------------------------------------------------------------------------ |
+| C1     | **Resolved** — vault-file log removed from `loadVault()`                       |
+| C2     | **Resolved** — password held by a main-process session, see the note under C2  |
+| C3     | **Resolved** — recovery-key log removed from `createDefaultVault()`            |
+| C4     | **Partly resolved** — see the note under C4                                    |
+| H1     | **Resolved** — `recover()` fixed end-to-end, see the note under H1             |
+| H2, H3 | **Resolved** — dead, broken services deleted                                   |
+| H4     | **Mitigated** — see the note under H4                                          |
+| H5     | **Resolved** — dead code removed; vault names contained, see the note under H5 |
+| M1     | **Resolved** — every vault write goes through temp + rename                    |
+| M2     | Open — needs a vault-format change, see the note under M2                      |
+| M3     | **Not an issue** — see the note under M3                                       |
+| M4     | **Not an issue** — see the note under M4                                       |
+| M5     | Open — accepted trade-off pending a decision, see the note under M5            |
+| M6     | **Not an issue** — see the note under M6                                       |
+| L1     | **Resolved** — one validator; the two had diverged                             |
+| L2     | **Resolved** — dead `encryptVault` deleted                                     |
+| L3     | **Not an issue** — see the note under L3                                       |
+| L4     | **Resolved** — the loose check was in `PasswordRecoveryService`; fixed         |
 
 ---
 
@@ -274,6 +283,10 @@ sanitizePath(filePath) {
 
 ### M1 — `writeVaultFile` is not atomic
 
+> **Resolved (2026-10-14).** `writeVaultFile` now delegates to
+> `atomicWriteVaultFile` (temp file, read-back, rename), so saves, creates,
+> imports, settings updates and recovery-key generation are all crash-safe.
+
 **File:** `src/electron/services/VaultFileService.js:52-54`
 
 ```js
@@ -298,6 +311,13 @@ This is an inconsistency between the app and CLI implementations.
 
 ### M2 — PBKDF2 iteration count below current recommendation
 
+> **Open (2026-10-14).** Vault files don't record their iteration count, so
+> raising it means a format change and migrating existing vaults. Also, the
+> desktop app currently derives the key on _every_ load/save; at 600k
+> iterations each save would take noticeably longer unless the session caches
+> the derived key instead of the password. Desktop vaults and CLI env vaults
+> share `CryptographyService`, so both are affected.
+
 **File:** `src/electron/services/CryptographyService.js:4`
 
 ```js
@@ -310,6 +330,12 @@ GPU rigs can attempt ~100 000 guesses/second against a stolen vault file.
 
 ### M3 — Password comparison is timing-addressable
 
+> **Not an issue (2026-10-14).** Unlocking never compares password strings:
+> the password is checked by trying to decrypt the vault. The `!==` calls left
+> compare a new password with its confirmation, both typed by the same user in
+> the same process, so there is no secret on the other side to leak. The one
+> renderer-side comparison against the stored password was removed with C2.
+
 JavaScript's `!==` operator short-circuits on the first differing character.
 In the Electron app (login screen) and CLI (`init` confirmation), the
 comparison takes measurably longer when more prefix characters match. A
@@ -317,6 +343,11 @@ local attacker with precise timing measurements could recover password
 length and prefix.
 
 ### M4 — `TMPDIR` in clean-mode allowlist
+
+> **Not an issue (2026-10-14).** An attacker who controls the parent process's
+> environment already controls `PATH`, `HOME` and the command being run, so
+> `TMPDIR` adds no capability. Dropping it would break tools that need a temp
+> directory under `clean`.
 
 **File:** `bin/commands/envRunHelpers.js:46`
 
@@ -326,6 +357,11 @@ to an arbitrary path, enabling symlink attacks or env-file exfiltration.
 
 ### M5 — Editor temp file exposes previous value as comments
 
+> **Open (2026-10-14).** Real but minor. Even without the comments, the _new_
+> value sits in the same `0600` temp file while the editor is open, so a SIGKILL
+> exposes it too. Dropping the previous-value comments narrows the exposure but
+> removes useful context when editing. Needs a product decision.
+
 **File:** `bin/commands/envEditHelpers.js:30-31`
 
 When `vault env set <env> <key> --edit` is used, the previous value is
@@ -334,6 +370,10 @@ written as `#` comments in the temp file. While the file is created with
 the value on disk.
 
 ### M6 — Error messages reveal vault paths
+
+> **Not an issue (2026-10-14).** The path in this message is the one the user
+> passed to `--password-file`, printed back in their own terminal. Hiding it
+> would make the error harder to act on and protects nothing.
 
 **File:** `src/utils/password.js:91`
 
@@ -352,6 +392,13 @@ exist. Visible in CI logs, terminal scrollback, and error-reporting tools.
 
 ### L1 — Duplicate password validation implementations
 
+> **Resolved (2026-10-14).** Worse than reported: the two had already diverged.
+> The renderer used a strength score and accepted e.g. `Password123`, which the
+> main process then rejected for lacking a special character. There is now one
+> `validatePasswordStrength` in `src/utils/passwordValidation.js` with the main
+> process's rules, used by the desktop main process, the CLI and the renderer.
+> "Special character" now means any non-alphanumeric character.
+
 | File                                       | Used by                                              |
 | ------------------------------------------ | ---------------------------------------------------- |
 | `src/electron/utils/passwordValidation.js` | Electron app (VaultService, EnvironmentVaultService) |
@@ -362,6 +409,8 @@ diverge over time. No single source of truth.
 
 ### L2 — Dead code: `encryptVault` uses undefined references
 
+> **Resolved (2026-10-14).** Deleted.
+
 **File:** `src/electron/services/VaultService.js:45-74`
 
 The `encryptVault()` method references `RecoveryKeyService` (no such import)
@@ -370,6 +419,10 @@ anywhere in the codebase. Likely a leftover from an earlier refactor.
 
 ### L3 — No integrity binding beyond authenticated encryption
 
+> **Not an issue (2026-10-14).** The key is derived from the salt, so a swapped
+> salt (or any edited header field that feeds the key) just makes GCM
+> authentication fail. Nothing is gained by binding it again.
+
 Vault files use AES-256-GCM which authenticates the ciphertext. However,
 there is no HMAC or signature binding the salt, version metadata, and
 encrypted payload together. A motivated attacker with write access to the
@@ -377,6 +430,11 @@ vault file could swap salts between vault files (though decryption would
 still fail without the correct password).
 
 ### L4 — `isValid` methods use loose negations
+
+> **Resolved (2026-10-14).** The cited `KeyRecoveryService.isValid` was
+> correct, just hard to read; it's rewritten. The loose check the finding
+> describes was really in `PasswordRecoveryService.isValid`, which accepted
+> metadata missing one of its two required fields. Fixed.
 
 **File:** `src/electron/services/recovery/KeyRecoveryService.js:32`
 

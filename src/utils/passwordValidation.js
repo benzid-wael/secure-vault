@@ -22,7 +22,13 @@ export const getPasswordStrength = (password) => {
 };
 
 /**
- * Validate password strength and return array of error messages
+ * Validate password strength and return array of error messages.
+ *
+ * This is the one policy for every vault: the desktop main process, the CLI
+ * (`vault env`) and the renderer forms all import it, so the UI can't accept a
+ * password the main process then rejects. `getPasswordStrength` above is only
+ * the strength meter; it does not decide what is accepted.
+ *
  * @param {string} password - The password to validate
  * @returns {Array} - Array of error messages (empty if valid)
  */
@@ -38,11 +44,24 @@ export const validatePasswordStrength = (password) => {
     errors.push('Password must be at least 8 characters long');
   }
 
-  const strength = getPasswordStrength(password);
-  if (strength.strength === 'weak') {
-    errors.push(
-      'Password is too weak. Please include a mix of uppercase, lowercase, numbers, and special characters'
-    );
+  if (password.length > 128) {
+    errors.push('Password must be less than 128 characters long');
+  }
+
+  if (!/[A-Z]/.test(password)) {
+    errors.push('Password must contain at least one uppercase letter');
+  }
+
+  if (!/[a-z]/.test(password)) {
+    errors.push('Password must contain at least one lowercase letter');
+  }
+
+  if (!/[0-9]/.test(password)) {
+    errors.push('Password must contain at least one number');
+  }
+
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    errors.push('Password must contain at least one special character');
   }
 
   return errors;
