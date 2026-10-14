@@ -1,14 +1,45 @@
 import { Vault } from '../models/Vault.js';
 import { CryptographyService } from './CryptographyService.js';
 import { VaultFileService } from './VaultFileService.js';
-import { validatePasswordStrength } from '../utils/passwordValidation.js';
+import { validatePasswordStrength } from '../../utils/passwordValidation.js';
 import { KeyRecoveryService } from './recovery/KeyRecoveryService.js';
 import { PasswordRecoveryService } from './recovery/PasswordRecoveryService.js';
 import { RecoveryData } from './recovery/IRecoveryMethod.js';
 
 export class VaultService {
-  constructor(vaultDirectory) {
+  /**
+   * @param {string} vaultDirectory
+   * @param {{deriveKey?: Function}} [options] `deriveKey(password, salt,
+   *   iterations)`; the desktop main process passes its session's caching
+   *   version so loads and saves don't re-run PBKDF2 each time.
+   */
+  constructor(vaultDirectory, { deriveKey } = {}) {
     this.fileService = new VaultFileService(vaultDirectory);
+    this.deriveKey =
+      deriveKey ??
+      ((password, salt, iterations) =>
+        CryptographyService.deriveKey(password, salt, iterations));
+  }
+
+  /** The key for an existing vault file, at the iterations it records. */
+  #keyFor(password, record) {
+    return this.deriveKey(
+      password,
+      Buffer.from(record.salt, 'hex'),
+      CryptographyService.iterationsOf(record)
+    );
+  }
+
+  /** A fresh salt and key at the current iterations, plus its header. */
+  #freshKey(password) {
+    const salt = CryptographyService.generateSalt();
+    return {
+      key: this.deriveKey(password, salt, CryptographyService.ITERATIONS),
+      header: {
+        salt: salt.toString('hex'),
+        kdf: CryptographyService.kdfHeader(),
+      },
+    };
   }
 
   async getAvailableVaults() {
@@ -42,45 +73,13 @@ export class VaultService {
     }
   }
 
-  async encryptVault(data, masterPassword, recoveryKey, oldPassword) {
-    const salt = CryptographyService.generateSalt();
-    const key = CryptographyService.deriveKey(masterPassword, salt);
-
-    // Generate recovery key
-    let recoveryMetadata = RecoveryKeyService.createRecoveryMetadata(
-      recoveryKey,
-      masterPassword,
-      salt
-    );
-
-    if (oldPassword) {
-      const currentKey = CryptographyService.deriveKey(oldPassword, salt);
-      const recoveryPassword = CryptographyService.encrypt(
-        { masterPassword },
-        currentKey
-      );
-      recoveryMetadata = {
-        ...recoveryMetadata,
-        recoveryPassword,
-      };
-    }
-
-    const encryptedData = CryptographyService.encrypt(vault.toJSON(), key);
-    return {
-      ...encryptedData,
-      salt: salt.toString('hex'),
-      recoveryMetadata,
-    };
-  }
-
   async createVault(vaultName, masterPassword) {
     if (await this.fileService.vaultExists(vaultName)) {
       throw new Error('Vault already exists');
     }
 
     const vault = new Vault({ name: vaultName });
-    const salt = CryptographyService.generateSalt();
-    const key = CryptographyService.deriveKey(masterPassword, salt);
+    const { key, header } = this.#freshKey(masterPassword);
 
     // Generate recovery key
     const keyRecoveryService = new KeyRecoveryService();
@@ -97,7 +96,7 @@ export class VaultService {
       recoveryKeyMetadata;
     const vaultFile = {
       ...encryptedData,
-      salt: salt.toString('hex'),
+      ...header,
       recoveryMetadata,
     };
 
@@ -111,13 +110,12 @@ export class VaultService {
   }
 
   async verifyPassword(vaultName, password, vaultPath = null) {
-    if (!!!vaultPath) {
+    if (!vaultPath) {
       vaultPath = this.fileService.getVaultPath(vaultName);
     }
     try {
       const vaultFile = await this.fileService.readVaultPath(vaultPath);
-      const salt = Buffer.from(vaultFile.salt, 'hex');
-      const key = CryptographyService.deriveKey(password, salt);
+      const key = this.#keyFor(password, vaultFile);
 
       const encryptedData = {
         encrypted: vaultFile.encrypted,
@@ -135,9 +133,7 @@ export class VaultService {
   async loadVault(vaultName, password) {
     try {
       const vaultFile = await this.fileService.readVaultFile(vaultName);
-
-      const salt = Buffer.from(vaultFile.salt, 'hex');
-      const key = CryptographyService.deriveKey(password, salt);
+      const key = this.#keyFor(password, vaultFile);
 
       const encryptedData = {
         encrypted: vaultFile.encrypted,
@@ -158,10 +154,11 @@ export class VaultService {
   async saveVault(vaultName, password, vaultData) {
     try {
       // Load existing recovery metadata
+      let existingFile = null;
       let existingRecoveryMetadata = {};
       if (await this.fileService.vaultExists(vaultName)) {
         try {
-          const existingFile = await this.fileService.readVaultFile(vaultName);
+          existingFile = await this.fileService.readVaultFile(vaultName);
           existingRecoveryMetadata = existingFile.recoveryMetadata || {};
         } catch (error) {
           console.warn('Could not load existing recovery metadata');
@@ -169,13 +166,22 @@ export class VaultService {
       }
 
       const vault = Vault.fromJSON(vaultData, vaultName);
-      const salt = CryptographyService.generateSalt();
-      const key = CryptographyService.deriveKey(password, salt);
+      // A vault already at the current work factor keeps its salt (each
+      // encryption still gets a fresh random IV), so the session's cached key
+      // is reused instead of paying for PBKDF2 on every save.
+      let key;
+      let header;
+      if (existingFile && !CryptographyService.needsKdfUpgrade(existingFile)) {
+        key = this.#keyFor(password, existingFile);
+        header = CryptographyService.keyHeaderOf(existingFile);
+      } else {
+        ({ key, header } = this.#freshKey(password));
+      }
 
       const encryptedData = CryptographyService.encrypt(vault.toJSON(), key);
       const vaultFile = {
         ...encryptedData,
-        salt: salt.toString('hex'),
+        ...header,
         recoveryMetadata: existingRecoveryMetadata,
       };
 
@@ -204,11 +210,7 @@ export class VaultService {
       try {
         // Load and verify current password
         const vaultFile = await this.fileService.readVaultFile(vaultName);
-        const currentSalt = Buffer.from(vaultFile.salt, 'hex');
-        const currentKey = CryptographyService.deriveKey(
-          currentPassword,
-          currentSalt
-        );
+        const currentKey = this.#keyFor(currentPassword, vaultFile);
 
         const encryptedData = {
           encrypted: vaultFile.encrypted,
@@ -255,8 +257,7 @@ export class VaultService {
           );
 
         // Re-encrypt with new password
-        const newSalt = CryptographyService.generateSalt();
-        const newKey = CryptographyService.deriveKey(newPassword, newSalt);
+        const { key: newKey, header } = this.#freshKey(newPassword);
         const newEncryptedData = CryptographyService.encrypt(
           vault.toJSON(),
           newKey
@@ -264,12 +265,12 @@ export class VaultService {
 
         const finalVaultFile = {
           ...newEncryptedData,
-          salt: newSalt.toString('hex'),
+          ...header,
           recoveryMetadata: updatedRecoveryMetadata,
         };
 
         // Test decryption before saving
-        const testKey = CryptographyService.deriveKey(newPassword, newSalt);
+        const testKey = newKey;
         const testEncryptedData = {
           encrypted: finalVaultFile.encrypted,
           authTag: finalVaultFile.authTag,
@@ -289,6 +290,81 @@ export class VaultService {
     } catch (error) {
       console.error('Error changing password:', error);
       return { success: false, error: 'Failed to change master password' };
+    }
+  }
+
+  /**
+   * Re-key a vault written with fewer than the current PBKDF2 iterations
+   * (M2). Call after a successful unlock, with the master password.
+   *
+   * - The vault is re-encrypted under a fresh salt at the current count.
+   * - Recovery-key metadata is rebuilt around the *same* recovery key, so the
+   *   key the user saved keeps working.
+   * - Legacy previous-password metadata is dropped: it wraps the current
+   *   master password under the previous password, which we don't have, so
+   *   it can't be re-keyed and would stay a cheaper path to the master
+   *   password. It is recreated (at the current count) on the next password
+   *   change; the recovery key still works meanwhile.
+   *
+   * Copies left by earlier deletes (`*.vault.deleted.*`) are not touched.
+   *
+   * @returns {Promise<{success: boolean, upgraded?: boolean, error?: string}>}
+   */
+  async upgradeKdf(vaultName, password) {
+    try {
+      const vaultFile = await this.fileService.readVaultFile(vaultName);
+      const keyRecovery = new KeyRecoveryService();
+      const passwordRecovery = new PasswordRecoveryService();
+      const keyId = keyRecovery.getRecoveryMethodId();
+      const passwordId = passwordRecovery.getRecoveryMethodId();
+      const metadata = { ...(vaultFile.recoveryMetadata || {}) };
+
+      const legacy = (record) =>
+        !!record && CryptographyService.needsKdfUpgrade(record);
+      if (
+        !legacy(vaultFile) &&
+        !legacy(metadata[keyId]) &&
+        !legacy(metadata[passwordId])
+      ) {
+        return { success: true, upgraded: false };
+      }
+
+      const vaultData = CryptographyService.decrypt(
+        {
+          encrypted: vaultFile.encrypted,
+          authTag: vaultFile.authTag,
+          iv: vaultFile.iv,
+        },
+        this.#keyFor(password, vaultFile)
+      );
+
+      if (legacy(metadata[keyId])) {
+        const rekeyed = keyRecovery.onPasswordChange(
+          vaultName,
+          metadata[keyId],
+          password,
+          password
+        );
+        if (rekeyed.success) metadata[keyId] = rekeyed.metadata;
+      }
+      if (legacy(metadata[passwordId])) delete metadata[passwordId];
+
+      const { key, header } = this.#freshKey(password);
+      const upgradedFile = {
+        ...CryptographyService.encrypt(vaultData, key),
+        ...header,
+        recoveryMetadata: metadata,
+      };
+
+      // No backup copy: the write is atomic, and a backup would keep the
+      // weaker legacy file on disk. An existing legacy backup goes for the
+      // same reason.
+      await this.fileService.atomicWriteVaultFile(vaultName, upgradedFile);
+      await this.fileService.removeLegacyBackup(vaultName);
+      return { success: true, upgraded: true };
+    } catch (error) {
+      console.error('Failed to upgrade vault key derivation:', error.message);
+      return { success: false, error: 'Failed to upgrade vault encryption' };
     }
   }
 

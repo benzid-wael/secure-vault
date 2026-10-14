@@ -22,7 +22,7 @@ hero:
 features:
   - icon: 🔐
     title: Strong, authenticated encryption
-    details: AES-256-GCM with PBKDF2 (100,000 iterations) and a random per-vault salt. Tamper-evident by design.
+    details: AES-256-GCM with PBKDF2 (600,000 iterations) and a random per-vault salt. Tamper-evident by design.
   - icon: 🕵️
     title: Zero-knowledge & offline
     details: Your master password is never stored and nothing ever leaves your machine. No account, no cloud, no telemetry.

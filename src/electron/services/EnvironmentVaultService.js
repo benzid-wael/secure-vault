@@ -11,7 +11,7 @@ import { EnvironmentVault } from '../models/EnvironmentVault.js';
  */
 const SUSPICIOUS_VALUE_RE =
   /-----BEGIN |sk_live_|AKIA[0-9A-Z]{16}|[0-9a-f]{64,}/;
-import { validatePasswordStrength } from '../utils/passwordValidation.js';
+import { validatePasswordStrength } from '../../utils/passwordValidation.js';
 import { getAppDataPath, getEnvsDir } from '../utils/appPaths.js';
 import { toDotenv } from '../../utils/dotenv.js';
 
@@ -140,13 +140,18 @@ export class EnvironmentVaultService {
 
       const payload = data || new EnvironmentVault().toJSON();
       const salt = CryptographyService.generateSalt();
-      const key = CryptographyService.deriveKey(password, salt);
+      const key = CryptographyService.deriveKey(
+        password,
+        salt,
+        CryptographyService.ITERATIONS
+      );
       const encrypted = CryptographyService.encrypt(payload, key);
 
       const vaultFile = {
         type: 'environment-vault',
         version: 1,
         salt: salt.toString('hex'),
+        kdf: CryptographyService.kdfHeader(),
         iv: encrypted.iv,
         authTag: encrypted.authTag,
         encrypted: encrypted.encrypted,
@@ -176,8 +181,7 @@ export class EnvironmentVaultService {
         return { success: false, error: 'Invalid environment vault file' };
       }
 
-      const salt = Buffer.from(vaultFile.salt, 'hex');
-      const key = CryptographyService.deriveKey(password, salt);
+      const key = CryptographyService.deriveKeyFor(password, vaultFile);
       const encryptedData = {
         encrypted: vaultFile.encrypted,
         authTag: vaultFile.authTag,
@@ -200,13 +204,18 @@ export class EnvironmentVaultService {
     try {
       const payload = vault.toJSON();
       const salt = CryptographyService.generateSalt();
-      const key = CryptographyService.deriveKey(password, salt);
+      const key = CryptographyService.deriveKey(
+        password,
+        salt,
+        CryptographyService.ITERATIONS
+      );
       const encrypted = CryptographyService.encrypt(payload, key);
 
       const vaultFile = {
         type: 'environment-vault',
         version: 1,
         salt: salt.toString('hex'),
+        kdf: CryptographyService.kdfHeader(),
         iv: encrypted.iv,
         authTag: encrypted.authTag,
         encrypted: encrypted.encrypted,

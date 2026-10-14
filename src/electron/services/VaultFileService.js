@@ -2,6 +2,8 @@ import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
 
+import { CryptographyService } from './CryptographyService.js';
+
 export class VaultFileService {
   constructor(vaultDirectory) {
     // Resolve tilde and ensure absolute path
@@ -71,9 +73,12 @@ export class VaultFileService {
     return this.readVaultPath(vaultPath);
   }
 
+  /**
+   * Every vault write is atomic: a crash mid-write leaves either the old file
+   * or the new one, never a truncated vault.
+   */
   async writeVaultFile(vaultName, data) {
-    const vaultPath = this.getVaultPath(vaultName);
-    return fs.writeJSON(vaultPath, data, { spaces: 2 });
+    return this.atomicWriteVaultFile(vaultName, data);
   }
 
   async atomicWriteVaultFile(vaultName, data) {
@@ -109,6 +114,20 @@ export class VaultFileService {
       return true;
     }
     return false;
+  }
+
+  /** Delete the backup when it was keyed with the legacy work factor. */
+  async removeLegacyBackup(vaultName) {
+    const backupPath = this.getBackupPath(vaultName);
+    if (!(await fs.pathExists(backupPath))) return false;
+    try {
+      const backup = await fs.readJSON(backupPath);
+      if (!CryptographyService.needsKdfUpgrade(backup)) return false;
+    } catch {
+      // Unreadable or unsupported: not something to restore from either.
+    }
+    await fs.remove(backupPath);
+    return true;
   }
 
   async hasBackup(vaultName) {

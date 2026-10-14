@@ -5,13 +5,13 @@ without your master password.
 
 ## How your data is protected
 
-| Aspect             | Detail                                                             |
-| ------------------ | ------------------------------------------------------------------ |
-| **Encryption**     | AES-256-GCM (Galois/Counter Mode) — authenticated, tamper-evident  |
-| **Key derivation** | PBKDF2 with SHA-512, 100,000 iterations                            |
-| **Salt**           | A 32-byte random salt per vault                                    |
-| **Authentication** | Built-in GCM authentication tag detects any tampering              |
-| **Storage**        | Each vault is a separate encrypted JSON file; nothing in plaintext |
+| Aspect             | Detail                                                                                   |
+| ------------------ | ---------------------------------------------------------------------------------------- |
+| **Encryption**     | AES-256-GCM (Galois/Counter Mode) — authenticated, tamper-evident                        |
+| **Key derivation** | PBKDF2 with SHA-512, 600,000 iterations (older vaults are upgraded when you unlock them) |
+| **Salt**           | A 32-byte random salt per vault                                                          |
+| **Authentication** | Built-in GCM authentication tag detects any tampering                                    |
+| **Storage**        | Each vault is a separate encrypted JSON file; nothing in plaintext                       |
 
 ### Zero-knowledge architecture
 

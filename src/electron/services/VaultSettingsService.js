@@ -3,8 +3,24 @@ import { CryptographyService } from './CryptographyService.js';
 import { Vault } from '../models/Vault.js';
 
 export class VaultSettingsService {
-  constructor(vaultDirectory) {
+  /**
+   * @param {string} vaultDirectory
+   * @param {{deriveKey?: Function}} [options] see VaultService.
+   */
+  constructor(vaultDirectory, { deriveKey } = {}) {
     this.fileService = new VaultFileService(vaultDirectory);
+    this.deriveKey =
+      deriveKey ??
+      ((password, salt, iterations) =>
+        CryptographyService.deriveKey(password, salt, iterations));
+  }
+
+  deriveKeyFor(password, record) {
+    return this.deriveKey(
+      password,
+      Buffer.from(record.salt, 'hex'),
+      CryptographyService.iterationsOf(record)
+    );
   }
 
   async updateVaultSettings(vaultName, vaultPassword, newSettings) {
@@ -14,8 +30,7 @@ export class VaultSettingsService {
       }
 
       const vaultFile = await this.fileService.readVaultFile(vaultName);
-      const salt = Buffer.from(vaultFile.salt, 'hex');
-      const key = CryptographyService.deriveKey(vaultPassword, salt);
+      const key = this.deriveKeyFor(vaultPassword, vaultFile);
 
       let vaultData;
       try {
@@ -33,9 +48,10 @@ export class VaultSettingsService {
       vault.updateSettings(newSettings);
 
       const newEncryptedData = CryptographyService.encrypt(vault.toJSON(), key);
+      // Same key, so the same salt and `kdf` header go back on.
       const finalData = {
         ...newEncryptedData,
-        salt: salt.toString('hex'),
+        ...CryptographyService.keyHeaderOf(vaultFile),
         recoveryMetadata: vaultFile.recoveryMetadata || {},
       };
 
@@ -54,8 +70,7 @@ export class VaultSettingsService {
       }
 
       const vaultFile = await this.fileService.readVaultFile(vaultName);
-      const salt = Buffer.from(vaultFile.salt, 'hex');
-      const key = CryptographyService.deriveKey(vaultPassword, salt);
+      const key = this.deriveKeyFor(vaultPassword, vaultFile);
 
       try {
         const encryptedData = {

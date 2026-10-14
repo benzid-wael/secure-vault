@@ -35,7 +35,8 @@ describe('KeyRecoveryService', () => {
 
       const key = KeyRecoveryService.deriveKeyFromRecoveryKey(
         recoveryKey,
-        salt
+        salt,
+        1000
       );
 
       expect(key).toBeInstanceOf(Buffer);
@@ -48,11 +49,13 @@ describe('KeyRecoveryService', () => {
 
       const key1 = KeyRecoveryService.deriveKeyFromRecoveryKey(
         recoveryKey,
-        salt
+        salt,
+        1000
       );
       const key2 = KeyRecoveryService.deriveKeyFromRecoveryKey(
         recoveryKey,
-        salt
+        salt,
+        1000
       );
 
       expect(key1).toEqual(key2);

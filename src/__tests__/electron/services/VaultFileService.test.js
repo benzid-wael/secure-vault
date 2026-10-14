@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
@@ -64,5 +64,47 @@ describe('VaultFileService vault-name containment', () => {
       'Invalid vault name'
     );
     expect(fs.existsSync(victim)).toBe(true);
+  });
+});
+
+describe('VaultFileService.writeVaultFile', () => {
+  let dir;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-vfs-write-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('writes through a temp file and leaves none behind', async () => {
+    const vfs = new VaultFileService(dir);
+    await vfs.writeVaultFile('main', { v: 1 });
+    await vfs.writeVaultFile('main', { v: 2 });
+    expect(fs.readJSONSync(path.join(dir, 'main.vault'))).toEqual({ v: 2 });
+    expect(fs.existsSync(path.join(dir, 'main.vault.tmp'))).toBe(false);
+  });
+
+  it('keeps the previous vault intact when a write crashes midway', async () => {
+    const vfs = new VaultFileService(dir);
+    await vfs.writeVaultFile('main', { v: 1 });
+
+    // Simulate a crash: half the bytes land on disk, then the write throws.
+    const spy = vi
+      .spyOn(fs, 'writeJSON')
+      .mockImplementation(async (file, data) => {
+        const text = JSON.stringify(data);
+        fs.writeFileSync(file, text.slice(0, text.length / 2));
+        throw new Error('crash');
+      });
+    try {
+      await expect(vfs.writeVaultFile('main', { v: 2 })).rejects.toThrow(
+        'crash'
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    expect(fs.readJSONSync(path.join(dir, 'main.vault'))).toEqual({ v: 1 });
   });
 });

@@ -17,7 +17,7 @@ password** that is never stored anywhere.
 ## Master password
 
 The single password that decrypts a vault. SecureVault is **zero-knowledge**: the
-master password is used to derive the encryption key (via PBKDF2, 100,000
+master password is used to derive the encryption key (via PBKDF2, 600,000
 iterations) and is never written to disk. Lose it and the data is unrecoverable —
 that is the point.
 

@@ -31,8 +31,7 @@ export class VaultRecoveryService {
 
     const vaultFile = await vfs.readVaultFile(vaultName);
 
-    const salt = Buffer.from(vaultFile.salt, 'hex');
-    const key = CryptographyService.deriveKey(masterPassword, salt);
+    const key = CryptographyService.deriveKeyFor(masterPassword, vaultFile);
     // checking data
     const encryptedData = {
       encrypted: vaultFile.encrypted,
@@ -92,7 +91,7 @@ export class VaultRecoveryService {
     console.log(chalk.green('✅ Successfully recovered vault!'));
     const newVaultData = {
       ...encryptedData,
-      salt: vaultFile.salt,
+      ...CryptographyService.keyHeaderOf(vaultFile),
       recoveryMetadata,
     };
 

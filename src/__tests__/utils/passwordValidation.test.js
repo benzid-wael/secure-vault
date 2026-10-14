@@ -74,14 +74,18 @@ describe('passwordValidation', () => {
     });
 
     it('should return error for short password', () => {
-      const result = validatePasswordStrength('VeRyS2c');
-      expect(result).toEqual(['Password must be at least 8 characters long']);
+      const result = validatePasswordStrength('VeRyS2c!');
+      expect(result).toEqual([]); // 8 chars: the minimum
+      expect(validatePasswordStrength('VeRy2c!')).toEqual([
+        'Password must be at least 8 characters long',
+      ]);
     });
 
-    it('should return error for weak password', () => {
-      const result = validatePasswordStrength('password');
-      expect(result).toEqual([
-        'Password is too weak. Please include a mix of uppercase, lowercase, numbers, and special characters',
+    it('lists every missing character class for a weak password', () => {
+      expect(validatePasswordStrength('password')).toEqual([
+        'Password must contain at least one uppercase letter',
+        'Password must contain at least one number',
+        'Password must contain at least one special character',
       ]);
     });
 
@@ -90,9 +94,22 @@ describe('passwordValidation', () => {
       expect(result).toEqual([]);
     });
 
-    it('should return empty array for minimum acceptable password', () => {
-      const result = validatePasswordStrength('Password123');
-      expect(result).toEqual([]);
+    it('rejects a password with no special character (UI and main process agree)', () => {
+      // The renderer used to accept this while the main process refused it.
+      expect(validatePasswordStrength('Password123')).toEqual([
+        'Password must contain at least one special character',
+      ]);
+    });
+
+    it('counts any non-alphanumeric character as special', () => {
+      expect(validatePasswordStrength('Password 123')).toEqual([]);
+      expect(validatePasswordStrength('Password123€')).toEqual([]);
+    });
+
+    it('rejects passwords over 128 characters', () => {
+      expect(validatePasswordStrength(`Aa1!${'x'.repeat(125)}`)).toEqual([
+        'Password must be less than 128 characters long',
+      ]);
     });
   });
 

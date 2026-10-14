@@ -28,15 +28,11 @@ export class KeyRecoveryService extends IRecoveryMethod {
    * @returns {Promise<boolean>}
    */
   isValid(vaultName, metadata) {
-    if (
-      !!!metadata ||
-      !metadata?.salt ||
-      !metadata?.encryptedMasterPassword ||
-      !metadata?.encryptedRecoveryKey
-    ) {
-      return false;
-    }
-    return true;
+    return Boolean(
+      metadata?.salt &&
+        metadata.encryptedMasterPassword &&
+        metadata.encryptedRecoveryKey
+    );
   }
 
   /**
@@ -57,11 +53,17 @@ export class KeyRecoveryService extends IRecoveryMethod {
    */
   createMetadata(vaultName, masterPassword, recoveryData = {}) {
     const salt = CryptographyService.generateSalt();
+    const iterations = CryptographyService.ITERATIONS;
     const recoveryKey = recoveryData.data.key;
-    const masterKey = CryptographyService.deriveKey(masterPassword, salt);
+    const masterKey = CryptographyService.deriveKey(
+      masterPassword,
+      salt,
+      iterations
+    );
     const recoveryKeyDerived = KeyRecoveryService.deriveKeyFromRecoveryKey(
       recoveryKey,
-      salt
+      salt,
+      iterations
     );
 
     const encryptedRecoveryKey = CryptographyService.encrypt(
@@ -75,6 +77,7 @@ export class KeyRecoveryService extends IRecoveryMethod {
 
     return {
       salt: salt.toString('hex'),
+      kdf: CryptographyService.kdfHeader(),
       encryptedRecoveryKey,
       encryptedMasterPassword,
       createdAt: new Date().toISOString(),
@@ -120,7 +123,8 @@ export class KeyRecoveryService extends IRecoveryMethod {
       const salt = Buffer.from(metadata.salt, 'hex');
       const recoveryKeyDerived = KeyRecoveryService.deriveKeyFromRecoveryKey(
         recoveryKey,
-        salt
+        salt,
+        CryptographyService.iterationsOf(metadata)
       );
 
       try {
@@ -148,7 +152,7 @@ export class KeyRecoveryService extends IRecoveryMethod {
    * @param {Object} metadata
    * @param {str} oldPassword
    * @param {str} newPassword
-   * @returns {Promise<Object>} - new metadata object
+   * @returns {{success: boolean, metadata?: Object, error?: string}}
    */
   onPasswordChange(vaultName, metadata, oldPassword, newPassword) {
     const result = this.#loadRecoveryKey(vaultName, metadata, oldPassword);
@@ -179,8 +183,7 @@ export class KeyRecoveryService extends IRecoveryMethod {
   #loadRecoveryKey(vaultName, metadata, masterPassword) {
     // TODO: validate metadata
     try {
-      const salt = Buffer.from(metadata.salt, 'hex');
-      const key = CryptographyService.deriveKey(masterPassword, salt);
+      const key = CryptographyService.deriveKeyFor(masterPassword, metadata);
 
       try {
         const recoveryKey = CryptographyService.decrypt(
@@ -238,8 +241,8 @@ export class KeyRecoveryService extends IRecoveryMethod {
     );
   }
 
-  static deriveKeyFromRecoveryKey(recoveryKey, salt) {
+  static deriveKeyFromRecoveryKey(recoveryKey, salt, iterations) {
     const cleanKey = recoveryKey.replace(/-/g, '').toUpperCase();
-    return CryptographyService.deriveKey(cleanKey, salt);
+    return CryptographyService.deriveKey(cleanKey, salt, iterations);
   }
 }

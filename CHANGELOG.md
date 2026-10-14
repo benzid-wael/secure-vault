@@ -33,13 +33,37 @@ Design detail for the environment-vault (`vault env`) features lives in
   instead of taking a typed path, and import uses only the file you pick, so the
   page can no longer write or read arbitrary paths.
 
+### Changed
+
+- **Stronger key derivation: PBKDF2-SHA512 at 600,000 iterations** (was
+  100,000). Each vault records the count it was written with, so older vaults
+  keep opening.
+  - Desktop vaults are upgraded automatically the first time they're unlocked.
+    Your recovery key keeps working. "Recover with previous password" is
+    unavailable until your next password change, because that data can't be
+    re-protected without the previous password.
+  - CLI environment vaults upgrade on their next write.
+  - Unlocking and each CLI command take roughly 0.25 s longer; the desktop app
+    caches keys while a vault is unlocked.
+- **One password policy everywhere.** The desktop forms used a looser strength
+  score than the main process and the CLI, so a password like `Password123`
+  passed the form and then failed to save. All three now use the same rules:
+  8–128 characters with an uppercase letter, a lowercase letter, a digit and a
+  special character (any non-alphanumeric character counts).
+
 ### Removed
 
-- `SecretQuestionRecoveryService`, `UsbRecoveryService` and the
-  `useEntryManagement` hook: unused, and none of them worked.
+- `SecretQuestionRecoveryService`, `UsbRecoveryService`, the
+  `useEntryManagement` hook and `VaultService.encryptVault`: unused, and none
+  of them worked.
 
 ### Fixed
 
+- **Desktop vault writes are crash-safe.** Saving, creating, importing and
+  updating settings wrote the vault file in place; a crash mid-write could
+  corrupt it. All writes now go through a temp file and an atomic rename.
+- Password-recovery metadata missing one of its two required fields is now
+  treated as invalid and regenerated, instead of being accepted.
 - **`vault recover` works.** It crashed on an undefined variable, always
   reported success because the recovery was never awaited, and printed the vault
   file and recovery metadata. It now writes `<name>-recovered[-N].vault`, never
