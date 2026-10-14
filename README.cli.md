@@ -54,6 +54,7 @@ vault env init                   # create an environment vault for this project
 vault env import dev .env        # import a .env file into the "dev" environment
 vault env set API_KEY s3cr3t -e dev   # set a variable in "dev"
 vault env set API_KEY -e dev          # no value: edit in $EDITOR (previous value shown commented)
+pbpaste | vault env set API_KEY --value-stdin -e dev   # value from stdin: not in argv, history or a temp file
 vault env get API_KEY -e dev          # read it back
 vault env show dev               # show all variables in an environment
 vault env list                   # list environments in the vault
@@ -67,6 +68,10 @@ vault env run dev --export .env -- npm start   # also write a temp .env (wiped o
 vault env run dev --dry-run      # preview what would be injected (no spawn)
 vault env shell dev              # open an interactive shell with the env loaded
 ```
+
+`--value-stdin` keeps a secret out of `ps`, shell history and editor temp files.
+Since stdin carries the value, give the password with `--password-file` or
+`VAULT_ENV_PASSWORD`. One trailing newline is dropped; multi-line values are kept.
 
 #### Running commands with secrets injected (`vault env run`)
 

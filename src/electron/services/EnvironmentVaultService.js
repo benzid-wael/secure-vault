@@ -191,7 +191,13 @@ export class EnvironmentVaultService {
       const payload = CryptographyService.decrypt(encryptedData, key);
       const vault = EnvironmentVault.fromJSON(payload);
 
-      return { success: true, data: vault };
+      // The derived key and its salt header, for handing straight to
+      // saveVault: a load-modify-save then runs PBKDF2 once, not twice.
+      const keyMaterial = {
+        key,
+        header: CryptographyService.keyHeaderOf(vaultFile),
+      };
+      return { success: true, data: vault, keyMaterial };
     } catch (error) {
       return {
         success: false,
@@ -200,22 +206,45 @@ export class EnvironmentVaultService {
     }
   }
 
-  static async saveVault(vaultPath, password, vault) {
+  /**
+   * @param {string} vaultPath
+   * @param {string} password
+   * @param {EnvironmentVault} vault
+   * @param {{key: Buffer, header: {salt: string, kdf?: Object}}} [keyMaterial]
+   *   From the loadVault this save follows. When it is at the current work
+   *   factor, its key and salt are reused (each encryption still gets a fresh
+   *   random IV); otherwise, or when absent, a fresh salt is derived at the
+   *   current work factor — which is also how a legacy vault gets upgraded.
+   *   Never pass it when `password` differs from the one it was derived from.
+   */
+  static async saveVault(vaultPath, password, vault, keyMaterial = null) {
     try {
       const payload = vault.toJSON();
-      const salt = CryptographyService.generateSalt();
-      const key = CryptographyService.deriveKey(
-        password,
-        salt,
-        CryptographyService.ITERATIONS
-      );
+      let key;
+      let header;
+      if (
+        keyMaterial &&
+        !CryptographyService.needsKdfUpgrade(keyMaterial.header)
+      ) {
+        ({ key, header } = keyMaterial);
+      } else {
+        const salt = CryptographyService.generateSalt();
+        key = CryptographyService.deriveKey(
+          password,
+          salt,
+          CryptographyService.ITERATIONS
+        );
+        header = {
+          salt: salt.toString('hex'),
+          kdf: CryptographyService.kdfHeader(),
+        };
+      }
       const encrypted = CryptographyService.encrypt(payload, key);
 
       const vaultFile = {
         type: 'environment-vault',
         version: 1,
-        salt: salt.toString('hex'),
-        kdf: CryptographyService.kdfHeader(),
+        ...header,
         iv: encrypted.iv,
         authTag: encrypted.authTag,
         encrypted: encrypted.encrypted,
@@ -254,6 +283,7 @@ export class EnvironmentVaultService {
       return loadResult;
     }
 
+    // No keyMaterial: a new password needs a fresh salt and key.
     return this.saveVault(vaultPath, newPassword, loadResult.data);
   }
 
@@ -332,7 +362,7 @@ export class EnvironmentVaultService {
         message,
       });
 
-      return this.saveVault(vaultPath, password, vault);
+      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -453,7 +483,7 @@ export class EnvironmentVaultService {
         message: `Remove ${key}`,
       });
 
-      return this.saveVault(vaultPath, password, vault);
+      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -476,7 +506,7 @@ export class EnvironmentVaultService {
         });
       }
 
-      return this.saveVault(vaultPath, password, vault);
+      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -489,7 +519,7 @@ export class EnvironmentVaultService {
     try {
       const vault = loadResult.data;
       vault.setExtends(envName, parent);
-      return this.saveVault(vaultPath, password, vault);
+      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -508,7 +538,7 @@ export class EnvironmentVaultService {
         };
       }
       vault.environments[envName].description = description || '';
-      return this.saveVault(vaultPath, password, vault);
+      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -521,7 +551,7 @@ export class EnvironmentVaultService {
     try {
       const vault = loadResult.data;
       vault.renameEnvironment(oldName, newName);
-      return this.saveVault(vaultPath, password, vault);
+      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -549,7 +579,7 @@ export class EnvironmentVaultService {
         );
       }
 
-      return this.saveVault(vaultPath, password, vault);
+      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -623,7 +653,7 @@ export class EnvironmentVaultService {
         message: `Imported from ${path.basename(filePath)}`,
       });
 
-      return this.saveVault(vaultPath, password, vault);
+      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -636,7 +666,7 @@ export class EnvironmentVaultService {
     try {
       const vault = loadResult.data;
       vault.squash(envName, { keep: Math.max(1, keep) });
-      return this.saveVault(vaultPath, password, vault);
+      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -649,7 +679,7 @@ export class EnvironmentVaultService {
     try {
       const vault = loadResult.data;
       vault.rollback(envName, versionN);
-      return this.saveVault(vaultPath, password, vault);
+      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
     } catch (error) {
       return { success: false, error: error.message };
     }

@@ -10,6 +10,14 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ## [Unreleased]
 
+### Added
+
+- **`vault env set <key> --value-stdin`** — read the value from stdin, so a
+  secret never appears in `ps`, shell history or an editor temp file. One
+  trailing newline is dropped; multi-line values are kept. Works with
+  `--encode`. The password must come from `--password-file` or
+  `VAULT_ENV_PASSWORD`, since stdin carries the value.
+
 ### Security
 
 - **Master password no longer passed to child processes.** `vault env run
@@ -44,7 +52,8 @@ Design detail for the environment-vault (`vault env`) features lives in
     re-protected without the previous password.
   - CLI environment vaults upgrade on their next write.
   - Unlocking and each CLI command take roughly 0.25 s longer; the desktop app
-    caches keys while a vault is unlocked.
+    caches keys while a vault is unlocked, and a CLI write reuses the key it
+    just derived to read the vault instead of deriving a new one.
 - **One password policy everywhere.** The desktop forms used a looser strength
   score than the main process and the CLI, so a password like `Password123`
   passed the form and then failed to save. All three now use the same rules:

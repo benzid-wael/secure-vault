@@ -515,6 +515,10 @@ export function registerEnvCommand(program) {
     .option('--password-stdin', 'Read vault password from stdin')
     .option('-e, --env <name>', 'Environment name (or set VAULT_ENV)')
     .option('--in <path>', 'Read the value from a file instead of the argument')
+    .option(
+      '--value-stdin',
+      'Read the value from stdin (keeps it out of argv, shell history and temp files)'
+    )
     .option('--encode <codec>', 'Encode the value before storing (base64)')
     .option('--public', 'Mark variable as non-sensitive')
     .option('--required', 'Mark variable as required (checked by validate)')
@@ -532,24 +536,57 @@ export function registerEnvCommand(program) {
           );
           process.exit(1);
         }
-        if (options.in !== undefined && value !== undefined) {
+        const fromFile = options.in !== undefined;
+        const fromStdin = !!options.valueStdin;
+        const sources = [value !== undefined, fromFile, fromStdin].filter(
+          Boolean
+        ).length;
+        if (sources > 1) {
           console.error(
             chalk.red(
-              'Provide either a value argument or --in <path>, not both.'
+              'Provide only one of: a value argument, --in <path>, --value-stdin.'
             )
           );
           process.exit(1);
         }
+        if (fromStdin) {
+          // stdin can carry one thing, and with the value on it there is no
+          // terminal left to prompt for the password.
+          if (options.passwordStdin) {
+            console.error(
+              chalk.red(
+                '--value-stdin and --password-stdin both read stdin; pass the ' +
+                  'password with --password-file or VAULT_ENV_PASSWORD.'
+              )
+            );
+            process.exit(1);
+          }
+          if (!hasNonInteractivePassword(options)) {
+            console.error(
+              chalk.red(
+                'With --value-stdin, provide the password via --password-file ' +
+                  'or VAULT_ENV_PASSWORD.'
+              )
+            );
+            process.exit(1);
+          }
+          // One trailing newline (from echo / a heredoc) is dropped; interior
+          // newlines are kept, so multi-line values work.
+          value = stripTrailingNewline(fs.readFileSync(0, 'utf8'));
+          if (value === '') {
+            console.error(chalk.red('No value on stdin — nothing changed.'));
+            process.exit(1);
+          }
+        }
 
-        const fromFile = options.in !== undefined;
-        // The editor is only for the "no value, no file" interactive case.
+        // The editor is only for the "no value, no file, no stdin" case.
         const interactive = value === undefined && !fromFile;
 
         if (interactive && !process.stdin.isTTY) {
           console.error(
             chalk.red(
-              'No value provided. Pass a value argument or --in <path> ' +
-                'when running non-interactively.'
+              'No value provided. Pass a value argument, --in <path> or ' +
+                '--value-stdin when running non-interactively.'
             )
           );
           process.exit(1);
@@ -586,7 +623,7 @@ export function registerEnvCommand(program) {
             return;
           }
         } else if (options.encode) {
-          // Encode an inline value argument too (symmetry with --in).
+          // Encode an inline or stdin value too (symmetry with --in).
           value = encodeValue(value, options.encode);
         }
 
