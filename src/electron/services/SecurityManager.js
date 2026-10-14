@@ -91,9 +91,19 @@ export class SecurityManager {
     return { isValid: true };
   }
 
-  sanitizePath(filePath) {
-    // Basic path sanitization to prevent directory traversal
-    return filePath.replace(/\.\./g, '').replace(/\/\//g, '/');
+  /**
+   * True only for IPC from `window`'s own top-level frame. Anything else (a
+   * subframe, a destroyed or replaced window, another webContents) gets no
+   * access to the vault API.
+   */
+  isTrustedSender(event, window) {
+    if (!window || window.isDestroyed()) return false;
+    const contents = window.webContents;
+    return (
+      event?.sender === contents &&
+      !!event.senderFrame &&
+      event.senderFrame === contents.mainFrame
+    );
   }
 
   isSecureOrigin(url) {

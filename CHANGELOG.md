@@ -25,6 +25,13 @@ Design detail for the environment-vault (`vault env`) features lives in
   longer hands the password back to the window, and the window no longer logs
   decrypted entries to its console.
 - **Desktop app auto-locks** when the computer sleeps or its screen locks.
+- **Desktop app: tighter IPC.** Only the main window's top frame can call the
+  vault API. Vault names are validated, and no name can reach a file outside the
+  vault directory (desktop and CLI). Rolling a vault back to its backup requires
+  it to be unlocked.
+- **Desktop export / import use native file dialogs.** Export asks where to save
+  instead of taking a typed path, and import uses only the file you pick, so the
+  page can no longer write or read arbitrary paths.
 
 ### Removed
 

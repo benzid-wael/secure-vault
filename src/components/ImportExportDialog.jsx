@@ -44,9 +44,6 @@ const ImportExportDialog = ({
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ text: '', severity: 'info' });
 
-  // Export state
-  const [exportPath, setExportPath] = useState('');
-
   // Import state
   const [importPath, setImportPath] = useState('');
   const [newVaultName, setNewVaultName] = useState('');
@@ -57,27 +54,21 @@ const ImportExportDialog = ({
     setTimeout(() => setMessage({ text: '', severity: 'info' }), 5000);
   };
 
+  // The destination is chosen in a native save dialog opened by the main
+  // process, so the page never supplies a file path.
   const handleExport = async () => {
-    if (!exportPath.trim()) {
-      showMessage('Please specify an export file path', 'error');
-      return;
-    }
-
-    if (!exportPath.endsWith('.vault.json')) {
-      showMessage('Export file must have .vault.json extension', 'error');
-      return;
-    }
-
     setLoading(true);
     try {
-      const result = await window.electronAPI.exportVault(
-        vaultName,
-        exportPath
-      );
+      const result = await window.electronAPI.exportVault(vaultName);
 
+      if (result.canceled) return;
       if (result.success) {
-        showMessage('Vault exported successfully!', 'success');
-        setExportPath('');
+        showMessage(
+          result.exportPath
+            ? `Vault exported to ${result.exportPath}`
+            : 'Vault exported successfully!',
+          'success'
+        );
       } else {
         showMessage(result.error || 'Failed to export vault', 'error');
       }
@@ -113,12 +104,7 @@ const ImportExportDialog = ({
 
   const handleImport = async () => {
     if (!importPath.trim()) {
-      showMessage('Please specify an import file path', 'error');
-      return;
-    }
-
-    if (!importPath.toLowerCase().endsWith('.vault.json')) {
-      showMessage('Import file must have a .vault.json extension', 'error');
+      showMessage('Choose a vault export file with Browse…', 'error');
       return;
     }
 
@@ -139,8 +125,8 @@ const ImportExportDialog = ({
 
     setLoading(true);
     try {
+      // The main process imports the file picked in its open dialog.
       const result = await window.electronAPI.importVault(
-        importPath,
         newVaultName,
         importPassword
       );
@@ -170,7 +156,6 @@ const ImportExportDialog = ({
   const handleClose = () => {
     if (!loading) {
       setMessage({ text: '', severity: 'info' });
-      setExportPath('');
       setImportPath('');
       setNewVaultName('');
       setImportPassword('');
@@ -250,21 +235,12 @@ const ImportExportDialog = ({
               </Typography>
             </Box>
 
-            <TextField
-              label="Export File Path"
-              value={exportPath}
-              onChange={(e) => setExportPath(e.target.value)}
-              placeholder="/path/to/export/my-vault.vault.json"
-              fullWidth
-              helperText="Specify the full path where the vault should be exported (must end with .vault.json)"
-              sx={{
-                '& .MuiInputBase-input': { color: 'white' },
-                '& .MuiInputLabel-root': { color: 'rgba(255, 255, 255, 0.7)' },
-                '& .MuiFormHelperText-root': {
-                  color: 'rgba(255, 255, 255, 0.5)',
-                },
-              }}
-            />
+            <Typography
+              variant="body2"
+              sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
+            >
+              You will choose where to save the .vault.json file.
+            </Typography>
           </Box>
         )}
 
@@ -277,12 +253,12 @@ const ImportExportDialog = ({
 
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
               <TextField
-                label="Import File Path"
+                label="Import File"
                 value={importPath}
-                onChange={(e) => setImportPath(e.target.value)}
-                placeholder="/path/to/import/vault-export.vault.json"
+                placeholder="Choose a .vault.json export"
                 fullWidth
-                helperText="Path to the vault export file (.vault.json)"
+                InputProps={{ readOnly: true }}
+                helperText="Use Browse… to pick the vault export file"
                 sx={{
                   '& .MuiInputBase-input': { color: 'white' },
                   '& .MuiInputLabel-root': {
