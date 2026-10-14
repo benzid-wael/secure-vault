@@ -108,3 +108,50 @@ describe('VaultFileService.writeVaultFile', () => {
     expect(fs.readJSONSync(path.join(dir, 'main.vault'))).toEqual({ v: 1 });
   });
 });
+
+describe('concurrent vault writes', () => {
+  let dir;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-vfs-race-'));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const leftovers = () => fs.readdirSync(dir).filter((n) => n.includes('.tmp'));
+
+  it('two writes in flight for one vault both succeed and leave no temp file', async () => {
+    const vfs = new VaultFileService(dir);
+    await Promise.all([
+      vfs.writeVaultFile('main', { v: 1 }),
+      vfs.writeVaultFile('main', { v: 2 }),
+    ]);
+    expect([1, 2]).toContain(fs.readJSONSync(path.join(dir, 'main.vault')).v);
+    expect(leftovers()).toEqual([]);
+  });
+
+  it('the startup double-fetch creates one default vault without errors', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { VaultService } = await import(
+      '../../../electron/services/VaultService.js'
+    );
+    const vs = new VaultService(dir);
+    const createSpy = vi.spyOn(vs, 'createVault');
+
+    const [a, b] = await Promise.all([
+      vs.getAvailableVaults(),
+      vs.getAvailableVaults(),
+    ]);
+
+    expect(a).toContain('default');
+    expect(b).toContain('default');
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(leftovers()).toEqual([]);
+    // Later calls see the existing vault and create nothing.
+    await vs.getAvailableVaults();
+    expect(createSpy).toHaveBeenCalledTimes(1);
+  });
+});

@@ -68,6 +68,8 @@ export default defineConfig({
     // Integration tests derive real keys at the production PBKDF2 work factor
     // (~250 ms each), and some spawn the CLI many times.
     testTimeout: 30000,
+    // Setup hooks (e.g. beforeAll seeding a vault through the CLI) too.
+    hookTimeout: 30000,
     coverage: {
       provider: 'v8',
       reporter: [

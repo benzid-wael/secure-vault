@@ -68,6 +68,21 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Fixed
 
+- **Desktop main process starts again.** The Electron main bundle was built as
+  browser code, which replaced `import.meta` and `process.env` with `{}`: it
+  crashed on load (`fileURLToPath` received `undefined`) and dev mode could never
+  be detected. It is now built for Node.
+- **Desktop dev mode renders again.** With Vite 8.0.16 the dev server's
+  dependency pre-bundling dropped an import inside MUI/Emotion, so the window
+  stayed blank (`init_emotion_react_browser_development_esm is not defined`).
+  Fixed by upgrading Vite to 8.3.4. `npm run dev:main` now rebuilds the main
+  process first, and when the dev server isn't running the error page says to
+  start it (`npm run dev:renderer`, or `npm run dev:electron` for both).
+- **Desktop startup no longer races on the default vault.** The window asks for
+  the vault list twice at startup; both requests could create the `default`
+  vault at once (different recovery keys, and with atomic writes a failed
+  rename). Creation is now shared, and every atomic write uses its own temp
+  file.
 - **Desktop vault writes are crash-safe.** Saving, creating, importing and
   updating settings wrote the vault file in place; a crash mid-write could
   corrupt it. All writes now go through a temp file and an atomic rename.

@@ -138,7 +138,14 @@ export class WindowManager {
             errorCode,
             errorDescription,
           });
-          this.showErrorPage(`Failed to load application: ${errorDescription}`);
+          const hint =
+            this.isDev && errorDescription === 'ERR_CONNECTION_REFUSED'
+              ? ` — the dev server at ${startUrl} isn't running. Start it with ` +
+                '`npm run dev:renderer`, or use `npm run dev:electron` to run both.'
+              : '';
+          this.showErrorPage(
+            `Failed to load application: ${errorDescription}${hint}`
+          );
         }
       );
 

@@ -1,6 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
+import crypto from 'crypto';
 
 import { CryptographyService } from './CryptographyService.js';
 
@@ -83,16 +84,25 @@ export class VaultFileService {
 
   async atomicWriteVaultFile(vaultName, data) {
     const vaultPath = this.getVaultPath(vaultName);
-    const tempPath = this.getTempPath(vaultName);
+    // A temp file per write: two writes in flight for the same vault must not
+    // share one, or the first rename pulls it out from under the second.
+    const tempPath = `${this.getTempPath(vaultName)}.${process.pid}.${crypto
+      .randomBytes(6)
+      .toString('hex')}`;
 
-    // Write to temp file first
-    await fs.writeJSON(tempPath, data, { spaces: 2 });
+    try {
+      // Write to temp file first
+      await fs.writeJSON(tempPath, data, { spaces: 2 });
 
-    // Verify temp file can be read
-    await fs.readJSON(tempPath);
+      // Verify temp file can be read
+      await fs.readJSON(tempPath);
 
-    // Move temp file to final location (atomic operation)
-    await fs.move(tempPath, vaultPath, { overwrite: true });
+      // Move temp file to final location (atomic operation)
+      await fs.move(tempPath, vaultPath, { overwrite: true });
+    } catch (error) {
+      await fs.remove(tempPath).catch(() => {});
+      throw error;
+    }
   }
 
   async createBackup(vaultName) {
