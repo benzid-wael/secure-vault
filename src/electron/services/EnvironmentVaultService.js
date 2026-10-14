@@ -295,7 +295,76 @@ export class EnvironmentVaultService {
     }
 
     // No keyMaterial: a new password needs a fresh salt and key.
-    return this.saveVault(vaultPath, newPassword, loadResult.data);
+    const saved = await this.saveVault(vaultPath, newPassword, loadResult.data);
+    if (!saved.success) return saved;
+
+    const snapshots = await this.#rekeySnapshots(
+      vaultPath,
+      currentPassword,
+      newPassword
+    );
+    return { success: true, ...snapshots };
+  }
+
+  /**
+   * Re-encrypt the vault's `.deleted.<ts>` snapshots under the new password.
+   * Each one is a full copy of the vault taken before an environment was
+   * deleted; left alone, it would keep opening with the retired password.
+   * A snapshot that doesn't open with the current password predates an
+   * earlier password change and can't be re-keyed here, so it is left
+   * untouched and reported for the user to handle.
+   *
+   * @returns {Promise<{rekeyedSnapshots: string[], skippedSnapshots: string[]}>}
+   *   File names (not paths).
+   */
+  static async #rekeySnapshots(vaultPath, currentPassword, newPassword) {
+    const dir = path.dirname(vaultPath);
+    const prefix = `${path.basename(vaultPath)}.deleted.`;
+    const rekeyedSnapshots = [];
+    const skippedSnapshots = [];
+
+    // The password change is already saved: failing to list the directory
+    // must not turn it into a reported failure.
+    let names = [];
+    try {
+      names = ((await fs.readdir(dir)) || [])
+        .filter((name) => name.startsWith(prefix) && !name.endsWith('.tmp'))
+        .sort();
+    } catch {
+      return { rekeyedSnapshots, skippedSnapshots };
+    }
+    for (const name of names) {
+      const snapshotPath = path.join(dir, name);
+      try {
+        const file = await fs.readJSON(snapshotPath);
+        if (file.type !== 'environment-vault') throw new Error('not a vault');
+        const payload = CryptographyService.decrypt(
+          { encrypted: file.encrypted, authTag: file.authTag, iv: file.iv },
+          CryptographyService.deriveKeyFor(currentPassword, file)
+        );
+
+        const salt = CryptographyService.generateSalt();
+        const key = CryptographyService.deriveKey(
+          newPassword,
+          salt,
+          CryptographyService.ITERATIONS
+        );
+        const rekeyed = {
+          ...file,
+          salt: salt.toString('hex'),
+          kdf: CryptographyService.kdfHeader(),
+          ...CryptographyService.encrypt(payload, key),
+        };
+
+        const tmpPath = `${snapshotPath}.tmp`;
+        await fs.writeJSON(tmpPath, rekeyed, { spaces: 2 });
+        await fs.move(tmpPath, snapshotPath, { overwrite: true });
+        rekeyedSnapshots.push(name);
+      } catch {
+        skippedSnapshots.push(name);
+      }
+    }
+    return { rekeyedSnapshots, skippedSnapshots };
   }
 
   static async init({ name, vault, password, environments = {} }) {

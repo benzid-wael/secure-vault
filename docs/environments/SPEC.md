@@ -401,7 +401,7 @@ The service creates timestamped backups on destructive operations:
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `.env.vault`                     | Active encrypted file                                                                                                |
 | `.env.vault.bak`                 | Previous good state (before last mutation); a copy of the current file after a re-key (password change, KDF upgrade) |
-| `.env.vault.deleted.<timestamp>` | Preserved copy on deletion                                                                                           |
+| `.env.vault.deleted.<timestamp>` | Preserved copy on deletion; re-encrypted under the new password by `change-password`                                 |
 
 ---
 

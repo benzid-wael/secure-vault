@@ -76,7 +76,9 @@ Design detail for the environment-vault (`vault env`) features lives in
   password, so a retired (possibly leaked) password still opened it, and the
   desktop "Restore backup" undid the change. After a password change, or the
   600k key upgrade, the CLI `.bak` is refreshed from the new file and the
-  desktop backup is removed.
+  desktop backup is removed. `vault env change-password` also re-encrypts the
+  vault's `.deleted.<ts>` snapshots under the new password, and lists any it
+  can't open (taken before an earlier password change) so you can remove them.
 - Password-recovery metadata missing one of its two required fields is now
   treated as invalid and regenerated, instead of being accepted.
 - **`vault recover` works.** It crashed on an undefined variable, always
