@@ -60,6 +60,8 @@ class ElectronApp {
       this.vaultSettingsService = new VaultSettingsService(vaultDir);
       // The master password lives here, never in the renderer (see VaultSession).
       this.session = new VaultSession();
+      // Set only by the native open dialog (`select-import-file`).
+      this.selectedImportPath = null;
 
       this.mainWindow = null;
       console.log('ElectronApp initialized successfully');
@@ -165,8 +167,26 @@ class ElectronApp {
   }
 
   setupHandlers() {
+    // Every channel goes through `handle`: a call from anything but the main
+    // window's top frame (an injected iframe, another webContents) is refused.
+    const handle = (channel, fn) =>
+      ipcMain.handle(channel, (event, ...args) =>
+        this.securityManager.isTrustedSender(event, this.mainWindow)
+          ? fn(event, ...args)
+          : { success: false, error: 'Untrusted IPC sender' }
+      );
+    // For channels whose first argument is a vault name: it becomes a file
+    // path, so it is validated before any service sees it.
+    const handleVault = (channel, fn) =>
+      handle(channel, (event, vaultName, ...args) => {
+        const check = this.securityManager.validateVaultName(vaultName);
+        return check.isValid
+          ? fn(event, vaultName, ...args)
+          : { success: false, error: check.error };
+      });
+
     // IPC Handlers using the new VaultService
-    ipcMain.handle('get-vaults', async () => {
+    handle('get-vaults', async () => {
       try {
         const vaults = await this.vaultService.getAvailableVaults();
         return { success: true, data: vaults };
@@ -177,7 +197,7 @@ class ElectronApp {
     });
     // Session lifecycle: these are the only handlers that receive the master
     // password from the renderer, and none of them sends it back.
-    ipcMain.handle('create-vault', async (event, vaultName, masterPassword) => {
+    handleVault('create-vault', async (event, vaultName, masterPassword) => {
       const result = await this.vaultService.createVault(
         vaultName,
         masterPassword
@@ -185,7 +205,7 @@ class ElectronApp {
       if (result.success) this.session.open(vaultName, masterPassword);
       return result;
     });
-    ipcMain.handle('unlock-vault', async (event, vaultName, password) => {
+    handleVault('unlock-vault', async (event, vaultName, password) => {
       const result = await this.vaultService.verifyPassword(
         vaultName,
         password
@@ -193,23 +213,23 @@ class ElectronApp {
       if (result.success) this.session.open(vaultName, password);
       return result;
     });
-    ipcMain.handle('lock-vault', () => {
+    handle('lock-vault', () => {
       this.session.close();
       return { success: true };
     });
 
     // Session-bound: act on the unlocked vault, refuse while locked.
-    ipcMain.handle('load-vault', (event, vaultName) =>
+    handleVault('load-vault', (event, vaultName) =>
       this.session.withPassword(vaultName, (password) =>
         this.vaultService.loadVault(vaultName, password)
       )
     );
-    ipcMain.handle('save-vault', (event, vaultName, data) =>
+    handleVault('save-vault', (event, vaultName, data) =>
       this.session.withPassword(vaultName, (password) =>
         this.vaultService.saveVault(vaultName, password, data)
       )
     );
-    ipcMain.handle(
+    handleVault(
       'change-master-password',
       // The current password is still re-entered and checked here: holding a
       // session must not be enough to take over the vault.
@@ -224,7 +244,7 @@ class ElectronApp {
           return result;
         })
     );
-    ipcMain.handle(
+    handleVault(
       'delete-vault',
       async (event, vaultName, confirmationPassword) => {
         const result = await this.vaultService.deleteVault(
@@ -237,17 +257,15 @@ class ElectronApp {
         return result;
       }
     );
-    ipcMain.handle('generate-recovery-key', (event, vaultName) =>
+    handleVault('generate-recovery-key', (event, vaultName) =>
       this.session.withPassword(vaultName, (password) =>
         this.vaultService.generateRecoveryKey(vaultName, password)
       )
     );
-    ipcMain.handle(
-      'verify-vault-recovery-key',
-      (event, vaultName, recoveryKey) =>
-        this.vaultService.verifyRecoveryKey(vaultName, recoveryKey)
+    handleVault('verify-vault-recovery-key', (event, vaultName, recoveryKey) =>
+      this.vaultService.verifyRecoveryKey(vaultName, recoveryKey)
     );
-    ipcMain.handle(
+    handleVault(
       'load-vault-with-recovery-key',
       async (event, vaultName, recoveryKey) =>
         this.openRecoveredSession(
@@ -258,22 +276,26 @@ class ElectronApp {
           )
         )
     );
-    ipcMain.handle('has-vault-backup', (event, vaultName) =>
+    handleVault('has-vault-backup', (event, vaultName) =>
       this.vaultService.fileService
         .hasBackup(vaultName)
         .then((hasBackup) => ({ success: true, hasBackup }))
     );
-    ipcMain.handle('restore-vault-backup', (event, vaultName) =>
-      this.vaultService.fileService
-        .restoreFromBackup(vaultName)
-        .then((success) =>
-          success
-            ? { success: true }
-            : { success: false, error: 'No backup found for this vault' }
-        )
+    // Rolling a vault back overwrites its current contents: only for the
+    // vault that is unlocked.
+    handleVault('restore-vault-backup', (event, vaultName) =>
+      this.session.withPassword(vaultName, () =>
+        this.vaultService.fileService
+          .restoreFromBackup(vaultName)
+          .then((success) =>
+            success
+              ? { success: true }
+              : { success: false, error: 'No backup found for this vault' }
+          )
+      )
     );
 
-    ipcMain.handle('update-vault-settings', (event, vaultName, newSettings) =>
+    handleVault('update-vault-settings', (event, vaultName, newSettings) =>
       this.session.withPassword(vaultName, (password) =>
         this.vaultSettingsService.updateVaultSettings(
           vaultName,
@@ -283,25 +305,52 @@ class ElectronApp {
       )
     );
 
-    ipcMain.handle('get-vault-settings', (event, vaultName) =>
+    handleVault('get-vault-settings', (event, vaultName) =>
       this.session.withPassword(vaultName, (password) =>
         this.vaultSettingsService.getVaultSettings(vaultName, password)
       )
     );
 
-    ipcMain.handle('export-vault', (event, vaultName, exportPath) =>
-      this.session.withPassword(vaultName, (password) =>
-        this.importExportService.exportVault(vaultName, password, exportPath)
-      )
+    // The destination is picked here, in a native dialog: the renderer never
+    // names a path, so it cannot point an export at an arbitrary file.
+    handleVault('export-vault', (event, vaultName) =>
+      this.session.withPassword(vaultName, async (password) => {
+        const result = await dialog.showSaveDialog(this.mainWindow, {
+          title: 'Export Vault',
+          defaultPath: `${vaultName}.vault.json`,
+          filters: [{ name: 'Vault Export', extensions: ['vault.json'] }],
+        });
+        if (result.canceled || !result.filePath) {
+          return { success: false, canceled: true };
+        }
+        const exportPath = result.filePath.endsWith('.vault.json')
+          ? result.filePath
+          : `${result.filePath.replace(/\.json$/, '')}.vault.json`;
+        const exported = await this.importExportService.exportVault(
+          vaultName,
+          password,
+          exportPath
+        );
+        return exported.success ? { ...exported, exportPath } : exported;
+      })
     );
 
-    ipcMain.handle(
-      'import-vault',
-      (event, importPath, newVaultName, password) =>
-        this.importExportService.importVault(importPath, newVaultName, password)
-    );
+    // Import reads only the file the user picked in `select-import-file`;
+    // the renderer cannot name another path.
+    handleVault('import-vault', (event, newVaultName, password) => {
+      const importPath = this.selectedImportPath;
+      if (!importPath) {
+        return { success: false, error: 'Choose a file to import first' };
+      }
+      return this.importExportService
+        .importVault(importPath, newVaultName, password)
+        .then((result) => {
+          if (result.success) this.selectedImportPath = null;
+          return result;
+        });
+    });
 
-    ipcMain.handle(
+    handleVault(
       'recover-vault-with-old-password',
       async (event, vaultName, oldPassword) =>
         this.openRecoveredSession(
@@ -310,7 +359,7 @@ class ElectronApp {
         )
     );
 
-    ipcMain.handle('get-vault-directory', async () => {
+    handle('get-vault-directory', async () => {
       try {
         const vaultDir = getVaultsDir();
         return { success: true, path: vaultDir };
@@ -320,7 +369,7 @@ class ElectronApp {
       }
     });
 
-    ipcMain.handle('select-import-file', async () => {
+    handle('select-import-file', async () => {
       const window = BrowserWindow.getFocusedWindow();
       const result = await dialog.showOpenDialog(window, {
         title: 'Select Vault Export File',
@@ -328,6 +377,7 @@ class ElectronApp {
         filters: [{ name: 'Vault Export', extensions: ['vault.json', 'json'] }],
       });
 
+      this.selectedImportPath = null;
       if (result.canceled || result.filePaths.length === 0) {
         return { success: false, canceled: true };
       }
@@ -340,6 +390,7 @@ class ElectronApp {
         };
       }
 
+      this.selectedImportPath = filePath;
       return { success: true, filePath };
     });
   }

@@ -8,15 +8,17 @@ Audit performed 2026-06-15 covering the Electron desktop app (`src/`,
 Re-checked 2026-10-14. A finding marked **Resolved** keeps its original write-up
 below for context; everything else is still open.
 
-| ID                   | Status                                                                        |
-| -------------------- | ----------------------------------------------------------------------------- |
-| C1                   | **Resolved** — vault-file log removed from `loadVault()`                      |
-| C2                   | **Resolved** — password held by a main-process session, see the note under C2 |
-| C3                   | **Resolved** — recovery-key log removed from `createDefaultVault()`           |
-| C4                   | **Partly resolved** — see the note under C4                                   |
-| H1                   | **Resolved** — `recover()` fixed end-to-end, see the note under H1            |
-| H2, H3               | **Resolved** — dead, broken services deleted                                  |
-| H4, H5, M1–M6, L1–L4 | Open (not re-verified)                                                        |
+| ID           | Status                                                                         |
+| ------------ | ------------------------------------------------------------------------------ |
+| C1           | **Resolved** — vault-file log removed from `loadVault()`                       |
+| C2           | **Resolved** — password held by a main-process session, see the note under C2  |
+| C3           | **Resolved** — recovery-key log removed from `createDefaultVault()`            |
+| C4           | **Partly resolved** — see the note under C4                                    |
+| H1           | **Resolved** — `recover()` fixed end-to-end, see the note under H1             |
+| H2, H3       | **Resolved** — dead, broken services deleted                                   |
+| H4           | **Mitigated** — see the note under H4                                          |
+| H5           | **Resolved** — dead code removed; vault names contained, see the note under H5 |
+| M1–M6, L1–L4 | Open (not re-verified)                                                         |
 
 ---
 
@@ -209,6 +211,27 @@ as H2 (lines 61, 121, 219, 225, 240, 242).
 
 ### H4 — Preload exposes full vault API to the renderer
 
+> **Mitigated (2026-10-14).** The page still needs most of these calls, so the
+> surface can't shrink to nothing; what changed is what a compromised renderer
+> can do with it:
+>
+> - **Sender check.** Every IPC handler goes through one guard that accepts
+>   calls only from the main window's top-level frame
+>   (`SecurityManager.isTrustedSender`).
+> - **No password to steal** (C2): calls act on the unlocked vault only; while
+>   locked they are refused.
+> - **No renderer-chosen paths.** `exportVault` used to write to any path the
+>   page supplied, overwriting whatever was there. The main process now picks
+>   the destination in a native save dialog. `importVault` reads only the file
+>   picked in the native open dialog.
+> - **Rollback needs the vault unlocked.** `restoreVaultBackup` overwrote a
+>   vault with its backup without authentication.
+> - **Vault names validated** at the IPC boundary (see H5).
+>
+> Remaining: while a vault is unlocked, injected script can still read its
+> entries through `loadVault` and save changes. Only preventing script injection
+> (CSP, no `dangerouslySetInnerHTML` on vault data) closes that.
+
 **File:** `public/preload.js`
 
 Every IPC handler is exposed via `contextBridge.exposeInMainWorld`:
@@ -224,6 +247,14 @@ broad. A renderer XSS or prototype-pollution attack can call any of these
 IPC handlers to exfiltrate or destroy vault data.
 
 ### H5 — Path traversal sanitisation trivially bypassable
+
+> **Resolved (2026-10-14).** `sanitizePath` was never called, so the bypass
+> wasn't reachable. It's deleted. The real gap was elsewhere: vault names from
+> the renderer were joined into file paths unchecked (`../../x` →
+> `<vaultDir>/../../x.vault`), and the existing `validateVaultName` was never
+> called. Now IPC handlers validate every vault name, and `VaultFileService`
+> refuses any name that resolves outside the vault directory. That second check
+> covers the CLI too.
 
 **File:** `src/electron/services/SecurityManager.js:94-97`
 

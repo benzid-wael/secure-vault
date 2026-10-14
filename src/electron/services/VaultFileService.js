@@ -20,16 +20,38 @@ export class VaultFileService {
     fs.ensureDirSync(this.vaultDirectory);
   }
 
+  /**
+   * The path of `<vaultName><suffix>` inside the vault directory. Vault names
+   * reach here from the renderer and the CLI, so a name that would resolve
+   * anywhere else (separators, `..`, NUL) is refused rather than cleaned up.
+   */
+  _pathFor(vaultName, suffix) {
+    if (
+      typeof vaultName !== 'string' ||
+      vaultName.length === 0 ||
+      vaultName === '.' ||
+      vaultName === '..' ||
+      /[/\\\0]/.test(vaultName)
+    ) {
+      throw new Error('Invalid vault name');
+    }
+    const filePath = path.resolve(this.vaultDirectory, `${vaultName}${suffix}`);
+    if (path.dirname(filePath) !== this.vaultDirectory) {
+      throw new Error('Invalid vault name');
+    }
+    return filePath;
+  }
+
   getVaultPath(vaultName) {
-    return path.join(this.vaultDirectory, `${vaultName}.vault`);
+    return this._pathFor(vaultName, '.vault');
   }
 
   getBackupPath(vaultName) {
-    return path.join(this.vaultDirectory, `${vaultName}.vault.backup`);
+    return this._pathFor(vaultName, '.vault.backup');
   }
 
   getTempPath(vaultName) {
-    return path.join(this.vaultDirectory, `${vaultName}.vault.tmp`);
+    return this._pathFor(vaultName, '.vault.tmp');
   }
 
   async vaultExists(vaultName) {
@@ -96,9 +118,9 @@ export class VaultFileService {
   async deleteVault(vaultName) {
     const vaultPath = this.getVaultPath(vaultName);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const deletedBackupPath = path.join(
-      this.vaultDirectory,
-      `${vaultName}.vault.deleted.${timestamp}`
+    const deletedBackupPath = this._pathFor(
+      vaultName,
+      `.vault.deleted.${timestamp}`
     );
 
     // Create backup before deletion
@@ -111,7 +133,7 @@ export class VaultFileService {
     const relatedFiles = [
       this.getBackupPath(vaultName),
       this.getTempPath(vaultName),
-      path.join(this.vaultDirectory, `${vaultName}.recovery`),
+      this._pathFor(vaultName, '.recovery'),
     ];
 
     for (const filePath of relatedFiles) {
