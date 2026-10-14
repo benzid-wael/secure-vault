@@ -3,11 +3,27 @@
 Audit performed 2026-06-15 covering the Electron desktop app (`src/`,
 `public/`, `bin/`) and the CLI (`bin/`, `src/utils/`, `src/electron/`).
 
+## Status
+
+Re-checked 2026-10-14. A finding marked **Resolved** keeps its original write-up
+below for context; everything else is still open.
+
+| ID                  | Status                                                              |
+| ------------------- | ------------------------------------------------------------------- |
+| C1                  | **Resolved** — vault-file log removed from `loadVault()`            |
+| C2                  | Open                                                                |
+| C3                  | **Resolved** — recovery-key log removed from `createDefaultVault()` |
+| C4                  | **Partly resolved** — see the note under C4                         |
+| H1                  | **Resolved** — `recover()` fixed end-to-end, see the note under H1  |
+| H2–H5, M1–M6, L1–L4 | Open (not re-verified)                                              |
+
 ---
 
 ## Critical
 
 ### C1 — Console leaks decrypted vault contents
+
+> **Resolved (2026-10-14).** Both log lines are gone from `loadVault()`.
 
 **File:** `src/electron/services/VaultService.js:139-141`
 
@@ -57,6 +73,9 @@ GC runs and the memory is reused. It is never zeroed.
 
 ### C3 — Recovery key printed to stdout on default vault creation
 
+> **Resolved (2026-10-14).** `createDefaultVault()` no longer logs; callers
+> still get the key in the returned result.
+
 **File:** `src/electron/services/VaultService.js:344-347`
 
 ```js
@@ -70,6 +89,22 @@ The recovery key can decrypt the master password (via
 to any process or log file that captures the output.
 
 ### C4 — `VAULT_ENV_PASSWORD` remains in `process.env` after read
+
+> **Partly resolved (2026-10-14).** Deleting the key from `process.env` would
+> **not** fix the exposure described below: `/proc/$PID/environ` and `ps eww`
+> read the environment block the process was started with, which `unsetenv`
+> does not touch. The variable is also already in the parent shell's
+> environment. Nothing inside the process can undo that.
+>
+> What the vault _could_ control, and did get wrong, is passing the password on
+> to children: `vault env run --merge`, `vault env shell --merge`,
+> `vault env agent exec --merge` and the `$EDITOR` spawned by `vault env edit`
+> all inherited `VAULT_ENV_PASSWORD`. `buildChildEnv` now drops it in every mode
+> (even when it is allowlisted), and the editor gets the same filtered env.
+>
+> Remaining: document that `--password-file` / `--password-stdin` are the safe
+> non-interactive sources, and that the env var is visible to same-UID
+> processes for the lifetime of the shell that exported it.
 
 **File:** `src/utils/password.js:115`
 
@@ -88,6 +123,14 @@ visible in the process environment.
 ## High
 
 ### H1 — `VaultRecoveryService` uses undefined variable `finalName`
+
+> **Resolved (2026-10-14).** Besides `finalName`, the same path had: the
+> temp-vault error branch reading an undefined `is_valid`, an un-awaited
+> `vaultExists()` (always truthy), and `console.log` calls dumping the vault file
+> and recovery metadata. In `bin/cli.js`, `recover` was never awaited (so the
+> CLI always reported success) and called the non-existent `spinner.failed`.
+> All fixed; the command now exits non-zero on failure. Covered by
+> `src/__tests__/electron/services/VaultRecoveryService.test.js`.
 
 **File:** `src/electron/services/VaultRecoveryService.js:121,126`
 

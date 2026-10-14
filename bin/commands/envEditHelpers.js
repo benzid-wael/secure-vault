@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { withoutVaultCredentials } from './envRunHelpers.js';
 
 /**
  * Resolve the user's editor command honoring the conventional precedence:
@@ -59,7 +60,10 @@ export function openInEditor(filePath, env = process.env) {
   const { cmd, args } = resolveEditor(env);
 
   return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, [...args, filePath], { stdio: 'inherit' });
+    const proc = spawn(cmd, [...args, filePath], {
+      stdio: 'inherit',
+      env: withoutVaultCredentials(process.env),
+    });
     proc.on('error', (err) =>
       reject(new Error(`Cannot launch editor "${cmd}": ${err.message}`))
     );

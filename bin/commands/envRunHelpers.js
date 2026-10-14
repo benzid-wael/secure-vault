@@ -11,6 +11,18 @@ export const CLEAN_ALLOWLIST = ['PATH', 'HOME', 'SHELL', 'USER', 'TMPDIR'];
 
 export const INJECT_MODES = ['clean', 'merge', 'file'];
 
+// Variables that carry the vault's own credentials. Never passed to a child,
+// whatever the mode or allowlist: a spawned command needs its env's secrets,
+// not the master password that unlocks every env.
+export const NEVER_INHERITED = ['VAULT_ENV_PASSWORD'];
+
+/** Copy of `env` without the vault's own credential variables. */
+export function withoutVaultCredentials(env) {
+  const out = { ...env };
+  for (const key of NEVER_INHERITED) delete out[key];
+  return out;
+}
+
 /**
  * Build the environment object for the spawned child process.
  *
@@ -23,6 +35,7 @@ export const INJECT_MODES = ['clean', 'merge', 'file'];
  * Vault vars are ALWAYS injected. Any unrecognized mode (e.g. the legacy
  * `file`, kept working as a deprecated alias at the run layer) falls back to
  * clean — it never silently passes the full parent env through unfiltered.
+ * The vault's own credentials (NEVER_INHERITED) are dropped in every mode.
  */
 export function buildChildEnv({
   mode = 'clean',
@@ -31,11 +44,12 @@ export function buildChildEnv({
   allowlist = [],
 }) {
   if (mode === 'merge') {
-    return { ...parentEnv, ...vars };
+    return { ...withoutVaultCredentials(parentEnv), ...vars };
   }
 
   // clean (also the safe fallback for any non-merge mode)
   const allowed = new Set([...CLEAN_ALLOWLIST, ...allowlist]);
+  for (const key of NEVER_INHERITED) allowed.delete(key);
   const base = {};
   for (const key of allowed) {
     if (parentEnv[key] !== undefined) base[key] = parentEnv[key];

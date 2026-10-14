@@ -9,6 +9,7 @@ import {
   DEFAULT_ALLOWLIST_FILE,
   VAULTRC_FILENAME,
   buildChildEnv,
+  withoutVaultCredentials,
   toDotenv,
   quoteDotenvValue,
   parseAllowlist,
@@ -75,6 +76,28 @@ describe('buildChildEnv', () => {
     expect(env.API_URL).toBe('https://x'); // now injected
     expect(env.TOKEN).toBe('abc');
     expect(env.SECRET_FROM_PARENT).toBeUndefined(); // not leaked
+  });
+
+  it('never passes the master password to the child, in any mode', () => {
+    const withPw = { ...parentEnv, VAULT_ENV_PASSWORD: 'master' };
+    for (const mode of ['clean', 'merge', 'file']) {
+      const env = buildChildEnv({ mode, vars, parentEnv: withPw });
+      expect(env.VAULT_ENV_PASSWORD).toBeUndefined();
+    }
+    // Not even when the user allowlists it explicitly.
+    const env = buildChildEnv({
+      mode: 'clean',
+      vars,
+      parentEnv: withPw,
+      allowlist: ['VAULT_ENV_PASSWORD'],
+    });
+    expect(env.VAULT_ENV_PASSWORD).toBeUndefined();
+  });
+
+  it('withoutVaultCredentials drops credentials without mutating the input', () => {
+    const input = { PATH: '/usr/bin', VAULT_ENV_PASSWORD: 'master' };
+    expect(withoutVaultCredentials(input)).toEqual({ PATH: '/usr/bin' });
+    expect(input.VAULT_ENV_PASSWORD).toBe('master');
   });
 
   it('CLEAN_ALLOWLIST covers the documented system vars', () => {
