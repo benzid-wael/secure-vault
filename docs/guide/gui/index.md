@@ -58,7 +58,8 @@ be recovered — choose something long, unique, and memorable.
 ## Unlock a vault
 
 Select the vault in the vault selector and enter its master password. The vault
-stays unlocked while the app is open; lock it (or quit) when you step away.
+stays unlocked until you lock it, quit, or step away: it locks automatically
+when your computer sleeps or its screen locks.
 
 ## Next
 

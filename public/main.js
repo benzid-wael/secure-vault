@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, powerMonitor } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -31,6 +31,7 @@ process.on('unhandledRejection', (reason, promise) => {
 import { VaultService } from '../src/electron/services/VaultService.js';
 import { ImportExportService } from '../src/electron/services/ImportExportService.js';
 import { VaultSettingsService } from '../src/electron/services/VaultSettingsService.js';
+import { VaultSession } from '../src/electron/services/VaultSession.js';
 import { WindowManager } from '../src/electron/services/WindowManager.js';
 import { MenuService } from '../src/electron/services/MenuService.js';
 import { SecurityManager } from '../src/electron/services/SecurityManager.js';
@@ -57,6 +58,8 @@ class ElectronApp {
       this.vaultService = new VaultService(vaultDir);
       this.importExportService = new ImportExportService(vaultDir);
       this.vaultSettingsService = new VaultSettingsService(vaultDir);
+      // The master password lives here, never in the renderer (see VaultSession).
+      this.session = new VaultSession();
 
       this.mainWindow = null;
       console.log('ElectronApp initialized successfully');
@@ -100,6 +103,7 @@ class ElectronApp {
       this.setupAppEventHandlers();
 
       this.setupHandlers();
+      this.setupAutoLock();
     } catch (error) {
       console.error('Failed to initialize application:', error);
       dialog.showErrorBox(
@@ -133,6 +137,33 @@ class ElectronApp {
     });
   }
 
+  /**
+   * A successful recovery yields the master password: open the session with it
+   * and strip it from the result so it never reaches the renderer.
+   */
+  openRecoveredSession(vaultName, result) {
+    if (!result?.success) return result;
+    const { password, ...rest } = result;
+    if (typeof password === 'string') this.session.open(vaultName, password);
+    return rest;
+  }
+
+  /** Close the session and tell the renderer to drop back to the selector. */
+  lockSession() {
+    const wasUnlocked = this.session.vaultName !== null;
+    this.session.close();
+    if (wasUnlocked && this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send('vault-locked');
+    }
+  }
+
+  setupAutoLock() {
+    // Lock whenever the user steps away from the machine.
+    powerMonitor.on('suspend', () => this.lockSession());
+    powerMonitor.on('lock-screen', () => this.lockSession());
+    app.on('before-quit', () => this.session.close());
+  }
+
   setupHandlers() {
     // IPC Handlers using the new VaultService
     ipcMain.handle('get-vaults', async () => {
@@ -144,34 +175,72 @@ class ElectronApp {
         return { success: false, error: error.message };
       }
     });
-    ipcMain.handle('create-vault', (event, vaultName, masterPassword) =>
-      this.vaultService.createVault(vaultName, masterPassword)
+    // Session lifecycle: these are the only handlers that receive the master
+    // password from the renderer, and none of them sends it back.
+    ipcMain.handle('create-vault', async (event, vaultName, masterPassword) => {
+      const result = await this.vaultService.createVault(
+        vaultName,
+        masterPassword
+      );
+      if (result.success) this.session.open(vaultName, masterPassword);
+      return result;
+    });
+    ipcMain.handle('unlock-vault', async (event, vaultName, password) => {
+      const result = await this.vaultService.verifyPassword(
+        vaultName,
+        password
+      );
+      if (result.success) this.session.open(vaultName, password);
+      return result;
+    });
+    ipcMain.handle('lock-vault', () => {
+      this.session.close();
+      return { success: true };
+    });
+
+    // Session-bound: act on the unlocked vault, refuse while locked.
+    ipcMain.handle('load-vault', (event, vaultName) =>
+      this.session.withPassword(vaultName, (password) =>
+        this.vaultService.loadVault(vaultName, password)
+      )
     );
-    ipcMain.handle('verify-vault-password', (event, vaultName, password) =>
-      this.vaultService.verifyPassword(vaultName, password)
-    );
-    ipcMain.handle('load-vault', (event, vaultName, password) =>
-      this.vaultService.loadVault(vaultName, password)
-    );
-    ipcMain.handle('save-vault', (event, vaultName, password, data) =>
-      this.vaultService.saveVault(vaultName, password, data)
+    ipcMain.handle('save-vault', (event, vaultName, data) =>
+      this.session.withPassword(vaultName, (password) =>
+        this.vaultService.saveVault(vaultName, password, data)
+      )
     );
     ipcMain.handle(
       'change-master-password',
+      // The current password is still re-entered and checked here: holding a
+      // session must not be enough to take over the vault.
       (event, vaultName, currentPassword, newPassword) =>
-        this.vaultService.changePassword(
-          vaultName,
-          currentPassword,
-          newPassword
-        )
-    );
-    ipcMain.handle('delete-vault', (event, vaultName, confirmationPassword) =>
-      this.vaultService.deleteVault(vaultName, confirmationPassword)
+        this.session.withPassword(vaultName, async () => {
+          const result = await this.vaultService.changePassword(
+            vaultName,
+            currentPassword,
+            newPassword
+          );
+          if (result.success) this.session.open(vaultName, newPassword);
+          return result;
+        })
     );
     ipcMain.handle(
-      'generate-recovery-key',
-      (event, vaultName, masterPassword) =>
-        this.vaultService.generateRecoveryKey(vaultName, masterPassword)
+      'delete-vault',
+      async (event, vaultName, confirmationPassword) => {
+        const result = await this.vaultService.deleteVault(
+          vaultName,
+          confirmationPassword
+        );
+        if (result.success && this.session.isUnlocked(vaultName)) {
+          this.session.close();
+        }
+        return result;
+      }
+    );
+    ipcMain.handle('generate-recovery-key', (event, vaultName) =>
+      this.session.withPassword(vaultName, (password) =>
+        this.vaultService.generateRecoveryKey(vaultName, password)
+      )
     );
     ipcMain.handle(
       'verify-vault-recovery-key',
@@ -180,8 +249,14 @@ class ElectronApp {
     );
     ipcMain.handle(
       'load-vault-with-recovery-key',
-      (event, vaultName, recoveryKey) =>
-        this.vaultService.loadVaultWithRecoveryKey(vaultName, recoveryKey)
+      async (event, vaultName, recoveryKey) =>
+        this.openRecoveredSession(
+          vaultName,
+          await this.vaultService.loadVaultWithRecoveryKey(
+            vaultName,
+            recoveryKey
+          )
+        )
     );
     ipcMain.handle('has-vault-backup', (event, vaultName) =>
       this.vaultService.fileService
@@ -198,22 +273,26 @@ class ElectronApp {
         )
     );
 
-    ipcMain.handle(
-      'update-vault-settings',
-      (event, vaultName, vaultPassword, newSettings) =>
+    ipcMain.handle('update-vault-settings', (event, vaultName, newSettings) =>
+      this.session.withPassword(vaultName, (password) =>
         this.vaultSettingsService.updateVaultSettings(
           vaultName,
-          vaultPassword,
+          password,
           newSettings
         )
+      )
     );
 
-    ipcMain.handle('get-vault-settings', (event, vaultName, vaultPassword) =>
-      this.vaultSettingsService.getVaultSettings(vaultName, vaultPassword)
+    ipcMain.handle('get-vault-settings', (event, vaultName) =>
+      this.session.withPassword(vaultName, (password) =>
+        this.vaultSettingsService.getVaultSettings(vaultName, password)
+      )
     );
 
-    ipcMain.handle('export-vault', (event, vaultName, password, exportPath) =>
-      this.importExportService.exportVault(vaultName, password, exportPath)
+    ipcMain.handle('export-vault', (event, vaultName, exportPath) =>
+      this.session.withPassword(vaultName, (password) =>
+        this.importExportService.exportVault(vaultName, password, exportPath)
+      )
     );
 
     ipcMain.handle(
@@ -224,8 +303,11 @@ class ElectronApp {
 
     ipcMain.handle(
       'recover-vault-with-old-password',
-      (event, vaultName, oldPassword) =>
-        this.vaultService.loadVaultWithPassword(vaultName, oldPassword)
+      async (event, vaultName, oldPassword) =>
+        this.openRecoveredSession(
+          vaultName,
+          await this.vaultService.loadVaultWithPassword(vaultName, oldPassword)
+        )
     );
 
     ipcMain.handle('get-vault-directory', async () => {

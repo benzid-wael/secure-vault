@@ -80,8 +80,7 @@ describe('VaultRecovery', () => {
       );
       expect(mockOnRecover).toHaveBeenCalledWith(
         { entries: [] },
-        'recovery-key',
-        undefined
+        'recovery-key'
       );
     });
   });
@@ -108,7 +107,6 @@ describe('VaultRecovery', () => {
     mockElectronAPI.recoverVaultWithOldPassword.mockResolvedValueOnce({
       success: true,
       data: { entries: [] },
-      password: 'recoveredPassword',
     });
     mockElectronAPI.loadVault.mockResolvedValueOnce({
       success: true,
@@ -124,8 +122,7 @@ describe('VaultRecovery', () => {
       );
       expect(mockOnRecover).toHaveBeenCalledWith(
         { entries: [] },
-        'old-password',
-        'recoveredPassword'
+        'old-password'
       );
     });
   });

@@ -294,9 +294,7 @@ describe('Entry Types Integration', () => {
   });
 
   it('allows creating different entry types through AddEntryMenu', async () => {
-    render(
-      <PasswordManager vaultName="test-vault" vaultPassword="password123" />
-    );
+    render(<PasswordManager vaultName="test-vault" />);
 
     // Wait for loading to complete
     await waitFor(
@@ -376,9 +374,7 @@ describe('Entry Types Integration', () => {
       },
     });
 
-    render(
-      <PasswordManager vaultName="test-vault" vaultPassword="password123" />
-    );
+    render(<PasswordManager vaultName="test-vault" />);
 
     // Wait for loading to complete and entries to be rendered
     await waitFor(() => {
@@ -406,9 +402,7 @@ describe('Entry Types Integration', () => {
   });
 
   it('creates and saves different entry types correctly', async () => {
-    render(
-      <PasswordManager vaultName="test-vault" vaultPassword="password123" />
-    );
+    render(<PasswordManager vaultName="test-vault" />);
 
     // Wait for loading to complete
     await waitFor(
@@ -457,10 +451,10 @@ describe('Entry Types Integration', () => {
 
     await waitFor(() => {
       expect(mockElectronAPI.saveVault).toHaveBeenCalled();
-      const [vaultName, password, vaultData] =
+      const [vaultName, vaultData, ...rest] =
         mockElectronAPI.saveVault.mock.calls[0];
       expect(vaultName).toBe('test-vault');
-      expect(password).toBe('password123');
+      expect(rest).toEqual([]); // no password crosses IPC
       const entries = Object.values(vaultData.entries);
       expect(entries).toEqual(
         expect.arrayContaining([
@@ -474,9 +468,7 @@ describe('Entry Types Integration', () => {
   });
 
   it('handles Level 3 card creation', async () => {
-    render(
-      <PasswordManager vaultName="test-vault" vaultPassword="password123" />
-    );
+    render(<PasswordManager vaultName="test-vault" />);
 
     // Wait for loading to complete
     await waitFor(
@@ -523,10 +515,10 @@ describe('Entry Types Integration', () => {
 
     await waitFor(() => {
       expect(mockElectronAPI.saveVault).toHaveBeenCalled();
-      const [vaultName, password, vaultData] =
+      const [vaultName, vaultData, ...rest] =
         mockElectronAPI.saveVault.mock.calls[0];
       expect(vaultName).toBe('test-vault');
-      expect(password).toBe('password123');
+      expect(rest).toEqual([]); // no password crosses IPC
       const entries = Object.values(vaultData.entries);
       expect(entries).toEqual(
         expect.arrayContaining([
@@ -556,9 +548,7 @@ describe('Entry Types Integration', () => {
       },
     });
 
-    render(
-      <PasswordManager vaultName="test-vault" vaultPassword="password123" />
-    );
+    render(<PasswordManager vaultName="test-vault" />);
 
     // Wait for loading to complete
     await waitFor(() => {

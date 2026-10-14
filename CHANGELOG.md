@@ -19,6 +19,17 @@ Design detail for the environment-vault (`vault env`) features lives in
 - **Desktop app no longer logs vault data.** `loadVault()` printed the whole
   vault file to the console, and creating the default vault printed its
   recovery key.
+- **Desktop app: the master password no longer lives in the UI.** The window
+  sends it once to unlock (or create / recover) a vault; the main process keeps
+  it for the session and every other request names only the vault. Recovery no
+  longer hands the password back to the window, and the window no longer logs
+  decrypted entries to its console.
+- **Desktop app auto-locks** when the computer sleeps or its screen locks.
+
+### Removed
+
+- `SecretQuestionRecoveryService`, `UsbRecoveryService` and the
+  `useEntryManagement` hook: unused, and none of them worked.
 
 ### Fixed
 

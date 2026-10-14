@@ -15,8 +15,10 @@ without your master password.
 
 ### Zero-knowledge architecture
 
-Your master password is **never stored**. It is used to derive the encryption key
-at unlock time and then discarded. This means:
+Your master password is **never written to disk**. While a vault is unlocked it
+is held in memory by the app's main process only; the window you interact with
+never keeps it. Locking the vault (manually, or automatically on sleep / screen
+lock) ends the session. This means:
 
 - Nobody — including the developers — can recover your data without the master password.
 - If you forget it, the vault is unrecoverable. This is the intended trade-off.
@@ -27,7 +29,12 @@ at unlock time and then discarded. This means:
   direct filesystem access.
 - **Context isolation** prevents code injection between the page and Node.
 - A **Content Security Policy (CSP)** mitigates XSS.
-- Sensitive data is cleared from memory where possible.
+- The master password never stays in the renderer: it is sent once to unlock,
+  and every later request names only the vault. Malicious code in the page can't
+  read the password back.
+- Memory can't be wiped reliably from JavaScript, so the password lingers in
+  the main process's memory until it's reused, even after locking. Native
+  memory locking is on the roadmap.
 
 ## Best practices
 

@@ -27,7 +27,8 @@ import {
   Key as KeyIcon,
 } from '@mui/icons-material';
 
-const ConfigurationDialog = ({ open, onClose, vaultName, vaultPassword }) => {
+// `vaultName` is set only while that vault is unlocked.
+const ConfigurationDialog = ({ open, onClose, vaultName }) => {
   const [loading, setLoading] = useState(true);
   const [vaultDirectory, setVaultDirectory] = useState('');
   const [vaultInfo, setVaultInfo] = useState(null);
@@ -37,7 +38,7 @@ const ConfigurationDialog = ({ open, onClose, vaultName, vaultPassword }) => {
     if (open) {
       loadConfiguration();
     }
-  }, [open, vaultName, vaultPassword]);
+  }, [open, vaultName]);
 
   const loadConfiguration = async () => {
     setLoading(true);
@@ -52,11 +53,8 @@ const ConfigurationDialog = ({ open, onClose, vaultName, vaultPassword }) => {
         }
 
         // Load vault information
-        if (vaultName && vaultPassword) {
-          const vaultResult = await window.electronAPI.loadVault(
-            vaultName,
-            vaultPassword
-          );
+        if (vaultName) {
+          const vaultResult = await window.electronAPI.loadVault(vaultName);
           if (vaultResult.success) {
             setVaultInfo(vaultResult.data);
           } else {

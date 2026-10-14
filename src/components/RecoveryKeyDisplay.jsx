@@ -28,7 +28,6 @@ const RecoveryKeyDisplay = ({
   onClose,
   recoveryKey,
   vaultName,
-  vaultPassword,
   onRegenerateKey,
   isNewVault = false,
 }) => {

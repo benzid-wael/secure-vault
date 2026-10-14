@@ -8,14 +8,15 @@ Audit performed 2026-06-15 covering the Electron desktop app (`src/`,
 Re-checked 2026-10-14. A finding marked **Resolved** keeps its original write-up
 below for context; everything else is still open.
 
-| ID                  | Status                                                              |
-| ------------------- | ------------------------------------------------------------------- |
-| C1                  | **Resolved** — vault-file log removed from `loadVault()`            |
-| C2                  | Open                                                                |
-| C3                  | **Resolved** — recovery-key log removed from `createDefaultVault()` |
-| C4                  | **Partly resolved** — see the note under C4                         |
-| H1                  | **Resolved** — `recover()` fixed end-to-end, see the note under H1  |
-| H2–H5, M1–M6, L1–L4 | Open (not re-verified)                                              |
+| ID                   | Status                                                                        |
+| -------------------- | ----------------------------------------------------------------------------- |
+| C1                   | **Resolved** — vault-file log removed from `loadVault()`                      |
+| C2                   | **Resolved** — password held by a main-process session, see the note under C2 |
+| C3                   | **Resolved** — recovery-key log removed from `createDefaultVault()`           |
+| C4                   | **Partly resolved** — see the note under C4                                   |
+| H1                   | **Resolved** — `recover()` fixed end-to-end, see the note under H1            |
+| H2, H3               | **Resolved** — dead, broken services deleted                                  |
+| H4, H5, M1–M6, L1–L4 | Open (not re-verified)                                                        |
 
 ---
 
@@ -50,6 +51,21 @@ The same function also logs `[VaultService] Loading vault: ${vaultName}` —
 less severe but still discloses which vaults a user accesses.
 
 ### C2 — Master password stored in React component state
+
+> **Resolved (2026-10-14).** The renderer no longer keeps the password. It sends
+> it once over IPC (`unlockVault`, `createVault`, or a recovery call) and the
+> main process holds it in a `VaultSession` (`src/electron/services/VaultSession.js`);
+> every later call (`loadVault`, `saveVault`, `exportVault`, settings, recovery
+> key) names only the vault and is refused while locked. Recovery no longer
+> returns the master password to the renderer. The session closes on manual lock,
+> on system sleep and screen lock (`powerMonitor`), when the vault is deleted, and on
+> quit. Changing the master password still re-checks the current one in the main
+> process.
+>
+> Residual: the string still lives in main-process heap memory and can't be
+> zeroed from JS (same limit as `AGENT-DESIGN.md` §8). A compromised renderer
+> can still _use_ the open vault through the bridge while it is unlocked; that
+> is H4.
 
 **File:** `src/App.jsx:55`
 
@@ -154,6 +170,9 @@ unhandled exception.
 
 ### H2 — `SecretQuestionRecoveryService` is non-functional
 
+> **Resolved (2026-10-14).** Nothing imported it; deleted. Rebuild it from scratch
+> if secret-question recovery is ever wanted.
+
 **File:** `src/electron/services/recovery/SecretQuestionRecoveryService.js`
 
 Multiple defects make this class unusable:
@@ -178,6 +197,8 @@ Multiple defects make this class unusable:
    `crypto.randomBytes(32)` but `crypto` is not imported.
 
 ### H3 — `UsbRecoveryService` is a copy-paste of `KeyRecoveryService`
+
+> **Resolved (2026-10-14).** Nothing imported it; deleted.
 
 **File:** `src/electron/services/recovery/UsbRecoveryService.js`
 

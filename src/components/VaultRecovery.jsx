@@ -59,7 +59,7 @@ const VaultRecovery = ({ vaultName, onRecover, onBack }) => {
           recoveryKey.trim()
         );
         if (loadResult.success) {
-          onRecover(loadResult.data, 'recovery-key', loadResult.password);
+          onRecover(loadResult.data, 'recovery-key');
         } else {
           setError(
             loadResult.error || 'Failed to load vault with recovery key'
@@ -91,7 +91,7 @@ const VaultRecovery = ({ vaultName, onRecover, onBack }) => {
         oldPassword
       );
       if (loadResult.success) {
-        onRecover(loadResult.data, 'old-password', loadResult.password);
+        onRecover(loadResult.data, 'old-password');
       } else {
         setError(
           loadResult.error || 'Unable to recover vault with this password'
