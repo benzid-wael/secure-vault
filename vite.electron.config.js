@@ -9,6 +9,11 @@ export default defineConfig({
   root: 'public',
   base: './',
   build: {
+    // Build for Node, not the browser: a client build replaces `import.meta`
+    // and `process.env` with `{}`, which crashed the main process on load
+    // (`fileURLToPath({}.url)`) and froze `ELECTRON_IS_DEV` to undefined.
+    ssr: true,
+    target: 'node20',
     outDir: resolve(__dirname, 'build/electron'),
     emptyOutDir: true,
     minify: false,

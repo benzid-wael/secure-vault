@@ -42,12 +42,20 @@ export class VaultService {
     };
   }
 
+  // In-flight creation of the default vault, shared by concurrent callers.
+  #defaultVaultCreation = null;
+
   async getAvailableVaults() {
     const vaults = await this.fileService.listVaults();
 
-    // Ensure default vault exists
+    // Ensure default vault exists. The renderer can ask for the list twice at
+    // startup; without sharing one creation, both would create (and write) a
+    // default vault with different recovery keys.
     if (!vaults.includes('default')) {
-      await this.createDefaultVault();
+      this.#defaultVaultCreation ??= this.createDefaultVault().finally(() => {
+        this.#defaultVaultCreation = null;
+      });
+      await this.#defaultVaultCreation;
       vaults.unshift('default');
     }
 

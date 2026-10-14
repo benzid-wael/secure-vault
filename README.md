@@ -112,7 +112,8 @@ npm run dev:electron
 # Terminal 1 - Start React development server
 npm run dev:renderer
 
-# Terminal 2 - Start Electron main process
+# Terminal 2 - Build and start the Electron main process (needs Terminal 1 up:
+# in dev mode the window loads the UI from http://localhost:3000)
 npm run dev:main
 ```
 
