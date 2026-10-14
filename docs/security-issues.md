@@ -375,7 +375,8 @@ to an arbitrary path, enabling symlink attacks or env-file exfiltration.
 > exposes it too; the previous value is useful context when editing. The file
 > is still securely deleted on every normal exit. The other input paths are no
 > better: a value argument shows up in `ps` and shell history, and `--in` reads
-> from a file. A follow-up could add a `--value-stdin` option.
+> from a file. For values that must never touch disk or argv, use
+> `vault env set <key> --value-stdin` (added 2026-10-14).
 
 **File:** `bin/commands/envEditHelpers.js:30-31`
 

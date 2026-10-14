@@ -20,6 +20,7 @@ vault env init                   # create an environment vault for this project
 vault env import dev .env        # import a .env file into the "dev" environment
 vault env set API_KEY s3cr3t -e dev   # set a variable in "dev"
 vault env set API_KEY -e dev          # no value: edit in $EDITOR (old value shown, commented)
+pbpaste | vault env set API_KEY --value-stdin -e dev   # value from stdin: not in argv, history or a temp file
 vault env get API_KEY -e dev          # read it back
 vault env show dev               # show all variables in an environment
 vault env list                   # list environments in the vault
@@ -29,6 +30,10 @@ vault env diff dev prod          # compare two environments
 vault env history dev            # view version history
 vault env rollback 3 -e dev      # restore a previous version of "dev"
 ```
+
+`--value-stdin` keeps a secret out of `ps`, shell history and editor temp files.
+Since stdin carries the value, give the password with `--password-file` or
+`VAULT_ENV_PASSWORD`. One trailing newline is dropped; multi-line values are kept.
 
 ::: tip Safety built in
 Every write keeps a `<vault>.bak` of the previous good state and saves atomically,

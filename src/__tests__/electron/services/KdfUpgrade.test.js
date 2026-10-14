@@ -264,3 +264,70 @@ describe('CLI environment vaults', () => {
     ).toBe(true);
   });
 });
+
+describe('CLI environment vaults: key reuse', () => {
+  let dir;
+  let vaultPath;
+
+  beforeEach(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-kdf-reuse-'));
+    vaultPath = path.join(dir, '.env.vault');
+    await EnvironmentVaultService.createVault(vaultPath, PW);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('a mutation derives the key once and keeps the salt', async () => {
+    const { salt, kdf } = fs.readJSONSync(vaultPath);
+    const spy = vi.spyOn(CryptographyService, 'deriveKey');
+
+    const result = await EnvironmentVaultService.setEnv(
+      vaultPath,
+      PW,
+      'dev',
+      'TOKEN',
+      'abc'
+    );
+
+    expect(result.success).toBe(true);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(fs.readJSONSync(vaultPath)).toMatchObject({ salt, kdf });
+    const got = await EnvironmentVaultService.getEnv(
+      vaultPath,
+      PW,
+      'dev',
+      'TOKEN'
+    );
+    expect(got.success).toBe(true);
+  });
+
+  it('a password change still gets a fresh salt', async () => {
+    const { salt } = fs.readJSONSync(vaultPath);
+    const result = await EnvironmentVaultService.changePassword(
+      vaultPath,
+      PW,
+      NEW_PW
+    );
+    expect(result.success).toBe(true);
+    expect(fs.readJSONSync(vaultPath).salt).not.toBe(salt);
+    expect(
+      (await EnvironmentVaultService.loadVault(vaultPath, NEW_PW)).success
+    ).toBe(true);
+    expect(
+      (await EnvironmentVaultService.loadVault(vaultPath, PW)).success
+    ).toBe(false);
+  });
+
+  it('a legacy vault is upgraded (fresh 600k salt) by its first mutation', async () => {
+    const legacyPath = path.join(dir, 'legacy.env.vault');
+    await asLegacy(() => EnvironmentVaultService.createVault(legacyPath, PW));
+    const { salt } = fs.readJSONSync(legacyPath);
+    await EnvironmentVaultService.setEnv(legacyPath, PW, 'dev', 'K', 'v');
+    const file = fs.readJSONSync(legacyPath);
+    expect(file.salt).not.toBe(salt);
+    expect(CryptographyService.iterationsOf(file)).toBe(ITERATIONS);
+  });
+});

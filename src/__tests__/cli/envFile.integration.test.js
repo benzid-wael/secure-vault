@@ -206,7 +206,7 @@ describe('vault env set --in / --encode (blob ingestion)', () => {
       vaultPath,
     ]);
     expect(r.status).not.toBe(0);
-    expect(r.stderr).toMatch(/either a value argument or --in/);
+    expect(r.stderr).toMatch(/only one of: a value argument, --in/);
   });
 
   it('fails fast on an unknown --encode', () => {
