@@ -55,11 +55,17 @@ class ElectronApp {
       this.securityManager = new SecurityManager();
 
       console.log('Initializing vault services...');
-      this.vaultService = new VaultService(vaultDir);
-      this.importExportService = new ImportExportService(vaultDir);
-      this.vaultSettingsService = new VaultSettingsService(vaultDir);
       // The master password lives here, never in the renderer (see VaultSession).
       this.session = new VaultSession();
+      // Services derive keys through the session so they're reused while
+      // the vault is unlocked instead of re-running PBKDF2 per call.
+      const deriveKey = (password, salt, iterations) =>
+        this.session.deriveKey(password, salt, iterations);
+      this.vaultService = new VaultService(vaultDir, { deriveKey });
+      this.importExportService = new ImportExportService(vaultDir);
+      this.vaultSettingsService = new VaultSettingsService(vaultDir, {
+        deriveKey,
+      });
       // Set only by the native open dialog (`select-import-file`).
       this.selectedImportPath = null;
 
@@ -140,13 +146,28 @@ class ElectronApp {
   }
 
   /**
+   * Open the session and bring a legacy vault up to the current PBKDF2 work
+   * factor while the password is at hand (M2). A failed upgrade leaves the
+   * vault as it was and doesn't block the unlock.
+   */
+  async openSession(vaultName, password) {
+    this.session.open(vaultName, password);
+    const upgrade = await this.vaultService.upgradeKdf(vaultName, password);
+    if (!upgrade.success) {
+      console.error(`Vault "${vaultName}" stays on its old key derivation`);
+    }
+  }
+
+  /**
    * A successful recovery yields the master password: open the session with it
    * and strip it from the result so it never reaches the renderer.
    */
-  openRecoveredSession(vaultName, result) {
+  async openRecoveredSession(vaultName, result) {
     if (!result?.success) return result;
     const { password, ...rest } = result;
-    if (typeof password === 'string') this.session.open(vaultName, password);
+    if (typeof password === 'string') {
+      await this.openSession(vaultName, password);
+    }
     return rest;
   }
 
@@ -210,7 +231,7 @@ class ElectronApp {
         vaultName,
         password
       );
-      if (result.success) this.session.open(vaultName, password);
+      if (result.success) await this.openSession(vaultName, password);
       return result;
     });
     handle('lock-vault', () => {

@@ -335,7 +335,7 @@ Vaults live in a single location shared with the desktop app:
 
 - **Zero-knowledge**: your master password is never stored.
 - **AES-256-GCM** authenticated encryption (tamper-evident).
-- **PBKDF2** key derivation (100,000 iterations).
+- **PBKDF2** key derivation (600,000 iterations).
 - Secrets are never written to disk in plaintext.
 
 ---

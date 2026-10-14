@@ -29,7 +29,7 @@ These deep-dive specs are maintained as Markdown in the repo and rendered on Git
 
 - **Zero-knowledge** — the master password is never stored; it derives the key at
   unlock and is then discarded.
-- **AES-256-GCM** authenticated encryption with **PBKDF2** (100,000 iterations, SHA-512)
+- **AES-256-GCM** authenticated encryption with **PBKDF2** (600,000 iterations, SHA-512)
   and a 32-byte random per-vault salt.
 - **Offline** — no server, no sync, no account, no telemetry. Everything is on your machine.
 - **Injection over delivery** — prefer passing secrets into a process in memory

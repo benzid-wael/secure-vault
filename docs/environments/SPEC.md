@@ -1476,7 +1476,7 @@ deprecation warning, and is **removed in v2.0**. Use `--export` instead.
 ### 12.1 Encryption
 
 - **Algorithm**: AES-256-GCM (authenticated encryption)
-- **Key derivation**: PBKDF2 with SHA-512, 100,000 iterations, 32-byte key
+- **Key derivation**: PBKDF2 with SHA-512, 600,000 iterations, 32-byte key
 - **Salt**: 32 random bytes, regenerated on every write
 - **IV**: 16 random bytes per encryption
 - **Authentication**: GCM authentication tag prevents tampering

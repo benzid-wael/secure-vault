@@ -18,7 +18,7 @@ A modern, secure password management application built with Electron and React, 
 ## Security Features
 
 - **Zero-Knowledge Architecture**: Your master password is never stored
-- **Strong Key Derivation**: PBKDF2 with 100,000 iterations
+- **Strong Key Derivation**: PBKDF2 with 600,000 iterations
 - **Authenticated Encryption**: AES-256-GCM prevents tampering
 - **Secure Context**: Runs in isolated Electron context with CSP
 - **Memory Protection**: Sensitive data cleared from memory when possible
@@ -233,7 +233,7 @@ secure-password-manager/
 ### Encryption
 
 - **Algorithm**: AES-256-GCM (Galois/Counter Mode)
-- **Key Derivation**: PBKDF2 with SHA-512, 100,000 iterations
+- **Key Derivation**: PBKDF2 with SHA-512, 600,000 iterations
 - **Salt**: 32-byte random salt per vault
 - **Authentication**: Built-in authentication tag prevents tampering
 

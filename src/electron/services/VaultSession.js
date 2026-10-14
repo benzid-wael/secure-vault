@@ -1,3 +1,5 @@
+import { CryptographyService } from './CryptographyService.js';
+
 /**
  * The unlocked-vault session, held in the main process.
  *
@@ -8,24 +10,55 @@
  * password itself.
  *
  * Limit: JS strings are immutable and cannot be zeroed, so after `close()` the
- * password stays in main-process heap memory until the GC reuses it. Wiping it
+ * password stays in main-process heap memory until the GC reuses it (cached
+ * key Buffers are zeroed on close; copies handed out are not). Wiping it
  * for real needs native, off-heap storage (see AGENT-DESIGN.md §8).
  */
 export class VaultSession {
   #vaultName = null;
   #password = null;
+  // Derived keys for the session password, by `<salt hex>:<iterations>`.
+  // PBKDF2 at the current work factor costs ~250 ms and blocks the main
+  // process, so loads and saves within a session reuse the key.
+  #keys = new Map();
 
   open(vaultName, password) {
     if (!vaultName || typeof password !== 'string') {
       throw new Error('A vault name and password are required to unlock');
     }
+    this.#dropKeys();
     this.#vaultName = vaultName;
     this.#password = password;
   }
 
   close() {
+    this.#dropKeys();
     this.#vaultName = null;
     this.#password = null;
+  }
+
+  #dropKeys() {
+    for (const key of this.#keys.values()) key.fill(0);
+    this.#keys.clear();
+  }
+
+  /**
+   * `CryptographyService.deriveKey`, memoized for the session password only:
+   * any other password (a re-typed current password that doesn't match, an
+   * import password) is derived fresh and never cached.
+   */
+  deriveKey(password, salt, iterations) {
+    if (this.#password === null || password !== this.#password) {
+      return CryptographyService.deriveKey(password, salt, iterations);
+    }
+    const id = `${Buffer.from(salt).toString('hex')}:${iterations}`;
+    let key = this.#keys.get(id);
+    if (!key) {
+      key = CryptographyService.deriveKey(password, salt, iterations);
+      this.#keys.set(id, key);
+    }
+    // A copy, so a caller can't zero or alter the cached key.
+    return Buffer.from(key);
   }
 
   get vaultName() {

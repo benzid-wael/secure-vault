@@ -1,7 +1,16 @@
 import crypto from 'crypto';
 
 export class CryptographyService {
-  static ITERATIONS = 100000;
+  // PBKDF2-HMAC-SHA512 work factor for every key derived from now on (OWASP
+  // 2023+: >= 210k for SHA-512; 600k leaves headroom). Each encrypted record
+  // stores the count it was written with in `kdf`, so the default can rise
+  // again without breaking existing files.
+  static KDF_NAME = 'pbkdf2-sha512';
+  static ITERATIONS = 600000;
+  // Records written before `kdf` existed used this count.
+  static LEGACY_ITERATIONS = 100000;
+  // A tampered file must not be able to stall the app with a huge count.
+  static MAX_ITERATIONS = 10000000;
   static KEY_LENGTH = 32;
   static IV_LENGTH = 16;
   static ALGORITHM = 'aes-256-gcm';
@@ -11,7 +20,62 @@ export class CryptographyService {
     return crypto.randomBytes(length);
   }
 
-  static deriveKey(password, salt, iterations = this.ITERATIONS) {
+  /** The `kdf` header to store next to a salt for a key derived now. */
+  static kdfHeader() {
+    return { name: this.KDF_NAME, iterations: this.ITERATIONS };
+  }
+
+  /**
+   * The iteration count a record (vault file or recovery metadata) was
+   * written with: its `kdf.iterations`, or the legacy count when absent.
+   */
+  static iterationsOf(record) {
+    const kdf = record?.kdf;
+    if (kdf === undefined || kdf === null) return this.LEGACY_ITERATIONS;
+    const n = kdf.iterations;
+    if (
+      kdf.name !== this.KDF_NAME ||
+      !Number.isInteger(n) ||
+      n < this.LEGACY_ITERATIONS ||
+      n > this.MAX_ITERATIONS
+    ) {
+      throw new Error('Unsupported key derivation parameters');
+    }
+    return n;
+  }
+
+  /** True when `record` was keyed with fewer iterations than the default. */
+  static needsKdfUpgrade(record) {
+    return this.iterationsOf(record) < this.ITERATIONS;
+  }
+
+  /**
+   * The key-derivation fields to carry over when re-encrypting with an
+   * existing salt: the salt and, when present, its `kdf` header.
+   */
+  static keyHeaderOf(record) {
+    return record.kdf
+      ? { salt: record.salt, kdf: record.kdf }
+      : { salt: record.salt };
+  }
+
+  /** Derive the key for an existing record, honouring its stored `kdf`. */
+  static deriveKeyFor(password, record) {
+    return this.deriveKey(
+      password,
+      Buffer.from(record.salt, 'hex'),
+      this.iterationsOf(record)
+    );
+  }
+
+  /**
+   * `iterations` is required: defaulting it would silently read a legacy
+   * record with the new count (or the reverse) and fail to decrypt.
+   */
+  static deriveKey(password, salt, iterations) {
+    if (!Number.isInteger(iterations)) {
+      throw new Error('deriveKey: iterations is required');
+    }
     return crypto.pbkdf2Sync(
       password,
       salt,

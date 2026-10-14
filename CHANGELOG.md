@@ -35,6 +35,16 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Changed
 
+- **Stronger key derivation: PBKDF2-SHA512 at 600,000 iterations** (was
+  100,000). Each vault records the count it was written with, so older vaults
+  keep opening.
+  - Desktop vaults are upgraded automatically the first time they're unlocked.
+    Your recovery key keeps working. "Recover with previous password" is
+    unavailable until your next password change, because that data can't be
+    re-protected without the previous password.
+  - CLI environment vaults upgrade on their next write.
+  - Unlocking and each CLI command take roughly 0.25 s longer; the desktop app
+    caches keys while a vault is unlocked.
 - **One password policy everywhere.** The desktop forms used a looser strength
   score than the main process and the CLI, so a password like `Password123`
   passed the form and then failed to save. All three now use the same rules:

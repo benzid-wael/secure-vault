@@ -71,7 +71,7 @@ describe('CryptographyService', () => {
       const password = 'test-password';
       const salt = CryptographyService.generateSalt();
 
-      const key = CryptographyService.deriveKey(password, salt);
+      const key = CryptographyService.deriveKey(password, salt, 1000);
 
       expect(key).toBeInstanceOf(Buffer);
       expect(key.length).toBe(32);
@@ -81,8 +81,8 @@ describe('CryptographyService', () => {
       const password = 'test-password';
       const salt = CryptographyService.generateSalt();
 
-      const key1 = CryptographyService.deriveKey(password, salt);
-      const key2 = CryptographyService.deriveKey(password, salt);
+      const key1 = CryptographyService.deriveKey(password, salt, 1000);
+      const key2 = CryptographyService.deriveKey(password, salt, 1000);
 
       expect(key1).toEqual(key2);
     });
@@ -92,8 +92,8 @@ describe('CryptographyService', () => {
       const salt1 = CryptographyService.generateSalt();
       const salt2 = CryptographyService.generateSalt();
 
-      const key1 = CryptographyService.deriveKey(password, salt1);
-      const key2 = CryptographyService.deriveKey(password, salt2);
+      const key1 = CryptographyService.deriveKey(password, salt1, 1000);
+      const key2 = CryptographyService.deriveKey(password, salt2, 1000);
 
       expect(key1).not.toEqual(key2);
     });

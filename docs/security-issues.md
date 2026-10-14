@@ -19,10 +19,10 @@ below for context; everything else is still open.
 | H4     | **Mitigated** — see the note under H4                                          |
 | H5     | **Resolved** — dead code removed; vault names contained, see the note under H5 |
 | M1     | **Resolved** — every vault write goes through temp + rename                    |
-| M2     | Open — needs a vault-format change, see the note under M2                      |
+| M2     | **Resolved** — 600k, recorded per file, legacy vaults upgraded on unlock       |
 | M3     | **Not an issue** — see the note under M3                                       |
 | M4     | **Not an issue** — see the note under M4                                       |
-| M5     | Open — accepted trade-off pending a decision, see the note under M5            |
+| M5     | **Accepted risk** — see the note under M5                                      |
 | M6     | **Not an issue** — see the note under M6                                       |
 | L1     | **Resolved** — one validator; the two had diverged                             |
 | L2     | **Resolved** — dead `encryptVault` deleted                                     |
@@ -311,12 +311,25 @@ This is an inconsistency between the app and CLI implementations.
 
 ### M2 — PBKDF2 iteration count below current recommendation
 
-> **Open (2026-10-14).** Vault files don't record their iteration count, so
-> raising it means a format change and migrating existing vaults. Also, the
-> desktop app currently derives the key on _every_ load/save; at 600k
-> iterations each save would take noticeably longer unless the session caches
-> the derived key instead of the password. Desktop vaults and CLI env vaults
-> share `CryptographyService`, so both are affected.
+> **Resolved (2026-10-14).** New keys use 600,000 iterations, and every
+> encrypted record (desktop vault, recovery metadata, CLI env vault) stores the
+> count it was written with in a `kdf` header. Records without one are read at
+> the legacy 100,000, and a header outside the supported range is refused, so a
+> tampered file can't stall the app.
+>
+> Migration: a desktop vault is re-keyed the first time it's unlocked. Its
+> recovery-key metadata is rebuilt around the same recovery key. Legacy
+> previous-password metadata is **dropped**: it wraps the current master
+> password under the previous password, which isn't available to re-key it, so
+> keeping it would leave a 100k path to the master password. A legacy
+> `.vault.backup` is removed for the same reason; `*.vault.deleted.*` copies
+> from earlier deletes are not touched. CLI env vaults move to 600k on their
+> next write.
+>
+> Cost: one derivation now takes ~250 ms. The desktop session caches derived
+> keys, and saves reuse a current vault's salt, so that cost is paid about once
+> per unlock. The CLI pays it per command (twice for a write: once to read, once
+> to re-encrypt under a fresh salt).
 
 **File:** `src/electron/services/CryptographyService.js:4`
 
@@ -357,10 +370,12 @@ to an arbitrary path, enabling symlink attacks or env-file exfiltration.
 
 ### M5 — Editor temp file exposes previous value as comments
 
-> **Open (2026-10-14).** Real but minor. Even without the comments, the _new_
-> value sits in the same `0600` temp file while the editor is open, so a SIGKILL
-> exposes it too. Dropping the previous-value comments narrows the exposure but
-> removes useful context when editing. Needs a product decision.
+> **Accepted risk (2026-10-14).** Even without the comments, the _new_ value
+> sits in the same `0600` temp file while the editor is open, so a SIGKILL
+> exposes it too; the previous value is useful context when editing. The file
+> is still securely deleted on every normal exit. The other input paths are no
+> better: a value argument shows up in `ps` and shell history, and `--in` reads
+> from a file. A follow-up could add a `--value-stdin` option.
 
 **File:** `bin/commands/envEditHelpers.js:30-31`
 

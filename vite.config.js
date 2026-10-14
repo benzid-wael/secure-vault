@@ -65,6 +65,9 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/setupTests.js'],
     css: true,
+    // Integration tests derive real keys at the production PBKDF2 work factor
+    // (~250 ms each), and some spawn the CLI many times.
+    testTimeout: 30000,
     coverage: {
       provider: 'v8',
       reporter: [

@@ -24,8 +24,7 @@ export class ImportExportService {
       }
 
       const vaultFile = await this.fileService.readVaultFile(vaultName);
-      const salt = Buffer.from(vaultFile.salt, 'hex');
-      const key = CryptographyService.deriveKey(password, salt);
+      const key = CryptographyService.deriveKeyFor(password, vaultFile);
 
       try {
         const encryptedData = {
@@ -78,12 +77,12 @@ export class ImportExportService {
       }
 
       const originalVaultData = importData.originalVaultData;
-      const originalSalt = Buffer.from(originalVaultData.salt, 'hex');
 
       try {
-        const originalKey = CryptographyService.deriveKey(
+        // The export carries the original file, `kdf` header included.
+        const originalKey = CryptographyService.deriveKeyFor(
           password,
-          originalSalt
+          originalVaultData
         );
         const originalEncryptedData = {
           encrypted: originalVaultData.encrypted,
@@ -97,7 +96,11 @@ export class ImportExportService {
 
         // Re-encrypt with new salt for the imported vault
         const newSalt = CryptographyService.generateSalt();
-        const newKey = CryptographyService.deriveKey(password, newSalt);
+        const newKey = CryptographyService.deriveKey(
+          password,
+          newSalt,
+          CryptographyService.ITERATIONS
+        );
         const newEncryptedData = CryptographyService.encrypt(
           decryptedData,
           newKey
@@ -106,6 +109,7 @@ export class ImportExportService {
         const finalData = {
           ...newEncryptedData,
           salt: newSalt.toString('hex'),
+          kdf: CryptographyService.kdfHeader(),
           recoveryMetadata: {}, // Imported vaults start without recovery metadata
         };
 

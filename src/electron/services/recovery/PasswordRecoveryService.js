@@ -61,7 +61,11 @@ export class PasswordRecoveryService extends IRecoveryMethod {
   onPasswordChange(vaultName, metadata, oldPassword, newPassword) {
     try {
       const salt = CryptographyService.generateSalt();
-      const oldPasswordKey = CryptographyService.deriveKey(oldPassword, salt);
+      const oldPasswordKey = CryptographyService.deriveKey(
+        oldPassword,
+        salt,
+        CryptographyService.ITERATIONS
+      );
       const encryptedMasterPassword = CryptographyService.encrypt(
         { masterPassword: newPassword },
         oldPasswordKey
@@ -69,6 +73,7 @@ export class PasswordRecoveryService extends IRecoveryMethod {
 
       const newMetadata = {
         salt: salt.toString('hex'),
+        kdf: CryptographyService.kdfHeader(),
         encryptedMasterPassword,
         createdAt: new Date().toISOString(),
         version: this.#version,
@@ -109,9 +114,11 @@ export class PasswordRecoveryService extends IRecoveryMethod {
    */
   async recoverMasterPassword(vaultName, metadata, recoveryData = {}) {
     try {
-      const salt = Buffer.from(metadata.salt, 'hex');
       const oldPassword = recoveryData.data.password;
-      const oldPasswordKey = CryptographyService.deriveKey(oldPassword, salt);
+      const oldPasswordKey = CryptographyService.deriveKeyFor(
+        oldPassword,
+        metadata
+      );
       const masterPassword = CryptographyService.decrypt(
         metadata.encryptedMasterPassword,
         oldPasswordKey
