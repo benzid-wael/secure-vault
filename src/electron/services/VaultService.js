@@ -281,6 +281,11 @@ export class VaultService {
         // Atomically write the new vault file
         await this.fileService.atomicWriteVaultFile(vaultName, finalVaultFile);
 
+        // The backup exists only to roll back a failed change. Kept after a
+        // successful one, it would still open with the retired password, and
+        // "restore backup" would silently undo the change.
+        await this.fileService.removeBackup(vaultName);
+
         return { success: true };
       } catch (error) {
         // Restore from backup on error

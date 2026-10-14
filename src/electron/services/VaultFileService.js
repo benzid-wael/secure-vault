@@ -116,6 +116,10 @@ export class VaultFileService {
     return false;
   }
 
+  async removeBackup(vaultName) {
+    await fs.remove(this.getBackupPath(vaultName));
+  }
+
   /** Delete the backup when it was keyed with the legacy work factor. */
   async removeLegacyBackup(vaultName) {
     const backupPath = this.getBackupPath(vaultName);

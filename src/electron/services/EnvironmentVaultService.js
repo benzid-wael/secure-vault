@@ -222,12 +222,16 @@ export class EnvironmentVaultService {
       const payload = vault.toJSON();
       let key;
       let header;
+      // A write under a new key (new password, or the 600k upgrade) must not
+      // leave the previous key's copy behind in `.bak`; see below.
+      let rekeyed = false;
       if (
         keyMaterial &&
         !CryptographyService.needsKdfUpgrade(keyMaterial.header)
       ) {
         ({ key, header } = keyMaterial);
       } else {
+        rekeyed = true;
         const salt = CryptographyService.generateSalt();
         key = CryptographyService.deriveKey(
           password,
@@ -256,15 +260,22 @@ export class EnvironmentVaultService {
       // content lands in a temp file and is renamed over the target only once
       // fully written, so a crash mid-write can never corrupt the vault, and
       // `<path>.bak` always holds the last good copy for manual recovery.
+      const backupPath = this.getBackupPath(vaultPath);
       if (await fs.pathExists(vaultPath)) {
-        await fs.copy(vaultPath, this.getBackupPath(vaultPath), {
-          overwrite: true,
-        });
+        await fs.copy(vaultPath, backupPath, { overwrite: true });
       }
 
       const tmpPath = `${vaultPath}.tmp`;
       await fs.writeJSON(tmpPath, vaultFile, { spaces: 2 });
       await fs.move(tmpPath, vaultPath, { overwrite: true });
+
+      // After a re-key the "previous good state" is encrypted under the old
+      // key: it would still open with a password the user just retired (maybe
+      // because it leaked), or at the weaker legacy work factor. Once the new
+      // file is safely in place, the backup becomes a copy of it instead.
+      if (rekeyed && (await fs.pathExists(backupPath))) {
+        await fs.copy(vaultPath, backupPath, { overwrite: true });
+      }
 
       return { success: true };
     } catch (error) {
