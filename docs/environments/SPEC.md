@@ -397,11 +397,11 @@ The `<dirname>` is the basename of the current working directory, sanitized to
 
 The service creates timestamped backups on destructive operations:
 
-| Path                             | Purpose                                    |
-| -------------------------------- | ------------------------------------------ |
-| `.env.vault`                     | Active encrypted file                      |
-| `.env.vault.bak`                 | Previous good state (before last mutation) |
-| `.env.vault.deleted.<timestamp>` | Preserved copy on deletion                 |
+| Path                             | Purpose                                                                                                              |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `.env.vault`                     | Active encrypted file                                                                                                |
+| `.env.vault.bak`                 | Previous good state (before last mutation); a copy of the current file after a re-key (password change, KDF upgrade) |
+| `.env.vault.deleted.<timestamp>` | Preserved copy on deletion; re-encrypted under the new password by `change-password`                                 |
 
 ---
 

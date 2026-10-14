@@ -37,7 +37,11 @@ Since stdin carries the value, give the password with `--password-file` or
 
 ::: tip Safety built in
 Every write keeps a `<vault>.bak` of the previous good state and saves atomically,
-so an interrupted save can never corrupt the vault. Deleting an environment leaves
+so an interrupted save can never corrupt the vault. After `change-password` (or the
+600k key upgrade) the `.bak` is refreshed from the new file, so it never opens with a
+retired password. `change-password` also re-encrypts the `.deleted.<ts>` snapshots
+under the new password, and lists any it can't open (ones from before an earlier
+password change). Deleting an environment leaves
 a timestamped `<vault>.deleted.<ts>` copy.
 :::
 

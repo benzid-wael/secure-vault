@@ -331,3 +331,180 @@ describe('CLI environment vaults: key reuse', () => {
     expect(CryptographyService.iterationsOf(file)).toBe(ITERATIONS);
   });
 });
+
+describe('backups after a re-key', () => {
+  let dir;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-bak-'));
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const opensWith = async (file, password) => {
+    try {
+      CryptographyService.decrypt(
+        { encrypted: file.encrypted, authTag: file.authTag, iv: file.iv },
+        CryptographyService.deriveKeyFor(password, file)
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  it('CLI: a normal write keeps the previous good state in .bak', async () => {
+    const vaultPath = path.join(dir, '.env.vault');
+    await EnvironmentVaultService.createVault(vaultPath, PW);
+    await EnvironmentVaultService.setEnv(vaultPath, PW, 'dev', 'A', '1');
+    const before = fs.readJSONSync(vaultPath);
+    await EnvironmentVaultService.setEnv(vaultPath, PW, 'dev', 'B', '2');
+    expect(fs.readJSONSync(`${vaultPath}.bak`)).toEqual(before);
+  });
+
+  it('CLI: after change-password, .bak no longer opens with the old password', async () => {
+    const vaultPath = path.join(dir, '.env.vault');
+    await EnvironmentVaultService.createVault(vaultPath, PW);
+    await EnvironmentVaultService.setEnv(vaultPath, PW, 'dev', 'A', '1');
+
+    const result = await EnvironmentVaultService.changePassword(
+      vaultPath,
+      PW,
+      NEW_PW
+    );
+    expect(result.success).toBe(true);
+
+    const bak = fs.readJSONSync(`${vaultPath}.bak`);
+    expect(bak).toEqual(fs.readJSONSync(vaultPath));
+    expect(await opensWith(bak, PW)).toBe(false);
+    expect(await opensWith(bak, NEW_PW)).toBe(true);
+  });
+
+  it('CLI: after the 600k upgrade, .bak is not left at 100k', async () => {
+    const vaultPath = path.join(dir, '.env.vault');
+    await asLegacy(async () => {
+      await EnvironmentVaultService.createVault(vaultPath, PW);
+      await EnvironmentVaultService.setEnv(vaultPath, PW, 'dev', 'A', '1');
+    });
+    await EnvironmentVaultService.setEnv(vaultPath, PW, 'dev', 'B', '2');
+    const bak = fs.readJSONSync(`${vaultPath}.bak`);
+    expect(CryptographyService.iterationsOf(bak)).toBe(ITERATIONS);
+  });
+
+  it('desktop: a successful password change removes the backup', async () => {
+    const vs = new VaultService(dir);
+    await vs.createVault('main', PW);
+    const result = await vs.changePassword('main', PW, NEW_PW);
+    expect(result.success).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'main.vault.backup'))).toBe(false);
+    expect(await vs.fileService.hasBackup('main')).toBe(false);
+    expect((await vs.loadVault('main', NEW_PW)).success).toBe(true);
+  });
+
+  it('desktop: a rejected password change leaves the vault untouched', async () => {
+    const vs = new VaultService(dir);
+    await vs.createVault('main', PW);
+    const before = fs.readJSONSync(path.join(dir, 'main.vault'));
+    const result = await vs.changePassword('main', 'wrong-Current-1!', NEW_PW);
+    expect(result.success).toBe(false);
+    expect(fs.readJSONSync(path.join(dir, 'main.vault'))).toEqual(before);
+    expect((await vs.loadVault('main', PW)).success).toBe(true);
+  });
+});
+
+describe('CLI deletion snapshots on change-password', () => {
+  let dir;
+  let vaultPath;
+
+  const snapshots = () =>
+    fs
+      .readdirSync(dir)
+      .filter((n) => n.startsWith('.env.vault.deleted.') && !n.endsWith('.tmp'))
+      .sort();
+
+  const opens = (name, password) =>
+    EnvironmentVaultService.loadVault(path.join(dir, name), password).then(
+      (r) => r.success
+    );
+
+  beforeEach(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-snap-'));
+    vaultPath = path.join(dir, '.env.vault');
+    await EnvironmentVaultService.createVault(vaultPath, PW);
+    await EnvironmentVaultService.setEnv(vaultPath, PW, 'old', 'K', 'v');
+    await EnvironmentVaultService.setEnv(vaultPath, PW, 'dev', 'K', 'v');
+    await EnvironmentVaultService.deleteEnv(vaultPath, PW, 'old');
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('re-encrypts snapshots under the new password, keeping their contents', async () => {
+    const [snap] = snapshots();
+    expect(snap).toBeDefined();
+
+    const result = await EnvironmentVaultService.changePassword(
+      vaultPath,
+      PW,
+      NEW_PW
+    );
+
+    expect(result).toMatchObject({
+      success: true,
+      rekeyedSnapshots: [snap],
+      skippedSnapshots: [],
+    });
+    expect(await opens(snap, PW)).toBe(false);
+    expect(await opens(snap, NEW_PW)).toBe(true);
+    const restored = await EnvironmentVaultService.loadVault(
+      path.join(dir, snap),
+      NEW_PW
+    );
+    // The snapshot still holds the deleted environment.
+    expect(restored.data.toJSON().environments.old).toBeDefined();
+  });
+
+  it('leaves a snapshot that needs an older password untouched and reports it', async () => {
+    const [snap] = snapshots();
+    // Stands in for a snapshot taken before an earlier password change.
+    const stranger = '.env.vault.deleted.2000-01-01T00-00-00-000Z';
+    await EnvironmentVaultService.createVault(
+      path.join(dir, stranger),
+      'Retired-Pass-1!'
+    );
+    const before = fs.readFileSync(path.join(dir, stranger), 'utf8');
+
+    const result = await EnvironmentVaultService.changePassword(
+      vaultPath,
+      PW,
+      NEW_PW
+    );
+
+    expect(result).toMatchObject({
+      success: true,
+      rekeyedSnapshots: [snap],
+      skippedSnapshots: [stranger],
+    });
+    expect(fs.readFileSync(path.join(dir, stranger), 'utf8')).toBe(before);
+  });
+
+  it('only touches snapshots of this vault', async () => {
+    const otherSnap = 'other.env.vault.deleted.2001-01-01T00-00-00-000Z';
+    fs.writeFileSync(path.join(dir, otherSnap), '{"not":"touched"}');
+    const result = await EnvironmentVaultService.changePassword(
+      vaultPath,
+      PW,
+      NEW_PW
+    );
+    expect(result.rekeyedSnapshots).not.toContain(otherSnap);
+    expect(result.skippedSnapshots).not.toContain(otherSnap);
+    expect(fs.readFileSync(path.join(dir, otherSnap), 'utf8')).toBe(
+      '{"not":"touched"}'
+    );
+  });
+});

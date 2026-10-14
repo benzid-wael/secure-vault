@@ -2607,6 +2607,24 @@ export function registerEnvCommand(program) {
         }
 
         spinner.succeed(chalk.green('Vault password changed.'));
+        if (result.rekeyedSnapshots?.length) {
+          log(
+            chalk.gray(
+              `Re-encrypted ${result.rekeyedSnapshots.length} deletion ` +
+                `snapshot(s) under the new password.`
+            )
+          );
+        }
+        if (result.skippedSnapshots?.length) {
+          console.error(
+            chalk.yellow(
+              'These deletion snapshots do not open with the current password ' +
+                '(they predate an earlier password change) and still use an ' +
+                'old one. Delete them if that password may be compromised:\n' +
+                result.skippedSnapshots.map((n) => `  ${n}`).join('\n')
+            )
+          );
+        }
       } catch (error) {
         spinner.fail(chalk.red(error.message));
         process.exit(1);
