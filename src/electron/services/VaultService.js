@@ -134,12 +134,7 @@ export class VaultService {
 
   async loadVault(vaultName, password) {
     try {
-      console.log(`[VaultService] Loading vault: ${vaultName}`);
       const vaultFile = await this.fileService.readVaultFile(vaultName);
-      console.log(
-        '[VaultService] Vault file loaded:',
-        JSON.stringify(vaultFile, null, 2)
-      );
 
       const salt = Buffer.from(vaultFile.salt, 'hex');
       const key = CryptographyService.deriveKey(password, salt);
@@ -338,16 +333,7 @@ export class VaultService {
 
   async createDefaultVault() {
     const defaultPassword = 'changeme123';
-    const result = await this.createVault('default', defaultPassword);
-
-    if (result.success) {
-      console.log(
-        'Default vault created with recovery key:',
-        result.recoveryKey
-      );
-    }
-
-    return result;
+    return this.createVault('default', defaultPassword);
   }
 
   // Recovery methods

@@ -8,6 +8,25 @@ Design detail for the environment-vault (`vault env`) features lives in
 [`docs/environments/SPEC.md`](docs/environments/SPEC.md); the CLI reference is
 [`README.cli.md`](README.cli.md).
 
+## [Unreleased]
+
+### Security
+
+- **Master password no longer passed to child processes.** `vault env run
+--merge`, `vault env shell --merge`, `vault env agent exec --merge` and the
+  editor opened by `vault env edit` inherited `VAULT_ENV_PASSWORD`. It is now
+  dropped from every child env, in every mode, even when allowlisted.
+- **Desktop app no longer logs vault data.** `loadVault()` printed the whole
+  vault file to the console, and creating the default vault printed its
+  recovery key.
+
+### Fixed
+
+- **`vault recover` works.** It crashed on an undefined variable, always
+  reported success because the recovery was never awaited, and printed the vault
+  file and recovery metadata. It now writes `<name>-recovered[-N].vault`, never
+  overwrites an earlier copy, and exits non-zero on failure.
+
 ## [v0.2.0-rc.1] — 2026-07-10
 
 ### Added — v2.0 · Agent (slice 7a, developer preview)

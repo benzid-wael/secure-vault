@@ -17,7 +17,7 @@ export class VaultRecoveryService {
 
   async recover(vaultName, masterPassword) {
     const vfs = new VaultFileService(this.vaultDir);
-    if (!vfs.vaultExists(vaultName)) {
+    if (!(await vfs.vaultExists(vaultName))) {
       console.error(chalk.red('Vault not found!'));
       return false;
     }
@@ -47,7 +47,6 @@ export class VaultRecoveryService {
     vault = null;
     serializedVault = null;
 
-    console.log(vaultFile);
     const existingMetadata = vaultFile.recoveryMetadata || {};
     let recoveryMetadataFlatten = [];
 
@@ -70,7 +69,6 @@ export class VaultRecoveryService {
             masterPassword,
             recoveryData
           );
-          console.log(newMetadata);
           recoveryMetadataFlatten.push({
             name: methodId,
             metadata: newMetadata,
@@ -86,7 +84,6 @@ export class VaultRecoveryService {
       })
     );
 
-    console.log(recoveryMetadataFlatten);
     const recoveryMetadata = recoveryMetadataFlatten.reduce((obj, item) => {
       obj[item.name] = item.metadata;
       return obj;
@@ -109,21 +106,20 @@ export class VaultRecoveryService {
       masterPassword,
       tempPath
     );
-    console.log(is_temp_vault_valid);
     if (!is_temp_vault_valid.success) {
-      console.error(chalk.red(is_valid.error));
+      console.error(chalk.red(is_temp_vault_valid.error));
       return false;
     }
 
     console.log(chalk.green('✅ Temporary vault is working as expected!'));
     let idx = 0;
     let fileName = `${vaultName}-recovered.vault`;
-    while (await fs.pathExists(path.join(this.vaultDir, finalName))) {
+    while (await fs.pathExists(path.join(this.vaultDir, fileName))) {
       idx++;
       fileName = `${vaultName}-recovered-${idx}.vault`;
     }
     // Move temp file to final location (atomic operation)
-    await fs.move(tempPath, path.join(this.vaultDir, finalName), {
+    await fs.move(tempPath, path.join(this.vaultDir, fileName), {
       overwrite: true,
     });
     console.log(

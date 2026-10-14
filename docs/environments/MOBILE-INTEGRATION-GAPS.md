@@ -443,7 +443,7 @@ parentheses map back to §3/§4. Versions follow the §6 sequencing
 
 ### Milestone v1.8 — Native config & file secrets (no daemon)
 
-- [ ] **Task 1: Templating engine + opt-in escaping filters** (G1, G2)
+- [x] **Task 1: Templating engine + opt-in escaping filters** (G1, G2) — **DONE (0.1.8)**
   - **Goal**: Render `file.<ext>.vtpl` → `file.<ext>` by substituting `{{KEY}}`
     placeholders from the resolved env map, keeping vault fully format-agnostic.
   - **Constraints**: `{{KEY}}` delimiter only (leave target-format `$()`/`${}`
@@ -461,7 +461,7 @@ parentheses map back to §3/§4. Versions follow the §6 sequencing
     `| json` on a value with `"`/newline yields valid JSON; unknown key fails
     loudly (non-zero exit).
 
-- [ ] **Task 2: Materialize variable → decoded file (blob delivery)** (G6, G7)
+- [x] **Task 2: Materialize variable → decoded file (blob delivery)** (G6, G7) — **DONE (0.1.8)**
   - **Goal**: `vault env file <KEY> --out <path> [--decode base64] [--mode 0600]`
     writes a single var's value to disk verbatim (optionally base64-decoded) with
     `run --export` secure-cleanup semantics.
@@ -478,7 +478,7 @@ parentheses map back to §3/§4. Versions follow the §6 sequencing
     cleanup fires on the same trigger as `run --export`; a materialized Firebase
     plist is accepted by a sample build.
 
-- [ ] **Task 3: Delivery manifest + `apply`/`clean`** (G17, G18-ready)
+- [x] **Task 3: Delivery manifest + `apply`/`clean`** (G17, G18-ready) — **DONE (0.1.8)**
   - **Goal**: Extend `.vaultrc` with a `deliver` manifest ("one env → N
     artifacts"); add `vault env apply [env]` (write all) and `vault env clean`
     (wipe all).
@@ -497,7 +497,7 @@ parentheses map back to §3/§4. Versions follow the §6 sequencing
 
 ### Milestone v1.9 — Adoptability
 
-- [ ] **Task 4: `init --preset react-native` scaffolder** (G19)
+- [x] **Task 4: `init --preset react-native` scaffolder** (G19) — **DONE (0.1.9)**
   - **Goal**: Scaffold a starter `.vaultrc` manifest, `.gitignore` entries,
     `.vtpl` starter templates, and Xcode/Gradle build-phase snippets.
   - **Constraints**: Never overwrite existing files without confirmation;
@@ -509,7 +509,7 @@ parentheses map back to §3/§4. Versions follow the §6 sequencing
   - **Validation**: Running the preset in a clean RN repo yields a manifest
     `apply` accepts and a gap-free `.gitignore`; re-running is non-destructive.
 
-- [ ] **Task 5: `doctor` for mobile wiring** (G20)
+- [x] **Task 5: `doctor` for mobile wiring** (G20) — **DONE (0.1.9)**
   - **Goal**: Verify envfile presence, `.gitignore` coverage, manifest validity
     (and later agent/mount status), emitting actionable fixes.
   - **Constraints**: Diagnostic-only — never mutates the vault or secrets; every

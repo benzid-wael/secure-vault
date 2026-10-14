@@ -10,13 +10,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.resolve(__dirname, '../../../bin/cli.js');
 const NODE = process.execPath;
 const PASSWORD = 'TestVault123!@#';
+// A plain parent var: proves merge mode inherits the parent env, while the
+// master password (VAULT_ENV_PASSWORD) must still never reach the child.
+const PARENT_MARKER = { SV_PARENT_MARKER: 'from-parent' };
 
 let vaultPath;
 
 function cli(args, extraEnv = {}) {
   return spawnSync(NODE, [CLI, 'env', ...args], {
     encoding: 'utf8',
-    env: { ...process.env, VAULT_ENV_PASSWORD: PASSWORD, ...extraEnv },
+    env: {
+      ...process.env,
+      ...PARENT_MARKER,
+      VAULT_ENV_PASSWORD: PASSWORD,
+      ...extraEnv,
+    },
   });
 }
 
@@ -79,7 +87,8 @@ describe('vault env run (integration)', () => {
     expect(r.status).toBe(0);
     const env = JSON.parse(r.stdout);
     expect(env.API_URL).toBe('https://api.example.com');
-    expect(env.VAULT_ENV_PASSWORD).toBe(PASSWORD); // inherited in merge mode
+    expect(env.SV_PARENT_MARKER).toBe('from-parent'); // inherited in merge mode
+    expect(env.VAULT_ENV_PASSWORD).toBeUndefined(); // master password never is
   });
 
   it('propagates the child exit code', () => {
@@ -190,7 +199,8 @@ describe('vault env run (integration)', () => {
     expect(r.status).toBe(0);
     const env = JSON.parse(r.stdout);
     expect(env.API_URL).toBe('https://api.example.com'); // vault var
-    expect(env.VAULT_ENV_PASSWORD).toBe(PASSWORD); // inherited (merge)
+    expect(env.SV_PARENT_MARKER).toBe('from-parent'); // inherited (merge)
+    expect(env.VAULT_ENV_PASSWORD).toBeUndefined();
     expect(env.ENV_FILE_PATH).toBe(envFile); // pointer set
     expect(fs.existsSync(envFile)).toBe(false); // deleted after exit
   });
@@ -475,13 +485,18 @@ describe('vault env run (integration)', () => {
         {
           encoding: 'utf8',
           cwd: rcDir,
-          env: { ...process.env, VAULT_ENV_PASSWORD: PASSWORD },
+          env: {
+            ...process.env,
+            ...PARENT_MARKER,
+            VAULT_ENV_PASSWORD: PASSWORD,
+          },
         }
       );
       expect(r.status).toBe(0);
       const env = JSON.parse(r.stdout);
-      // merge mode: VAULT_ENV_PASSWORD should be inherited from parent
-      expect(env.VAULT_ENV_PASSWORD).toBe(PASSWORD);
+      // merge mode: the parent env is inherited, the master password is not
+      expect(env.SV_PARENT_MARKER).toBe('from-parent');
+      expect(env.VAULT_ENV_PASSWORD).toBeUndefined();
     } finally {
       fs.rmSync(rcDir, { recursive: true, force: true });
     }
@@ -600,7 +615,8 @@ describe('vault env run (integration)', () => {
     });
     expect(r.status).toBe(0);
     const env = JSON.parse(r.stdout);
-    expect(env.VAULT_ENV_PASSWORD).toBe(PASSWORD);
+    expect(env.SV_PARENT_MARKER).toBe('from-parent');
+    expect(env.VAULT_ENV_PASSWORD).toBeUndefined();
   });
 
   it('--inject flag overrides VAULT_INJECT', () => {

@@ -51,8 +51,9 @@ program
 
     const vaultDir = getVaultsDir();
     const vfs = new VaultFileService(vaultDir);
-    if (!vfs.vaultExists(options.name)) {
-      spinner.failed(chalk.green('Vault not found!'));
+    if (!(await vfs.vaultExists(options.name))) {
+      spinner.fail(chalk.red('Vault not found!'));
+      process.exit(1);
     }
     spinner.succeed(chalk.green('Vault exists!'));
 
@@ -71,11 +72,15 @@ program
 
     spinner = ora('Recovering vault').start();
     const recoveryService = new VaultRecoveryService(vaultDir);
-    const recovered = recoveryService.recover(options.name, masterPassword);
+    const recovered = await recoveryService.recover(
+      options.name,
+      masterPassword
+    );
     if (recovered) {
       spinner.succeed('Vault recovered successfully!');
     } else {
-      spinner.failed('Failed to recover vault!');
+      spinner.fail('Failed to recover vault!');
+      process.exit(1);
     }
   });
 
