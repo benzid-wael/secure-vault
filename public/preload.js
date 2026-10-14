@@ -5,16 +5,27 @@ const { contextBridge, ipcRenderer } = require('electron');
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
-  // Vault operations
+  // Session: the master password is sent once to unlock (or create / recover)
+  // and then held by the main process; later calls name only the vault.
   getVaults: () => ipcRenderer.invoke('get-vaults'),
   createVault: (vaultName, masterPassword) =>
     ipcRenderer.invoke('create-vault', vaultName, masterPassword),
-  verifyVaultPassword: (vaultName, password) =>
-    ipcRenderer.invoke('verify-vault-password', vaultName, password),
-  loadVault: (vaultName, password) =>
-    ipcRenderer.invoke('load-vault', vaultName, password),
-  saveVault: (vaultName, password, data) =>
-    ipcRenderer.invoke('save-vault', vaultName, password, data),
+  unlockVault: (vaultName, password) =>
+    ipcRenderer.invoke('unlock-vault', vaultName, password),
+  lockVault: () => ipcRenderer.invoke('lock-vault'),
+  onVaultLocked: (callback) =>
+    ipcRenderer.on('vault-locked', () => {
+      try {
+        callback();
+      } catch (error) {
+        console.error('Error in vault-locked handler:', error);
+      }
+    }),
+
+  // Vault operations (on the unlocked vault)
+  loadVault: (vaultName) => ipcRenderer.invoke('load-vault', vaultName),
+  saveVault: (vaultName, data) =>
+    ipcRenderer.invoke('save-vault', vaultName, data),
   deleteVault: (vaultName, confirmationPassword) =>
     ipcRenderer.invoke('delete-vault', vaultName, confirmationPassword),
 
@@ -26,13 +37,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       currentPassword,
       newPassword
     ),
-  updateVaultSettings: (vaultName, vaultPassword, settings) =>
-    ipcRenderer.invoke(
-      'update-vault-settings',
-      vaultName,
-      vaultPassword,
-      settings
-    ),
+  updateVaultSettings: (vaultName, settings) =>
+    ipcRenderer.invoke('update-vault-settings', vaultName, settings),
 
   // Backup and recovery
   restoreVaultBackup: (vaultName) =>
@@ -41,8 +47,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('has-vault-backup', vaultName),
 
   // Recovery key management
-  generateRecoveryKey: (vaultName, masterPassword) =>
-    ipcRenderer.invoke('generate-recovery-key', vaultName, masterPassword),
+  generateRecoveryKey: (vaultName) =>
+    ipcRenderer.invoke('generate-recovery-key', vaultName),
   verifyVaultRecoveryKey: (vaultName, recoveryKey) =>
     ipcRenderer.invoke('verify-vault-recovery-key', vaultName, recoveryKey),
   loadVaultWithRecoveryKey: (vaultName, recoveryKey) =>
@@ -57,8 +63,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ),
 
   // Import/Export
-  exportVault: (vaultName, password, exportPath) =>
-    ipcRenderer.invoke('export-vault', vaultName, password, exportPath),
+  exportVault: (vaultName, exportPath) =>
+    ipcRenderer.invoke('export-vault', vaultName, exportPath),
   importVault: (importPath, newVaultName, password) =>
     ipcRenderer.invoke('import-vault', importPath, newVaultName, password),
   selectImportFile: () => ipcRenderer.invoke('select-import-file'),

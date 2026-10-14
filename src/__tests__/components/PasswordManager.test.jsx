@@ -172,16 +172,11 @@ vi.mock('@mui/icons-material/MoreVert', () => ({
 // Mock the Settings component
 vi.mock('../../components/Settings', () => ({
   __esModule: true,
-  default: ({ onBack, onPasswordChanged }) =>
+  default: ({ onBack }) =>
     React.createElement(
       'div',
       { 'data-testid': 'settings-component' },
-      React.createElement('button', { onClick: onBack }, 'Back'),
-      React.createElement(
-        'button',
-        { onClick: () => onPasswordChanged('newpass') },
-        'Change Password'
-      )
+      React.createElement('button', { onClick: onBack }, 'Back')
     ),
 }));
 
@@ -286,7 +281,6 @@ Object.assign(navigator, {
 describe('PasswordManager', () => {
   const defaultProps = {
     vaultName: 'test-vault',
-    vaultPassword: 'test-password',
     onLock: vi.fn(),
   };
 
@@ -374,14 +368,12 @@ describe('PasswordManager', () => {
   });
 
   describe('Vault Operations', () => {
-    it('calls loadVault on mount', async () => {
+    it('calls loadVault on mount with only the vault name', async () => {
       render(React.createElement(PasswordManager, defaultProps));
 
+      // The master password stays in the main-process session.
       await waitFor(() => {
-        expect(mockElectronAPI.loadVault).toHaveBeenCalledWith(
-          'test-vault',
-          'test-password'
-        );
+        expect(mockElectronAPI.loadVault).toHaveBeenCalledWith('test-vault');
       });
     });
 
@@ -571,7 +563,7 @@ describe('PasswordManager', () => {
       expect(screen.getByTestId('settings-component')).toBeInTheDocument();
     });
 
-    it('returns from settings and updates password', async () => {
+    it('returns from settings to the main view', async () => {
       render(React.createElement(PasswordManager, defaultProps));
 
       await waitFor(() => {
@@ -582,8 +574,6 @@ describe('PasswordManager', () => {
       fireEvent.click(screen.getByRole('button', { name: /settings/i }));
       expect(screen.getByTestId('settings-component')).toBeInTheDocument();
 
-      // Change password and go back
-      fireEvent.click(screen.getByText('Change Password'));
       fireEvent.click(screen.getByText('Back'));
 
       // Should be back to main view

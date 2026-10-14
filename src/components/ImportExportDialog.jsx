@@ -29,7 +29,6 @@ const ImportExportDialog = ({
   open,
   onClose,
   vaultName,
-  vaultPassword,
   availableVaults,
   onImportSuccess,
   importOnly = false,
@@ -73,7 +72,6 @@ const ImportExportDialog = ({
     try {
       const result = await window.electronAPI.exportVault(
         vaultName,
-        vaultPassword,
         exportPath
       );
 

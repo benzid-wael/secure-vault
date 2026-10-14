@@ -18,7 +18,6 @@ describe('RecoveryKeyDisplay', () => {
     onClose: mockOnClose,
     recoveryKey: 'ABCD-EFGH-1234-5678-IJKL-MNOP-QRST-UVWX',
     vaultName: 'test-vault',
-    vaultPassword: 'password123',
     onRegenerateKey: mockOnRegenerateKey,
     isNewVault: false,
   };

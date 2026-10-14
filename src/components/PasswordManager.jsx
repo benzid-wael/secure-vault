@@ -53,7 +53,7 @@ import {
   ENTRY_TYPE_DEFINITIONS,
 } from '../utils/entryTypes';
 
-const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
+const PasswordManager = ({ vaultName, onLock }) => {
   const [entries, setEntries] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -71,8 +71,6 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
   const [selectedEntryTypeFilter, setSelectedEntryTypeFilter] = useState('');
   const [validationErrors, setValidationErrors] = useState({});
   const [showSettings, setShowSettings] = useState(false);
-  const [currentVaultPassword, setCurrentVaultPassword] =
-    useState(vaultPassword);
   const [selectedEntryType, setSelectedEntryType] = useState('password');
   const [showImportExport, setShowImportExport] = useState(false);
   const [availableVaults, setAvailableVaults] = useState([]);
@@ -146,21 +144,13 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
   };
 
   const loadVaultData = async () => {
-    if (window.electronAPI && vaultName && vaultPassword) {
+    if (window.electronAPI && vaultName) {
       try {
-        console.log('Loading vault data for:', vaultName);
-        const result = await window.electronAPI.loadVault(
-          vaultName,
-          vaultPassword
-        );
-        console.log('Vault load result:', result);
+        const result = await window.electronAPI.loadVault(vaultName);
 
         if (result.success) {
-          console.log('Vault data received:', result.data);
-
           // Handle both array and object formats for entries
           let entries = result.data.entries || {};
-          console.log('Raw entries:', entries);
 
           let entriesArray = [];
 
@@ -179,7 +169,6 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
             }));
           }
 
-          console.log('Processed entries array:', entriesArray);
           setEntries(entriesArray);
         } else {
           console.error('Failed to load vault data:', result.error);
@@ -194,7 +183,7 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
   };
 
   const saveVaultData = async (updatedEntries) => {
-    if (window.electronAPI && vaultName && vaultPassword) {
+    if (window.electronAPI && vaultName) {
       try {
         // Convert array of entries to an object with IDs as keys
         const entriesObject = updatedEntries.reduce((acc, entry) => {
@@ -208,11 +197,7 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
           entries: entriesObject, // Now sending an object with IDs as keys
         };
 
-        const result = await window.electronAPI.saveVault(
-          vaultName,
-          vaultPassword,
-          vaultData
-        );
+        const result = await window.electronAPI.saveVault(vaultName, vaultData);
         if (result.success) {
           setEntries(updatedEntries);
           return true;
@@ -370,10 +355,6 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
     return matchesSearch && matchesCategory && matchesEntryType;
   });
 
-  const handlePasswordChanged = (newPassword) => {
-    setCurrentVaultPassword(newPassword);
-  };
-
   const handleClearFilters = () => {
     setSearchTerm('');
     setSelectedCategory('');
@@ -401,12 +382,7 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
 
   if (showSettings) {
     return (
-      <Settings
-        vaultName={vaultName}
-        vaultPassword={currentVaultPassword}
-        onBack={() => setShowSettings(false)}
-        onPasswordChanged={handlePasswordChanged}
-      />
+      <Settings vaultName={vaultName} onBack={() => setShowSettings(false)} />
     );
   }
 
@@ -701,7 +677,6 @@ const PasswordManager = ({ vaultName, vaultPassword, onLock }) => {
         open={showImportExport}
         onClose={() => setShowImportExport(false)}
         vaultName={vaultName}
-        vaultPassword={vaultPassword}
         availableVaults={availableVaults}
         onImportSuccess={handleImportSuccess}
       />

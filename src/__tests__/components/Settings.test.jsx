@@ -15,9 +15,7 @@ import Settings from '../../components/Settings';
 describe('Settings', () => {
   const baseProps = {
     vaultName: 'myvault',
-    vaultPassword: 'currentPass',
     onBack: vi.fn(),
-    onPasswordChanged: vi.fn(),
   };
 
   beforeEach(() => {

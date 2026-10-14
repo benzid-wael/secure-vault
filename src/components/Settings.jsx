@@ -36,7 +36,7 @@ import {
 } from '../utils/passwordValidation';
 import RecoveryKeyDisplay from './RecoveryKeyDisplay';
 
-const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
+const Settings = ({ vaultName, onBack }) => {
   const [settings, setSettings] = useState({
     enforcePasswordChange: false,
     passwordChangeWarningDays: 90,
@@ -68,14 +68,10 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
     checkBackupStatus();
   }, []);
 
-  const loadVaultInfo = async (passwordOverride = null) => {
-    const passwordToUse = passwordOverride || vaultPassword;
-    if (window.electronAPI && vaultName && passwordToUse) {
+  const loadVaultInfo = async () => {
+    if (window.electronAPI && vaultName) {
       try {
-        const result = await window.electronAPI.loadVault(
-          vaultName,
-          passwordToUse
-        );
+        const result = await window.electronAPI.loadVault(vaultName);
         if (result.success) {
           setVaultInfo(result.data);
           // Load settings from vault data if they exist
@@ -100,10 +96,7 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
   const handleGenerateRecoveryKey = async () => {
     setGeneratingRecoveryKey(true);
     try {
-      const result = await window.electronAPI.generateRecoveryKey(
-        vaultName,
-        vaultPassword
-      );
+      const result = await window.electronAPI.generateRecoveryKey(vaultName);
       if (result.success) {
         setRecoveryKey(result.recoveryKey);
         setShowRecoveryKey(true);
@@ -167,10 +160,9 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
   const validatePasswordForm = () => {
     const errors = {};
 
+    // Correctness of the current password is checked by the main process.
     if (!passwordForm.currentPassword) {
       errors.currentPassword = 'Current password is required';
-    } else if (passwordForm.currentPassword !== vaultPassword) {
-      errors.currentPassword = 'Current password is incorrect';
     }
 
     if (!passwordForm.newPassword) {
@@ -234,13 +226,8 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
         setValidationErrors({});
         showSnackbar('Master password changed successfully');
 
-        // Notify parent component about password change
-        if (onPasswordChanged) {
-          onPasswordChanged(passwordForm.newPassword);
-        }
-
-        // Reload vault info using the new password directly
-        loadVaultInfo(passwordForm.newPassword);
+        // The main process re-keyed the session with the new password.
+        loadVaultInfo();
       } else {
         showSnackbar(
           result.error || 'Failed to change master password',
@@ -256,7 +243,6 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
     try {
       const result = await window.electronAPI.updateVaultSettings(
         vaultName,
-        vaultPassword,
         newSettings
       );
       if (result.success) {
@@ -548,7 +534,6 @@ const Settings = ({ vaultName, vaultPassword, onBack, onPasswordChanged }) => {
         onClose={() => setShowRecoveryKey(false)}
         recoveryKey={recoveryKey}
         vaultName={vaultName}
-        vaultPassword={vaultPassword}
         onRegenerateKey={handleGenerateRecoveryKey}
         isNewVault={false}
       />

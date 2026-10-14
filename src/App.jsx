@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { Snackbar, Alert } from '@mui/material';
@@ -52,7 +52,6 @@ const darkTheme = createTheme({
 function App() {
   const [currentVault, setCurrentVault] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [vaultPassword, setVaultPassword] = useState('');
   const [availableVaults, setAvailableVaults] = useState([]);
   const [currentView, setCurrentView] = useState('selector'); // selector, login, manager, create, recovery
   const [showConfiguration, setShowConfiguration] = useState(false);
@@ -62,6 +61,22 @@ function App() {
     message: '',
     severity: 'success',
   });
+
+  const resetToSelector = useCallback(() => {
+    setIsAuthenticated(false);
+    setCurrentVault(null);
+    setCurrentView('selector');
+  }, []);
+
+  // Ends the main-process session (which holds the password), then the UI.
+  const lockVault = useCallback(() => {
+    if (window.electronAPI?.lockVault) {
+      window.electronAPI.lockVault().catch((error) => {
+        console.error('Failed to lock vault session:', error);
+      });
+    }
+    resetToSelector();
+  }, [resetToSelector]);
 
   useEffect(() => {
     loadAvailableVaults();
@@ -73,9 +88,7 @@ function App() {
       });
 
       window.electronAPI.onMenuOpenVault(() => {
-        setCurrentView('selector');
-        setIsAuthenticated(false);
-        setCurrentVault(null);
+        lockVault();
       });
 
       if (window.electronAPI.onMenuImportVault) {
@@ -91,6 +104,13 @@ function App() {
       window.electronAPI.onMenuConfiguration(() => {
         setShowConfiguration(true);
       });
+
+      // The main process locked the session (sleep / screen lock).
+      if (window.electronAPI.onVaultLocked) {
+        window.electronAPI.onVaultLocked(() => {
+          resetToSelector();
+        });
+      }
     }
 
     // Set up keyboard shortcut for configuration dialog (Ctrl+S)
@@ -110,10 +130,11 @@ function App() {
         window.electronAPI.removeAllListeners('menu-import-vault');
         window.electronAPI.removeAllListeners('menu-lock-vault');
         window.electronAPI.removeAllListeners('menu-configuration');
+        window.electronAPI.removeAllListeners('vault-locked');
       }
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, []);
+  }, [lockVault, resetToSelector]);
 
   // Reload vaults when returning to selector view
   useEffect(() => {
@@ -153,12 +174,11 @@ function App() {
   const handleVaultLogin = async (password) => {
     if (window.electronAPI && currentVault) {
       try {
-        const result = await window.electronAPI.verifyVaultPassword(
+        const result = await window.electronAPI.unlockVault(
           currentVault,
           password
         );
         if (result.success) {
-          setVaultPassword(password);
           setIsAuthenticated(true);
           setCurrentView('manager');
           return { success: true };
@@ -182,7 +202,6 @@ function App() {
         if (result.success) {
           await loadAvailableVaults();
           setCurrentVault(vaultName);
-          setVaultPassword(masterPassword);
           setIsAuthenticated(true);
           setCurrentView('manager');
           return {
@@ -200,13 +219,6 @@ function App() {
     return { success: false, error: 'Electron API not available' };
   };
 
-  const lockVault = () => {
-    setIsAuthenticated(false);
-    setCurrentVault(null);
-    setVaultPassword('');
-    setCurrentView('selector');
-  };
-
   const goBack = () => {
     if (
       currentView === 'login' ||
@@ -222,11 +234,9 @@ function App() {
     setCurrentView('recovery');
   };
 
-  const handleVaultRecovered = (vaultData, recoveryMethod, password) => {
+  // Recovery already opened the session in the main process.
+  const handleVaultRecovered = (vaultData, recoveryMethod) => {
     console.log('Successfully recovered vault with method: ', recoveryMethod);
-    setVaultPassword(password);
-    setCurrentVault(currentVault);
-
     setIsAuthenticated(true);
     setCurrentView('manager');
   };
@@ -246,7 +256,6 @@ function App() {
     if (currentVault === vaultName) {
       setCurrentVault(null);
       setIsAuthenticated(false);
-      setVaultPassword('');
     }
   };
 
@@ -291,13 +300,7 @@ function App() {
           />
         );
       case 'manager':
-        return (
-          <PasswordManager
-            vaultName={currentVault}
-            vaultPassword={vaultPassword}
-            onLock={lockVault}
-          />
-        );
+        return <PasswordManager vaultName={currentVault} onLock={lockVault} />;
       default:
         return <Navigate to="/selector" replace />;
     }
@@ -313,8 +316,7 @@ function App() {
         <ConfigurationDialog
           open={showConfiguration}
           onClose={() => setShowConfiguration(false)}
-          vaultName={currentVault}
-          vaultPassword={vaultPassword}
+          vaultName={isAuthenticated ? currentVault : null}
         />
 
         <ImportExportDialog
