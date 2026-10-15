@@ -1,43 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { Typography, Button, Box, Alert, Snackbar } from '@mui/material';
 import {
-  Typography,
-  Button,
-  Box,
-  Card,
-  CardContent,
-  IconButton,
-  TextField,
-  Chip,
-  Fab,
-  Alert,
-  Snackbar,
-  Menu,
-  MenuItem,
-  InputAdornment,
-  FormControl,
-  InputLabel,
-  Select,
-} from '@mui/material';
-import {
-  Add as AddIcon,
-  Search as SearchIcon,
-  Visibility,
-  VisibilityOff,
-  ContentCopy as CopyIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
   Lock as LockIcon,
-  Language as WebIcon,
-  Email as EmailIcon,
-  Business as BusinessIcon,
-  MoreVert as MoreVertIcon,
   Security as SecurityIcon,
-  Work as WorkIcon,
-  School as SchoolIcon,
-  CreditCard as CreditCardIcon,
-  Games as GamesIcon,
-  Cloud as CloudIcon,
-  Smartphone as SmartphoneIcon,
   Settings as SettingsIcon,
   ImportExport as ImportExportIcon,
 } from '@mui/icons-material';
@@ -47,6 +12,7 @@ import EnhancedEntryDialog from './EnhancedEntryDialog';
 import SearchAndFilter from './SearchAndFilter';
 import AddEntryMenu from './AddEntryMenu';
 import ImportExportDialog from './ImportExportDialog';
+import EntryList from './EntryList';
 import {
   validateEntryByType,
   getSearchFields,
@@ -58,14 +24,11 @@ const PasswordManager = ({ vaultName, onLock }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [editingEntry, setEditingEntry] = useState(null);
-  const [showPasswords, setShowPasswords] = useState({});
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: '',
     severity: 'success',
   });
-  const [anchorEl, setAnchorEl] = useState(null);
-  const [selectedEntry, setSelectedEntry] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedEntryTypeFilter, setSelectedEntryTypeFilter] = useState('');
@@ -74,50 +37,6 @@ const PasswordManager = ({ vaultName, onLock }) => {
   const [selectedEntryType, setSelectedEntryType] = useState('password');
   const [showImportExport, setShowImportExport] = useState(false);
   const [availableVaults, setAvailableVaults] = useState([]);
-
-  // Predefined categories
-  const categories = [
-    {
-      value: 'general',
-      label: 'General',
-      icon: <SecurityIcon />,
-      color: '#9c27b0',
-    },
-    { value: 'website', label: 'Website', icon: <WebIcon />, color: '#2196f3' },
-    { value: 'email', label: 'Email', icon: <EmailIcon />, color: '#4caf50' },
-    {
-      value: 'business',
-      label: 'Business',
-      icon: <BusinessIcon />,
-      color: '#ff9800',
-    },
-    { value: 'work', label: 'Work', icon: <WorkIcon />, color: '#795548' },
-    {
-      value: 'school',
-      label: 'School',
-      icon: <SchoolIcon />,
-      color: '#607d8b',
-    },
-    {
-      value: 'finance',
-      label: 'Finance',
-      icon: <CreditCardIcon />,
-      color: '#e91e63',
-    },
-    { value: 'gaming', label: 'Gaming', icon: <GamesIcon />, color: '#673ab7' },
-    {
-      value: 'cloud',
-      label: 'Cloud Service',
-      icon: <CloudIcon />,
-      color: '#00bcd4',
-    },
-    {
-      value: 'mobile',
-      label: 'Mobile App',
-      icon: <SmartphoneIcon />,
-      color: '#8bc34a',
-    },
-  ];
 
   useEffect(() => {
     loadVaultData();
@@ -283,7 +202,7 @@ const PasswordManager = ({ vaultName, onLock }) => {
     if (success) {
       setEditingEntry(null);
       setValidationErrors({});
-      showSnackbar('Password entry updated successfully');
+      showSnackbar('Entry updated successfully');
     }
   };
 
@@ -292,9 +211,8 @@ const PasswordManager = ({ vaultName, onLock }) => {
     const success = await saveVaultData(updatedEntries);
 
     if (success) {
-      showSnackbar('Password entry deleted successfully');
+      showSnackbar('Entry deleted successfully');
     }
-    setAnchorEl(null);
   };
 
   const copyToClipboard = (text, label) => {
@@ -306,28 +224,6 @@ const PasswordManager = ({ vaultName, onLock }) => {
       .catch(() => {
         showSnackbar('Failed to copy to clipboard', 'error');
       });
-  };
-
-  const togglePasswordVisibility = (entryId) => {
-    setShowPasswords((prev) => ({
-      ...prev,
-      [entryId]: !prev[entryId],
-    }));
-  };
-
-  const getCategoryIcon = (category) => {
-    const categoryData = categories.find((cat) => cat.value === category);
-    return categoryData ? categoryData.icon : <SecurityIcon />;
-  };
-
-  const getCategoryColor = (category) => {
-    const categoryData = categories.find((cat) => cat.value === category);
-    return categoryData ? categoryData.color : '#9c27b0';
-  };
-
-  const getCategoryLabel = (category) => {
-    const categoryData = categories.find((cat) => cat.value === category);
-    return categoryData ? categoryData.label : 'General';
   };
 
   const filteredEntries = entries.filter((entry) => {
@@ -407,7 +303,8 @@ const PasswordManager = ({ vaultName, onLock }) => {
               variant="body2"
               sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
             >
-              {entries.length} password{entries.length !== 1 ? 's' : ''} stored
+              {entries.length} {entries.length === 1 ? 'entry' : 'entries'}{' '}
+              stored
             </Typography>
           </Box>
         </Box>
@@ -467,7 +364,7 @@ const PasswordManager = ({ vaultName, onLock }) => {
               variant="h6"
               sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 1 }}
             >
-              {searchTerm ? 'No passwords found' : 'No passwords stored yet'}
+              {searchTerm ? 'No entries found' : 'No entries stored yet'}
             </Typography>
             <Typography
               variant="body2"
@@ -475,187 +372,21 @@ const PasswordManager = ({ vaultName, onLock }) => {
             >
               {searchTerm
                 ? 'Try a different search term'
-                : 'Add your first password to get started'}
+                : 'Add your first entry to get started'}
             </Typography>
           </Box>
         ) : (
-          <Box sx={{ display: 'grid', gap: 2 }}>
-            {filteredEntries.map((entry, index) => (
-              <Card
-                key={entry.id}
-                data-testid={`entry-${entry.id}`}
-                data-entry-type={entry.entryType || 'password'}
-                sx={{
-                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  '&:hover': {
-                    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                    border: '1px solid rgba(33, 150, 243, 0.3)',
-                  },
-                }}
-              >
-                <CardContent>
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      justifyContent: 'space-between',
-                    }}
-                  >
-                    <Box sx={{ flexGrow: 1 }}>
-                      <Box
-                        sx={{ display: 'flex', alignItems: 'center', mb: 1 }}
-                      >
-                        <Chip
-                          icon={getCategoryIcon(entry.category)}
-                          label={getCategoryLabel(entry.category)}
-                          size="small"
-                          sx={{
-                            backgroundColor: getCategoryColor(entry.category),
-                            color: 'white',
-                            mr: 2,
-                          }}
-                        />
-                        <Typography variant="h6" sx={{ color: 'white' }}>
-                          {entry.title}
-                        </Typography>
-                      </Box>
-
-                      <Box sx={{ display: 'grid', gap: 1, mt: 2 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              color: 'rgba(255, 255, 255, 0.7)',
-                              minWidth: 80,
-                            }}
-                          >
-                            Username:
-                          </Typography>
-                          <Typography
-                            variant="body2"
-                            sx={{ color: 'white', mr: 1 }}
-                          >
-                            {entry.username}
-                          </Typography>
-                          <IconButton
-                            size="small"
-                            onClick={() =>
-                              copyToClipboard(entry.username, 'Username')
-                            }
-                          >
-                            <CopyIcon fontSize="small" />
-                          </IconButton>
-                        </Box>
-
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              color: 'rgba(255, 255, 255, 0.7)',
-                              minWidth: 80,
-                            }}
-                          >
-                            Password:
-                          </Typography>
-                          <Typography
-                            variant="body2"
-                            sx={{ color: 'white', mr: 1 }}
-                          >
-                            {showPasswords[entry.id]
-                              ? entry.password
-                              : '••••••••'}
-                          </Typography>
-                          <IconButton
-                            size="small"
-                            onClick={() => togglePasswordVisibility(entry.id)}
-                          >
-                            {showPasswords[entry.id] ? (
-                              <VisibilityOff fontSize="small" />
-                            ) : (
-                              <Visibility fontSize="small" />
-                            )}
-                          </IconButton>
-                          <IconButton
-                            size="small"
-                            onClick={() =>
-                              copyToClipboard(entry.password, 'Password')
-                            }
-                          >
-                            <CopyIcon fontSize="small" />
-                          </IconButton>
-                        </Box>
-
-                        {entry.url && (
-                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            <Typography
-                              variant="body2"
-                              sx={{
-                                color: 'rgba(255, 255, 255, 0.7)',
-                                minWidth: 80,
-                              }}
-                            >
-                              URL:
-                            </Typography>
-                            <Typography
-                              variant="body2"
-                              sx={{ color: '#2196f3', mr: 1 }}
-                            >
-                              {entry.url}
-                            </Typography>
-                            <IconButton
-                              size="small"
-                              onClick={() => copyToClipboard(entry.url, 'URL')}
-                            >
-                              <CopyIcon fontSize="small" />
-                            </IconButton>
-                          </Box>
-                        )}
-                      </Box>
-                    </Box>
-
-                    <IconButton
-                      onClick={(e) => {
-                        setAnchorEl(e.currentTarget);
-                        setSelectedEntry(entry);
-                      }}
-                    >
-                      <MoreVertIcon />
-                    </IconButton>
-                  </Box>
-                </CardContent>
-              </Card>
-            ))}
-          </Box>
+          <EntryList
+            entries={filteredEntries}
+            onEdit={setEditingEntry}
+            onDelete={handleDeleteEntry}
+            onCopy={copyToClipboard}
+          />
         )}
       </Box>
 
       {/* Add Entry Menu */}
       <AddEntryMenu onEntryTypeSelect={handleAddEntryType} disabled={loading} />
-
-      {/* Context Menu */}
-      <Menu
-        anchorEl={anchorEl}
-        open={Boolean(anchorEl)}
-        onClose={() => setAnchorEl(null)}
-      >
-        <MenuItem
-          onClick={() => {
-            setEditingEntry(selectedEntry);
-            setAnchorEl(null);
-          }}
-        >
-          <EditIcon sx={{ mr: 1 }} />
-          Edit
-        </MenuItem>
-        <MenuItem
-          onClick={() => handleDeleteEntry(selectedEntry?.id)}
-          sx={{ color: '#f44336' }}
-        >
-          <DeleteIcon sx={{ mr: 1 }} />
-          Delete
-        </MenuItem>
-      </Menu>
 
       {/* Add/Edit Dialog */}
       <EnhancedEntryDialog

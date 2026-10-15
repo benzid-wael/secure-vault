@@ -1,5 +1,11 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { vi } from 'vitest';
 import PasswordManager from '../../components/PasswordManager';
@@ -323,18 +329,18 @@ describe('PasswordManager', () => {
         expect(screen.getByText('test-vault')).toBeInTheDocument();
       });
 
-      expect(screen.getByText('0 passwords stored')).toBeInTheDocument();
+      expect(screen.getByText('0 entries stored')).toBeInTheDocument();
     });
 
     it('renders empty state when no entries', async () => {
       render(React.createElement(PasswordManager, defaultProps));
 
       await waitFor(() => {
-        expect(screen.getByText('No passwords stored yet')).toBeInTheDocument();
+        expect(screen.getByText('No entries stored yet')).toBeInTheDocument();
       });
 
       expect(
-        screen.getByText('Add your first password to get started')
+        screen.getByText('Add your first entry to get started')
       ).toBeInTheDocument();
     });
 
@@ -363,7 +369,7 @@ describe('PasswordManager', () => {
       });
 
       expect(screen.getByText('user@gmail.com')).toBeInTheDocument();
-      expect(screen.getByText('1 password stored')).toBeInTheDocument();
+      expect(screen.getByText('1 entry stored')).toBeInTheDocument();
     });
   });
 
@@ -453,7 +459,7 @@ describe('PasswordManager', () => {
       const searchInput = screen.getByPlaceholderText('Search entries...');
       fireEvent.change(searchInput, { target: { value: 'nonexistent' } });
 
-      expect(screen.getByText('No passwords found')).toBeInTheDocument();
+      expect(screen.getByText('No entries found')).toBeInTheDocument();
       expect(
         screen.getByText('Try a different search term')
       ).toBeInTheDocument();
@@ -502,6 +508,48 @@ describe('PasswordManager', () => {
     });
   });
 
+  describe('Entry types in the list', () => {
+    it('renders each entry with its own type layout, not a password card', async () => {
+      mockElectronAPI.loadVault.mockResolvedValue({
+        success: true,
+        data: {
+          entries: {
+            w: {
+              id: 'w',
+              entryType: 'wifi',
+              title: 'Home WiFi',
+              ssid: 'MyNet',
+              password: 'wifipass',
+              security: 'WPA2',
+              category: 'network',
+            },
+            c: {
+              id: 'c',
+              entryType: 'credit_card',
+              title: 'Visa',
+              cardholderName: 'Jane Doe',
+              cardNumber: '4111111111111111',
+              cardType: 'visa',
+              category: 'cards',
+            },
+          },
+        },
+      });
+      render(React.createElement(PasswordManager, defaultProps));
+
+      const wifi = within(await screen.findByTestId('entry-w'));
+      expect(wifi.getByText('Network Name (SSID):')).toBeInTheDocument();
+      expect(wifi.getByText('MyNet')).toBeInTheDocument();
+      expect(wifi.queryByText(/^Username/)).toBeNull();
+
+      const visa = within(screen.getByTestId('entry-c'));
+      expect(visa.getByText('Cardholder Name:')).toBeInTheDocument();
+      expect(visa.getByText('Card Number:')).toBeInTheDocument();
+      expect(visa.queryByText('4111111111111111')).toBeNull();
+      expect(visa.queryByText(/^Username/)).toBeNull();
+    });
+  });
+
   describe('Copy to Clipboard', () => {
     beforeEach(async () => {
       const mockEntries = [
@@ -544,7 +592,7 @@ describe('PasswordManager', () => {
         });
 
         expect(
-          screen.getByText('Username copied to clipboard')
+          screen.getByText('Username/Email copied to clipboard')
         ).toBeInTheDocument();
       }
     });
