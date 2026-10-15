@@ -5,6 +5,13 @@ import crypto from 'crypto';
 
 import { CryptographyService } from './CryptographyService.js';
 
+/** Copies kept per vault name from deleting it; older ones are removed. */
+export const DELETED_COPIES_KEPT = 5;
+
+// The `<ts>` in `<name>.vault.deleted.<ts>`: an ISO time with `:` and `.`
+// replaced, so names sort in time order.
+const DELETED_STAMP = /^\d{4}-\d{2}-\d{2}T[\d-]+Z$/;
+
 export class VaultFileService {
   constructor(vaultDirectory) {
     // Resolve tilde and ensure absolute path
@@ -175,7 +182,28 @@ export class VaultFileService {
       }
     }
 
+    await this._pruneDeletedCopies(vaultName);
+
     return path.basename(deletedBackupPath);
+  }
+
+  /**
+   * Keep only the newest DELETED_COPIES_KEPT `.vault.deleted.<ts>` copies of
+   * a vault name, so re-creating and deleting a vault doesn't pile up old
+   * encrypted copies (some under retired passwords) without limit.
+   */
+  async _pruneDeletedCopies(vaultName) {
+    const prefix = `${vaultName}.vault.deleted.`;
+    const copies = (await fs.readdir(this.vaultDirectory))
+      .filter(
+        (file) =>
+          file.startsWith(prefix) &&
+          DELETED_STAMP.test(file.slice(prefix.length))
+      )
+      .sort();
+    for (const file of copies.slice(0, -DELETED_COPIES_KEPT)) {
+      await fs.remove(path.join(this.vaultDirectory, file));
+    }
   }
 
   async listVaults() {

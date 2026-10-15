@@ -245,6 +245,13 @@ describe('EnhancedEntryDialog', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows a format hint under the field, not in its label', () => {
+    render(<EnhancedEntryDialog {...defaultProps} entryType="credit_card" />);
+
+    expect(screen.getByLabelText(/^expiry date\s*\*?$/i)).toBeInTheDocument();
+    expect(screen.getByText('MM/YY')).toBeInTheDocument();
+  });
+
   it('renders level 3 card with grid component', () => {
     render(<EnhancedEntryDialog {...defaultProps} entryType="level3_card" />);
 

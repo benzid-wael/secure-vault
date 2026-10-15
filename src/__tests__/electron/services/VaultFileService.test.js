@@ -4,7 +4,10 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 
-import { VaultFileService } from '../../../electron/services/VaultFileService.js';
+import {
+  VaultFileService,
+  DELETED_COPIES_KEPT,
+} from '../../../electron/services/VaultFileService.js';
 
 describe('VaultFileService vault-name containment', () => {
   let root;
@@ -64,6 +67,50 @@ describe('VaultFileService vault-name containment', () => {
       'Invalid vault name'
     );
     expect(fs.existsSync(victim)).toBe(true);
+  });
+});
+
+describe('VaultFileService.deleteVault copies', () => {
+  let dir;
+  let vfs;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-vfs-del-'));
+    vfs = new VaultFileService(dir);
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const stamp = (day) =>
+    `2026-01-${String(day).padStart(2, '0')}T00-00-00-000Z`;
+
+  it('keeps only the newest copies of that vault name', async () => {
+    for (let day = 1; day <= DELETED_COPIES_KEPT + 2; day += 1) {
+      fs.writeFileSync(path.join(dir, `work.vault.deleted.${stamp(day)}`), '');
+    }
+    // Other vaults' copies and unrelated files are left alone.
+    fs.writeFileSync(path.join(dir, `work.b.vault.deleted.${stamp(1)}`), '');
+    fs.writeFileSync(path.join(dir, 'work.vault.deleted.notes'), '');
+    fs.writeFileSync(path.join(dir, 'work.vault'), '{}');
+
+    const kept = await vfs.deleteVault('work');
+
+    const copies = fs
+      .readdirSync(dir)
+      .filter((f) => f.startsWith('work.vault.deleted.2'))
+      .sort();
+    expect(copies).toHaveLength(DELETED_COPIES_KEPT);
+    expect(copies).toContain(kept);
+    expect(copies).not.toContain(`work.vault.deleted.${stamp(1)}`);
+    expect(copies).not.toContain(`work.vault.deleted.${stamp(2)}`);
+    expect(
+      fs.existsSync(path.join(dir, `work.b.vault.deleted.${stamp(1)}`))
+    ).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'work.vault.deleted.notes'))).toBe(
+      true
+    );
   });
 });
 

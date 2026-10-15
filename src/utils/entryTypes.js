@@ -345,7 +345,8 @@ export const ENTRY_TYPE_DEFINITIONS = {
       tags: {
         type: FIELD_TYPES.TEXT,
         required: false,
-        label: 'Tags (comma-separated)',
+        label: 'Tags',
+        hint: 'Comma-separated',
         order: 200,
       },
     },
@@ -462,7 +463,8 @@ export const ENTRY_TYPE_DEFINITIONS = {
       expiryDate: {
         type: FIELD_TYPES.TEXT,
         required: true,
-        label: 'Expiry Date (MM/YY)',
+        label: 'Expiry Date',
+        hint: 'MM/YY',
         order: 300,
       },
       cvv: {

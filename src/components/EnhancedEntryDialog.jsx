@@ -167,7 +167,7 @@ const EnhancedEntryDialog = ({
             multiline
             rows={fieldConfig.type === FIELD_TYPES.MULTILINE ? 6 : 3}
             error={!!validationErrors[fieldName]}
-            helperText={validationErrors[fieldName]}
+            helperText={validationErrors[fieldName] || fieldConfig.hint}
             required={fieldConfig.required}
             sx={{ '& .MuiInputBase-input': { color: 'white' } }}
           />
@@ -197,7 +197,7 @@ const EnhancedEntryDialog = ({
             onChange={(e) => handleInputChange(fieldName, e.target.value)}
             fullWidth
             error={!!validationErrors[fieldName]}
-            helperText={validationErrors[fieldName]}
+            helperText={validationErrors[fieldName] || fieldConfig.hint}
             required={fieldConfig.required}
             sx={{ '& .MuiInputBase-input': { color: 'white' } }}
             InputProps={
