@@ -178,11 +178,16 @@ vi.mock('@mui/icons-material/MoreVert', () => ({
 // Mock the Settings component
 vi.mock('../../components/Settings', () => ({
   __esModule: true,
-  default: ({ onBack }) =>
+  default: ({ onBack, onPasswordChanged }) =>
     React.createElement(
       'div',
       { 'data-testid': 'settings-component' },
-      React.createElement('button', { onClick: onBack }, 'Back')
+      React.createElement('button', { onClick: onBack }, 'Back'),
+      React.createElement(
+        'button',
+        { onClick: () => onPasswordChanged?.() },
+        'Simulate password change'
+      )
     ),
 }));
 
@@ -626,6 +631,36 @@ describe('PasswordManager', () => {
 
       // Should be back to main view
       expect(screen.getByText('test-vault')).toBeInTheDocument();
+    });
+  });
+
+  describe('Built-in password warning', () => {
+    it('is hidden for a vault with its own password', async () => {
+      render(React.createElement(PasswordManager, defaultProps));
+      await waitFor(() => {
+        expect(screen.getByText('test-vault')).toBeInTheDocument();
+      });
+      expect(screen.queryByText(/built-in password/i)).not.toBeInTheDocument();
+    });
+
+    it('asks to change the password and opens Settings', async () => {
+      const onPasswordChanged = vi.fn();
+      render(
+        React.createElement(PasswordManager, {
+          ...defaultProps,
+          usesDefaultPassword: true,
+          onPasswordChanged,
+        })
+      );
+      await waitFor(() => {
+        expect(screen.getByText(/built-in password/i)).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
+      expect(screen.getByTestId('settings-component')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('Simulate password change'));
+      expect(onPasswordChanged).toHaveBeenCalledTimes(1);
     });
   });
 

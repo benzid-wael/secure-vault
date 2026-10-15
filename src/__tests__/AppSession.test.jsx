@@ -1,5 +1,11 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  act,
+} from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import App from '../App';
@@ -134,5 +140,23 @@ describe('App vault session', () => {
 
     expect(await screen.findByText('select')).toBeInTheDocument();
     expect(screen.queryByTestId('password-manager')).not.toBeInTheDocument();
+  });
+
+  it('passes the built-in-password flag from unlock to the manager', async () => {
+    api.unlockVault.mockResolvedValueOnce({
+      success: true,
+      usesDefaultPassword: true,
+    });
+    await unlock();
+    expect(received.passwordManager.usesDefaultPassword).toBe(true);
+
+    // Changing the password clears it.
+    act(() => received.passwordManager.onPasswordChanged());
+    expect(received.passwordManager.usesDefaultPassword).toBe(false);
+  });
+
+  it('does not flag a vault unlocked with its own password', async () => {
+    await unlock();
+    expect(received.passwordManager.usesDefaultPassword).toBe(false);
   });
 });

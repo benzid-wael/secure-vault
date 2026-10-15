@@ -97,13 +97,4 @@ describe('VaultService logging', () => {
     const logged = logSpy.mock.calls.flat().map(String).join('\n');
     expect(logged).not.toContain(vaultFile.encrypted);
   });
-
-  it('createDefaultVault does not print the recovery key', async () => {
-    const vs = new VaultService(dir);
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const result = await vs.createDefaultVault();
-    expect(result.success).toBe(true);
-    const logged = logSpy.mock.calls.flat().map(String).join('\n');
-    expect(logged).not.toContain(result.recoveryKey);
-  });
 });

@@ -6,6 +6,13 @@ import { KeyRecoveryService } from './recovery/KeyRecoveryService.js';
 import { PasswordRecoveryService } from './recovery/PasswordRecoveryService.js';
 import { RecoveryData } from './recovery/IRecoveryMethod.js';
 
+/**
+ * The password earlier versions gave the `default` vault they created on
+ * first launch. Nothing creates it any more; it is only recognised so a vault
+ * still using it can be flagged on unlock.
+ */
+export const LEGACY_DEFAULT_PASSWORD = 'changeme123';
+
 export class VaultService {
   /**
    * @param {string} vaultDirectory
@@ -42,24 +49,8 @@ export class VaultService {
     };
   }
 
-  // In-flight creation of the default vault, shared by concurrent callers.
-  #defaultVaultCreation = null;
-
   async getAvailableVaults() {
-    const vaults = await this.fileService.listVaults();
-
-    // Ensure default vault exists. The renderer can ask for the list twice at
-    // startup; without sharing one creation, both would create (and write) a
-    // default vault with different recovery keys.
-    if (!vaults.includes('default')) {
-      this.#defaultVaultCreation ??= this.createDefaultVault().finally(() => {
-        this.#defaultVaultCreation = null;
-      });
-      await this.#defaultVaultCreation;
-      vaults.unshift('default');
-    }
-
-    return vaults;
+    return this.fileService.listVaults();
   }
 
   async verifyVaultPassword(vaultName, password) {
@@ -387,25 +378,22 @@ export class VaultService {
         return { success: false, error: 'Vault not found' };
       }
 
-      if (vaultName === 'default' && !confirmationPassword) {
+      // Every vault needs its password to be deleted.
+      if (!confirmationPassword) {
         return {
           success: false,
-          error: 'Cannot delete default vault without password confirmation',
+          error: 'Enter the vault password to delete it',
         };
       }
-
-      // Verify password if provided
-      if (confirmationPassword) {
-        const verification = await this.verifyPassword(
-          vaultName,
-          confirmationPassword
-        );
-        if (!verification.success) {
-          return {
-            success: false,
-            error: 'Invalid password. Vault not deleted.',
-          };
-        }
+      const verification = await this.verifyPassword(
+        vaultName,
+        confirmationPassword
+      );
+      if (!verification.success) {
+        return {
+          success: false,
+          error: 'Invalid password. Vault not deleted.',
+        };
       }
 
       const backupFile = await this.fileService.deleteVault(vaultName);
@@ -418,11 +406,6 @@ export class VaultService {
     } catch (error) {
       return { success: false, error: 'Failed to delete vault' };
     }
-  }
-
-  async createDefaultVault() {
-    const defaultPassword = 'changeme123';
-    return this.createVault('default', defaultPassword);
   }
 
   // Recovery methods

@@ -28,7 +28,10 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // Import services
-import { VaultService } from '../src/electron/services/VaultService.js';
+import {
+  VaultService,
+  LEGACY_DEFAULT_PASSWORD,
+} from '../src/electron/services/VaultService.js';
 import { ImportExportService } from '../src/electron/services/ImportExportService.js';
 import { VaultSettingsService } from '../src/electron/services/VaultSettingsService.js';
 import { VaultSession } from '../src/electron/services/VaultSession.js';
@@ -231,8 +234,14 @@ class ElectronApp {
         vaultName,
         password
       );
-      if (result.success) await this.openSession(vaultName, password);
-      return result;
+      if (!result.success) return result;
+      await this.openSession(vaultName, password);
+      // A vault created by an older version may still use its built-in
+      // password; the UI asks for it to be changed.
+      return {
+        ...result,
+        usesDefaultPassword: password === LEGACY_DEFAULT_PASSWORD,
+      };
     });
     handle('lock-vault', () => {
       this.session.close();

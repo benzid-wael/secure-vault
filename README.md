@@ -170,9 +170,9 @@ npm run start:prod
 ### First Time Setup
 
 1. Launch the application
-2. You'll see the vault selector with a default vault
-3. The default vault password is `changeme123` (change this immediately for security)
-4. Or create a new vault with a strong master password
+2. Click "Create Your First Vault"
+3. Name it and choose a strong master password (there is no built-in vault or
+   default password)
 
 ### Creating a New Vault
 

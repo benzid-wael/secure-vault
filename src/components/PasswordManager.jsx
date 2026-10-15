@@ -19,7 +19,12 @@ import {
   ENTRY_TYPE_DEFINITIONS,
 } from '../utils/entryTypes';
 
-const PasswordManager = ({ vaultName, onLock }) => {
+const PasswordManager = ({
+  vaultName,
+  onLock,
+  usesDefaultPassword = false,
+  onPasswordChanged = () => {},
+}) => {
   const [entries, setEntries] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -278,7 +283,11 @@ const PasswordManager = ({ vaultName, onLock }) => {
 
   if (showSettings) {
     return (
-      <Settings vaultName={vaultName} onBack={() => setShowSettings(false)} />
+      <Settings
+        vaultName={vaultName}
+        onBack={() => setShowSettings(false)}
+        onPasswordChanged={onPasswordChanged}
+      />
     );
   }
 
@@ -335,6 +344,25 @@ const PasswordManager = ({ vaultName, onLock }) => {
           </Button>
         </Box>
       </Box>
+
+      {usesDefaultPassword && (
+        <Alert
+          severity="warning"
+          sx={{ mb: 2 }}
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              onClick={() => setShowSettings(true)}
+            >
+              Change password
+            </Button>
+          }
+        >
+          This vault still uses the built-in password from an earlier version,
+          which anyone can look up. Change it now.
+        </Alert>
+      )}
 
       {/* Search and Filter */}
       <SearchAndFilter

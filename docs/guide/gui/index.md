@@ -33,13 +33,15 @@ unidentified — this is expected.
 ## First-time setup
 
 1. Launch the application.
-2. You'll see the **vault selector** with a default vault.
-3. The default vault password is `changeme123`.
-   ::: danger Change this immediately
-   The default password exists only so you can get in on first launch. Create your
-   own vault with a strong master password, or change the default's password right
-   away.
-   :::
+2. Click **Create Your First Vault**.
+3. Name it and choose a strong master password. There is no built-in vault or
+   default password: every vault starts with a password you chose.
+
+::: warning Upgrading from an earlier version
+Earlier versions created a `default` vault with the password `changeme123`. If
+you still have one, the app warns after you unlock it; use **Change password**
+to set your own. The vault is otherwise unchanged.
+:::
 
 ## Create a new vault
 

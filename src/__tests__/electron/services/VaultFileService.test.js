@@ -180,8 +180,7 @@ describe('concurrent vault writes', () => {
     expect(leftovers()).toEqual([]);
   });
 
-  it('the startup double-fetch creates one default vault without errors', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+  it('listing vaults creates nothing, even on an empty directory', async () => {
     const { VaultService } = await import(
       '../../../electron/services/VaultService.js'
     );
@@ -193,12 +192,9 @@ describe('concurrent vault writes', () => {
       vs.getAvailableVaults(),
     ]);
 
-    expect(a).toContain('default');
-    expect(b).toContain('default');
-    expect(createSpy).toHaveBeenCalledTimes(1);
-    expect(leftovers()).toEqual([]);
-    // Later calls see the existing vault and create nothing.
-    await vs.getAvailableVaults();
-    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(a).toEqual([]);
+    expect(b).toEqual([]);
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(fs.readdirSync(dir)).toEqual([]);
   });
 });

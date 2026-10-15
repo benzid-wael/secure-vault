@@ -5,7 +5,6 @@ import {
   Box,
   Card,
   CardContent,
-  Tooltip,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -18,7 +17,6 @@ import {
   Add as AddIcon,
   Security as SecurityIcon,
   FolderOpen as FolderIcon,
-  Star as StarIcon,
   Delete as DeleteIcon,
   Warning as WarningIcon,
 } from '@mui/icons-material';
@@ -27,13 +25,14 @@ const VaultSelector = ({
   vaults,
   onVaultSelect,
   onCreateNew,
-  onVaultDeleted,
+  onVaultDeleted = undefined,
 }) => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [vaultToDelete, setVaultToDelete] = useState('');
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteError, setDeleteError] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const hasVaults = (vaults || []).length > 0;
 
   const handleDeleteClick = (vaultName, event) => {
     event.stopPropagation(); // Prevent vault selection
@@ -91,178 +90,189 @@ const VaultSelector = ({
           Secure Vault
         </Typography>
         <Typography variant="h6" className="vault-subtitle">
-          Choose a vault or create a new one
+          {hasVaults
+            ? 'Choose a vault or create a new one'
+            : 'Create your first vault to get started'}
         </Typography>
       </div>
 
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h6" sx={{ color: 'white', mb: 2 }}>
-          Available Vaults
+      {!hasVaults && (
+        <Typography
+          variant="body1"
+          sx={{ color: 'rgba(255, 255, 255, 0.7)', textAlign: 'center', mb: 3 }}
+        >
+          You choose its master password. It encrypts everything in the vault
+          and is never stored, so pick one you'll remember.
         </Typography>
+      )}
 
-        <div className="vault-list">
-          {(vaults || []).map((vault) => (
-            <Card
-              key={vault}
-              className="vault-item"
-              sx={{
-                cursor: 'pointer',
-                transition: 'all 0.3s ease',
-                position: 'relative',
-                overflow: 'hidden',
-                background:
-                  'linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                minHeight: '140px',
-                display: 'flex',
-                flexDirection: 'column',
-                '&:hover': {
-                  transform: 'translateY(-4px)',
-                  boxShadow: '0 12px 30px rgba(33, 150, 243, 0.4)',
-                  border: '1px solid rgba(33, 150, 243, 0.3)',
-                  '& .vault-delete-button': {
-                    backgroundColor: 'rgba(244, 67, 54, 0.15)',
-                    color: '#f44336',
-                    borderColor: '#f44336',
-                    transform: 'scale(1.05)',
-                  },
-                },
-              }}
-            >
-              <CardContent
-                onClick={() => onVaultSelect(vault)}
+      {hasVaults && (
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="h6" sx={{ color: 'white', mb: 2 }}>
+            Available Vaults
+          </Typography>
+
+          <div className="vault-list">
+            {(vaults || []).map((vault) => (
+              <Card
+                key={vault}
+                className="vault-item"
                 sx={{
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  background:
+                    'linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  minHeight: '140px',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 2,
-                  p: 3,
-                  flexGrow: 1,
-                  position: 'relative',
+                  '&:hover': {
+                    transform: 'translateY(-4px)',
+                    boxShadow: '0 12px 30px rgba(33, 150, 243, 0.4)',
+                    border: '1px solid rgba(33, 150, 243, 0.3)',
+                    '& .vault-delete-button': {
+                      backgroundColor: 'rgba(244, 67, 54, 0.15)',
+                      color: '#f44336',
+                      borderColor: '#f44336',
+                      transform: 'scale(1.05)',
+                    },
+                  },
                 }}
               >
-                {/* Header with icon and title */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                  <Box
-                    sx={{
-                      p: 1.5,
-                      borderRadius: '12px',
-                      background:
-                        'linear-gradient(135deg, #2196f3 0%, #21cbf3 100%)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      boxShadow: '0 4px 12px rgba(33, 150, 243, 0.3)',
-                    }}
-                  >
-                    <FolderIcon sx={{ fontSize: '1.5rem', color: 'white' }} />
-                  </Box>
-                  <Box sx={{ flexGrow: 1 }}>
-                    <Typography
-                      variant="h6"
-                      className="vault-item-name"
-                      sx={{
-                        fontWeight: 600,
-                        color: 'white',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-                        fontSize: '1.1rem',
-                      }}
-                    >
-                      {vault}
-                      {vault === 'default' && (
-                        <Tooltip title="Default Vault">
-                          <StarIcon
-                            sx={{ fontSize: '1rem', color: '#ffc107' }}
-                          />
-                        </Tooltip>
-                      )}
-                    </Typography>
-                  </Box>
-                  <SecurityIcon
-                    sx={{
-                      color: 'rgba(255, 255, 255, 0.3)',
-                      fontSize: '1.2rem',
-                    }}
-                  />
-                </Box>
-
-                {/* Description */}
-                <Typography
-                  variant="body2"
-                  className="vault-item-info"
-                  sx={{
-                    color: 'rgba(255, 255, 255, 0.7)',
-                    flexGrow: 1,
-                    lineHeight: 1.5,
-                    fontSize: '0.875rem',
-                  }}
-                >
-                  {vault === 'default'
-                    ? 'Your default password vault with built-in security features'
-                    : 'Custom vault for organizing your passwords and sensitive data'}
-                </Typography>
-
-                {/* Vault stats/info */}
-                <Box
+                <CardContent
+                  onClick={() => onVaultSelect(vault)}
                   sx={{
                     display: 'flex',
+                    flexDirection: 'column',
                     gap: 2,
-                    color: 'rgba(255, 255, 255, 0.5)',
-                    fontSize: '0.75rem',
-                    alignItems: 'center',
+                    p: 3,
+                    flexGrow: 1,
+                    position: 'relative',
                   }}
                 >
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                    <SecurityIcon sx={{ fontSize: '0.875rem' }} />
-                    <span>AES-256</span>
+                  {/* Header with icon and title */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        borderRadius: '12px',
+                        background:
+                          'linear-gradient(135deg, #2196f3 0%, #21cbf3 100%)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 4px 12px rgba(33, 150, 243, 0.3)',
+                      }}
+                    >
+                      <FolderIcon sx={{ fontSize: '1.5rem', color: 'white' }} />
+                    </Box>
+                    <Box sx={{ flexGrow: 1 }}>
+                      <Typography
+                        variant="h6"
+                        className="vault-item-name"
+                        sx={{
+                          fontWeight: 600,
+                          color: 'white',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1,
+                          fontSize: '1.1rem',
+                        }}
+                      >
+                        {vault}
+                      </Typography>
+                    </Box>
+                    <SecurityIcon
+                      sx={{
+                        color: 'rgba(255, 255, 255, 0.3)',
+                        fontSize: '1.2rem',
+                      }}
+                    />
                   </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                    <span>•</span>
-                    <span>Encrypted</span>
+
+                  {/* Description */}
+                  <Typography
+                    variant="body2"
+                    className="vault-item-info"
+                    sx={{
+                      color: 'rgba(255, 255, 255, 0.7)',
+                      flexGrow: 1,
+                      lineHeight: 1.5,
+                      fontSize: '0.875rem',
+                    }}
+                  >
+                    Encrypted vault for your passwords and sensitive data
+                  </Typography>
+
+                  {/* Vault stats/info */}
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      gap: 2,
+                      color: 'rgba(255, 255, 255, 0.5)',
+                      fontSize: '0.75rem',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Box
+                      sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}
+                    >
+                      <SecurityIcon sx={{ fontSize: '0.875rem' }} />
+                      <span>AES-256</span>
+                    </Box>
+                    <Box
+                      sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}
+                    >
+                      <span>•</span>
+                      <span>Encrypted</span>
+                    </Box>
+                    <Box
+                      sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}
+                    >
+                      <span>•</span>
+                      <span>Secure</span>
+                    </Box>
                   </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                    <span>•</span>
-                    <span>Secure</span>
-                  </Box>
-                </Box>
-                {/* Delete button overlay - bottom-right corner */}
-                <Button
-                  className="vault-delete-button"
-                  onClick={(e) => handleDeleteClick(vault, e)}
-                  variant="outlined"
-                  size="small"
-                  sx={{
-                    position: 'absolute',
-                    bottom: 12,
-                    right: 12,
-                    minWidth: 'auto',
-                    width: 36,
-                    height: 36,
-                    borderRadius: '50%',
-                    borderColor: 'rgba(255, 255, 255, 0.2)',
-                    color: 'rgba(255, 255, 255, 0.4)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                    backdropFilter: 'blur(8px)',
-                    transition: 'all 0.3s ease',
-                    opacity: 0.7,
-                    '&:hover': {
-                      backgroundColor: 'rgba(244, 67, 54, 0.2)',
-                      borderColor: '#f44336',
-                      color: '#f44336',
-                      transform: 'scale(1.1)',
-                      opacity: 1,
-                      boxShadow: '0 4px 12px rgba(244, 67, 54, 0.3)',
-                    },
-                  }}
-                >
-                  <DeleteIcon sx={{ fontSize: '1rem' }} />
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </Box>
+                  {/* Delete button overlay - bottom-right corner */}
+                  <Button
+                    className="vault-delete-button"
+                    onClick={(e) => handleDeleteClick(vault, e)}
+                    variant="outlined"
+                    size="small"
+                    sx={{
+                      position: 'absolute',
+                      bottom: 12,
+                      right: 12,
+                      minWidth: 'auto',
+                      width: 36,
+                      height: 36,
+                      borderRadius: '50%',
+                      borderColor: 'rgba(255, 255, 255, 0.2)',
+                      color: 'rgba(255, 255, 255, 0.4)',
+                      backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                      backdropFilter: 'blur(8px)',
+                      transition: 'all 0.3s ease',
+                      opacity: 0.7,
+                      '&:hover': {
+                        backgroundColor: 'rgba(244, 67, 54, 0.2)',
+                        borderColor: '#f44336',
+                        color: '#f44336',
+                        transform: 'scale(1.1)',
+                        opacity: 1,
+                        boxShadow: '0 4px 12px rgba(244, 67, 54, 0.3)',
+                      },
+                    }}
+                  >
+                    <DeleteIcon sx={{ fontSize: '1rem' }} />
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </Box>
+      )}
 
       <Box sx={{ display: 'flex', justifyContent: 'center' }}>
         <Button
@@ -282,7 +292,7 @@ const VaultSelector = ({
             },
           }}
         >
-          Create New Vault
+          {hasVaults ? 'Create New Vault' : 'Create Your First Vault'}
         </Button>
       </Box>
 

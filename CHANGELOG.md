@@ -10,6 +10,17 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ## [Unreleased]
 
+### Security
+
+- **No more built-in `default` vault.** The desktop app created a `default`
+  vault with the password `changeme123` on every launch where it was missing,
+  so every install had a vault anyone could open. First launch now asks you to
+  create a vault with your own password. An existing `default` vault is kept;
+  if it still uses `changeme123`, the app warns after unlock and links to
+  **Change password**.
+- **Deleting a desktop vault always needs its password.** Only the `default`
+  vault required one; any other vault could be deleted without it.
+
 ## [0.2.0-rc.1] — 2026-10-15
 
 First v0.2.0 pre-release. Desktop vaults are re-keyed to 600,000 PBKDF2

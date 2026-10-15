@@ -12,7 +12,8 @@ below for context; everything else is still open.
 | ------ | ------------------------------------------------------------------------------ |
 | C1     | **Resolved** — vault-file log removed from `loadVault()`                       |
 | C2     | **Resolved** — password held by a main-process session, see the note under C2  |
-| C3     | **Resolved** — recovery-key log removed from `createDefaultVault()`            |
+| C3     | **Resolved** — recovery-key log removed; `createDefaultVault()` later deleted  |
+| C5     | **Resolved** — no built-in vault; legacy password flagged on unlock            |
 | C4     | **Partly resolved** — see the note under C4                                    |
 | H1     | **Resolved** — `recover()` fixed end-to-end, see the note under H1             |
 | H2, H3 | **Resolved** — dead, broken services deleted                                   |
@@ -114,6 +115,24 @@ if (result.success) {
 The recovery key can decrypt the master password (via
 `KeyRecoveryService.recoverMasterPassword`). Logging it to stdout leaks it
 to any process or log file that captures the output.
+
+### C5 — Built-in `default` vault with a fixed password
+
+> **Resolved (2026-10-15).** Listing vaults no longer creates anything; first
+> launch asks the user to create a vault with their own password, and
+> `createDefaultVault()` is gone. A `default` vault from an earlier version is
+> left alone, but unlocking it with `changeme123` makes the app show a warning
+> with a **Change password** action. Deleting any vault now requires its
+> password (only `default` did).
+
+**File:** `src/electron/services/VaultService.js` (`getAvailableVaults`,
+`createDefaultVault`)
+
+Whenever `default.vault` was missing, `getAvailableVaults()` created it with
+the password `changeme123`, and the login screen displayed that password. Every
+install therefore had a vault that anyone with access to the machine could
+open, and the app recreated it after the user deleted it. Anything a user saved
+there without changing the password was protected only by a published string.
 
 ### C4 — `VAULT_ENV_PASSWORD` remains in `process.env` after read
 

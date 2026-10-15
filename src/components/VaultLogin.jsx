@@ -111,14 +111,6 @@ const VaultLogin = ({ vaultName, onLogin, onBack, onRecovery }) => {
           </Alert>
         )}
 
-        {vaultName === 'default' && !error && (
-          <Alert severity="info" sx={{ mt: 2 }}>
-            Default vault password: <strong>changeme123</strong>
-            <br />
-            <em>Please change this password after first login for security.</em>
-          </Alert>
-        )}
-
         <Box sx={{ display: 'flex', gap: 2, mt: 3 }}>
           <Button
             type="button"

@@ -53,6 +53,8 @@ function App() {
   const [currentVault, setCurrentVault] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [availableVaults, setAvailableVaults] = useState([]);
+  // The unlocked vault still uses an older version's built-in password.
+  const [usesDefaultPassword, setUsesDefaultPassword] = useState(false);
   const [currentView, setCurrentView] = useState('selector'); // selector, login, manager, create, recovery
   const [showConfiguration, setShowConfiguration] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -65,6 +67,7 @@ function App() {
   const resetToSelector = useCallback(() => {
     setIsAuthenticated(false);
     setCurrentVault(null);
+    setUsesDefaultPassword(false);
     setCurrentView('selector');
   }, []);
 
@@ -179,6 +182,7 @@ function App() {
           password
         );
         if (result.success) {
+          setUsesDefaultPassword(Boolean(result.usesDefaultPassword));
           setIsAuthenticated(true);
           setCurrentView('manager');
           return { success: true };
@@ -300,7 +304,14 @@ function App() {
           />
         );
       case 'manager':
-        return <PasswordManager vaultName={currentVault} onLock={lockVault} />;
+        return (
+          <PasswordManager
+            vaultName={currentVault}
+            onLock={lockVault}
+            usesDefaultPassword={usesDefaultPassword}
+            onPasswordChanged={() => setUsesDefaultPassword(false)}
+          />
+        );
       default:
         return <Navigate to="/selector" replace />;
     }

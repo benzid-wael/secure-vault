@@ -36,7 +36,7 @@ import {
 } from '../utils/passwordValidation';
 import RecoveryKeyDisplay from './RecoveryKeyDisplay';
 
-const Settings = ({ vaultName, onBack }) => {
+const Settings = ({ vaultName, onBack, onPasswordChanged = () => {} }) => {
   const [settings, setSettings] = useState({
     enforcePasswordChange: false,
     passwordChangeWarningDays: 90,
@@ -225,6 +225,7 @@ const Settings = ({ vaultName, onBack }) => {
         });
         setValidationErrors({});
         showSnackbar('Master password changed successfully');
+        onPasswordChanged();
 
         // The main process re-keyed the session with the new password.
         loadVaultInfo();

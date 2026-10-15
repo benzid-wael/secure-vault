@@ -5,7 +5,7 @@ import { vi } from 'vitest';
 import VaultSelector from '../../components/VaultSelector';
 
 describe('VaultSelector', () => {
-  const vaults = ['default', 'work', 'personal'];
+  const vaults = ['main', 'work', 'personal'];
   const onVaultSelect = vi.fn();
   const onCreateNew = vi.fn();
 
@@ -48,6 +48,22 @@ describe('VaultSelector', () => {
       />
     );
     fireEvent.click(screen.getByText('Create New Vault'));
+    expect(onCreateNew).toHaveBeenCalled();
+  });
+
+  it('with no vaults, invites creating the first one', () => {
+    render(
+      <VaultSelector
+        vaults={[]}
+        onVaultSelect={onVaultSelect}
+        onCreateNew={onCreateNew}
+      />
+    );
+    expect(screen.queryByText('Available Vaults')).not.toBeInTheDocument();
+    expect(
+      screen.getByText('Create your first vault to get started')
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Create Your First Vault'));
     expect(onCreateNew).toHaveBeenCalled();
   });
 });
