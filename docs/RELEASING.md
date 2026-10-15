@@ -21,7 +21,7 @@ The tag triggers the workflow, which:
 | `build-gui`   | macOS, Ubuntu, Windows (native) | `.dmg` / `.zip`, `.AppImage` / `.deb`, NSIS / portable `.exe` |
 | `build-cli`   | Ubuntu + Bun (cross-compile)    | `vault-{linux,macos}-{x64,arm64}`, `vault-windows-x64.exe`    |
 | `release`     | Ubuntu                          | One GitHub Release with all of the above attached             |
-| `publish-npm` | Ubuntu                          | `npm publish` (only if `NPM_TOKEN` secret is set)             |
+| `publish-npm` | Ubuntu                          | `npm publish` via trusted publishing (no npm token)           |
 
 > **Each tag must be a new version.** npm refuses to republish an existing
 > version, so re-running a failed release needs a fresh tag (e.g. `v0.1.0-rc.2`),
@@ -33,25 +33,35 @@ The tag triggers the workflow, which:
 > release. The `version` in `package.json` (`0.0.1`) is just an unreleased
 > placeholder and is ignored at release time.
 
-## Required / optional secrets
+## Secrets and npm access
 
 - `GITHUB_TOKEN` — provided automatically by GitHub Actions; used to create the
   Release. You do not create or configure this.
-- `NPM_TOKEN` — **optional**. An npm token enabling `npm publish`. Without it the
-  `publish-npm` job skips gracefully (GitHub Releases still publish).
+- **No npm token.** The `publish-npm` job uses npm
+  [trusted publishing](https://docs.npmjs.com/trusted-publishers): npm trusts
+  `release.yml` in this repo and accepts GitHub's short-lived OIDC token
+  instead, so there is nothing to store, rotate or expire, and no 2FA prompt.
+  Provenance is attached automatically.
 
-### Creating `NPM_TOKEN`
+### Trusted publisher setup (once per package)
 
-The token is generated on npm and then stored as a GitHub secret.
+On [npmjs.com](https://www.npmjs.com), open the package → **Settings → Trusted
+Publisher** → **GitHub Actions**, and enter:
 
-1. On [npmjs.com](https://www.npmjs.com): create/verify an account, then
-   **avatar → Access Tokens → Generate New Token**.
-2. Choose **Granular Access Token** (or classic **Automation** — automation
-   tokens bypass 2FA, which CI requires). Give it **Read and write** package
-   permission and an expiry.
-3. Copy the `npm_…` value (shown only once).
-4. In the GitHub repo: **Settings → Secrets and variables → Actions → New
-   repository secret**. Name it `NPM_TOKEN`, paste the value, and save.
+| Field                | Value          |
+| -------------------- | -------------- |
+| Organization or user | `benzid-wael`  |
+| Repository           | `secure-vault` |
+| Workflow filename    | `release.yml`  |
+| Environment name     | _(empty)_      |
+
+The job needs `id-token: write` and npm **11.5.1+** (it installs the latest npm
+on Node 22), and `repository.url` in `package.json` must point at this repo.
+Renaming `release.yml` breaks publishing until the trusted publisher is updated.
+
+Once a trusted publish has succeeded, set the package's **Settings → Publishing
+access** to _"Require two-factor authentication and disallow tokens"_, and
+revoke any old npm automation tokens.
 
 > The published package name is the `name` field in `package.json`,
 > `@benzid.wael/secure-vault` — a scoped name under the maintainer's npm

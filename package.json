@@ -180,6 +180,6 @@
     ]
   },
   "bin": {
-    "vault": "./bin/cli.js"
+    "vault": "bin/cli.js"
   }
 }
