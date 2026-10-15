@@ -176,3 +176,6 @@ pure-Node preview first is defensible.
 - Until that milestone lands, the honest posture stays: **preview-grade**, and for
   anything sensitive, **isolation** (container / VM / ephemeral CI, §5.7) is the
   real protection — not the agent.
+- The proposal for that milestone, a signed native key helper (`vault-keyd`)
+  that holds the key outside Node, is in
+  [`NATIVE-HELPER-RFC.md`](NATIVE-HELPER-RFC.md) (draft).
