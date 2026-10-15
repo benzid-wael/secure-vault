@@ -1,0 +1,142 @@
+// Runs inside Electron as the main script: loads the built app's main process,
+// waits for its window, and gives a scenario helpers to drive the real
+// renderer. Native file dialogs are stubbed (a script can't click them);
+// everything else is the production main + renderer.
+const path = require('path');
+const fs = require('fs');
+const { app, dialog, BrowserWindow } = require('electron');
+
+const REPO = process.env.E2E_REPO;
+const OUT = process.env.E2E_OUT;
+const VAULTS_DIR = process.env.E2E_VAULTS_DIR;
+const EXPORT_PATH = path.join(OUT, 'export.vault.json');
+
+dialog.showSaveDialog = async () => ({
+  canceled: false,
+  filePath: EXPORT_PATH,
+});
+dialog.showOpenDialog = async () => ({
+  canceled: false,
+  filePaths: [EXPORT_PATH],
+});
+dialog.showErrorBox = (title, message) =>
+  console.log('ERRORBOX', title, message);
+
+// Installed in the page: find elements the way a user would, by visible text
+// or field label, and fire the events React listens to.
+const PAGE_HELPERS = `
+  window.__e2e = {
+    hasText: (t) => document.body.textContent.includes(t),
+    clickText: (t) => {
+      const els = [...document.querySelectorAll('button, [role=button], [role=tab], li, div, span, p, h5, h6')]
+        .filter((e) => e.textContent.trim() === t);
+      const el = els[els.length - 1];
+      if (!el) return false;
+      el.click();
+      return true;
+    },
+    fill: (label, value) => {
+      const clean = (s) => s.replace(/[\\s*\\u2009]+$/u, '').trim();
+      const labels = [...document.querySelectorAll('label')];
+      const l = labels.find((x) => clean(x.textContent) === label) ||
+        labels.find((x) => x.textContent.includes(label));
+      const input = l && document.getElementById(l.htmlFor);
+      if (!input) return false;
+      const proto = input instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, 'value').set.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    },
+    submit: () => {
+      const b = [...document.querySelectorAll('button[type=submit]')].pop();
+      if (!b) return false;
+      b.click();
+      return true;
+    },
+  };
+  true;`;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Run `fn(t)` against the app and exit with its result: 0 when every check
+ * passed, 1 when one failed, 2 when the scenario threw.
+ */
+module.exports = function scenario(fn) {
+  require(path.join(REPO, 'build/electron/main.cjs'));
+
+  const results = [];
+  const check = (name, ok, detail = '') => {
+    results.push(Boolean(ok));
+    console.log(
+      `${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  — ${detail}` : ''}`
+    );
+  };
+
+  (async () => {
+    await app.whenReady();
+    let win;
+    for (let i = 0; i < 100 && !win; i += 1) {
+      win = BrowserWindow.getAllWindows()[0];
+      if (!win) await sleep(100);
+    }
+    if (!win) throw new Error('the app opened no window');
+    const wc = win.webContents;
+    if (wc.isLoading()) await new Promise((r) => wc.once('did-finish-load', r));
+
+    const js = (code) => wc.executeJavaScript(code);
+    const installHelpers = () => js(PAGE_HELPERS);
+    await installHelpers();
+
+    const t = {
+      check,
+      sleep,
+      js,
+      win,
+      OUT,
+      VAULTS_DIR,
+      EXPORT_PATH,
+      api: (call) => js(`window.electronAPI.${call}`),
+      hasText: (text) => js(`__e2e.hasText(${JSON.stringify(text)})`),
+      waitText: async (text, ms = 10000) => {
+        for (let i = 0; i < ms / 100; i += 1) {
+          if (await js(`__e2e.hasText(${JSON.stringify(text)})`)) return true;
+          await sleep(100);
+        }
+        return false;
+      },
+      click: (text) => js(`__e2e.clickText(${JSON.stringify(text)})`),
+      fill: (label, value) =>
+        js(`__e2e.fill(${JSON.stringify(label)}, ${JSON.stringify(value)})`),
+      submit: () => js('__e2e.submit()'),
+      reload: async () => {
+        wc.reload();
+        await new Promise((r) => wc.once('did-finish-load', r));
+        await installHelpers();
+      },
+      vaultFiles: () =>
+        fs.existsSync(VAULTS_DIR) ? fs.readdirSync(VAULTS_DIR) : [],
+      readVault: (name) =>
+        JSON.parse(
+          fs.readFileSync(path.join(VAULTS_DIR, `${name}.vault`), 'utf8')
+        ),
+      /** The app's own VaultService, for setup a scenario does mid-run. */
+      vaultService: async () => {
+        const { VaultService } = await import(
+          path.join(REPO, 'src/electron/services/VaultService.js')
+        );
+        return new VaultService(VAULTS_DIR);
+      },
+    };
+
+    await fn(t);
+
+    const failed = results.filter((ok) => !ok).length;
+    console.log(`\n${results.length - failed}/${results.length} passed`);
+    app.exit(failed ? 1 : 0);
+  })().catch((error) => {
+    console.log('SCENARIO ERROR', error.stack);
+    app.exit(2);
+  });
+};

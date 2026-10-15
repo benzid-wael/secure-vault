@@ -34,6 +34,7 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "test": "vitest",
+    "test:e2e": "npm run build && npm run build:main && node e2e/run.mjs",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
     "test:coverage:ui": "vitest --ui --coverage",

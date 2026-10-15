@@ -117,6 +117,22 @@ npm run dev:renderer
 npm run dev:main
 ```
 
+### Tests
+
+```bash
+npm test -- --run    # unit and CLI integration tests (Vitest)
+npm run test:e2e     # end-to-end: builds the app, then drives the real window
+```
+
+`test:e2e` runs each scenario in `e2e/scenarios/` against the built desktop app
+with its own empty home directory, so your vaults are never read or touched.
+It covers first launch, unlocking an older vault (and its 600k upgrade),
+export / import, manual and automatic locking, recovery-key unlock and changing
+the password from Settings. Run one scenario with
+`node e2e/run.mjs recovery-key` (after a build); `E2E_VERBOSE=1` prints the
+app's log and `E2E_KEEP=1` keeps the temp directories. On Linux without a
+display, run it under `xvfb-run`.
+
 ## Building
 
 ### Development Build

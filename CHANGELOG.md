@@ -10,6 +10,14 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ## [Unreleased]
 
+### Added
+
+- **`npm run test:e2e`** — end-to-end checks that build the desktop app and
+  drive its real window: first launch, unlocking and upgrading an older vault,
+  export / import, manual lock and auto-lock (sleep and screen lock),
+  recovery-key unlock, and changing the password from Settings. Each scenario
+  runs with its own empty home directory.
+
 ### Security
 
 - **No more built-in `default` vault.** The desktop app created a `default`
