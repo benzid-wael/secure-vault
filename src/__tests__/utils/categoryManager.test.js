@@ -2,24 +2,28 @@
 import { vi } from 'vitest';
 
 // Mock Material-UI icons
-vi.mock('@mui/icons-material', () => ({
-  Lock: () => 'GeneralIcon',
-  Language: () => 'WebsiteIcon',
-  Email: () => 'EmailIcon',
-  Business: () => 'BusinessIcon',
-  Work: () => 'WorkIcon',
-  School: () => 'SchoolIcon',
-  CreditCard: () => 'FinanceIcon',
-  Games: () => 'GamingIcon',
-  Cloud: () => 'CloudIcon',
-  Smartphone: () => 'MobileIcon',
-  Wifi: () => 'WifiIcon',
-  Security: () => 'SecurityIcon',
-  VpnKey: () => 'KeyIcon',
-  Note: () => 'NoteIcon',
-  AccountBalance: () => 'BankIcon',
-  Grid3x3: () => 'GridIcon',
-}));
+vi.mock('@mui/icons-material', () => {
+  // Pre-bundled (deps.optimizer) packages are reached through `default` too.
+  const m = {
+    Lock: () => 'GeneralIcon',
+    Language: () => 'WebsiteIcon',
+    Email: () => 'EmailIcon',
+    Business: () => 'BusinessIcon',
+    Work: () => 'WorkIcon',
+    School: () => 'SchoolIcon',
+    CreditCard: () => 'FinanceIcon',
+    Games: () => 'GamingIcon',
+    Cloud: () => 'CloudIcon',
+    Smartphone: () => 'MobileIcon',
+    Wifi: () => 'WifiIcon',
+    Security: () => 'SecurityIcon',
+    VpnKey: () => 'KeyIcon',
+    Note: () => 'NoteIcon',
+    AccountBalance: () => 'BankIcon',
+    Grid3x3: () => 'GridIcon',
+  };
+  return { ...m, default: m };
+});
 
 import {
   CATEGORIES,

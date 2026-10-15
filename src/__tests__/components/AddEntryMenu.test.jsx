@@ -96,19 +96,23 @@ vi.mock('@mui/material/Divider', () => ({
 }));
 
 // Mock icons
-vi.mock('@mui/icons-material', () => ({
-  Add: () => React.createElement('span', {}, 'AddIcon'),
-  KeyboardArrowUp: () => React.createElement('span', {}, 'ArrowUpIcon'),
-  Lock: () => React.createElement('span', {}, 'PasswordIcon'),
-  Wifi: () => React.createElement('span', {}, 'WifiIcon'),
-  Security: () => React.createElement('span', {}, 'OTPIcon'),
-  VpnKey: () => React.createElement('span', {}, 'SSHIcon'),
-  Key: () => React.createElement('span', {}, 'GPGIcon'),
-  Note: () => React.createElement('span', {}, 'NoteIcon'),
-  AccountBalance: () => React.createElement('span', {}, 'BankIcon'),
-  CreditCard: () => React.createElement('span', {}, 'CreditCardIcon'),
-  Grid3x3: () => React.createElement('span', {}, 'Level3CardIcon'),
-}));
+vi.mock('@mui/icons-material', () => {
+  // Pre-bundled (deps.optimizer) packages are reached through `default` too.
+  const m = {
+    Add: () => React.createElement('span', {}, 'AddIcon'),
+    KeyboardArrowUp: () => React.createElement('span', {}, 'ArrowUpIcon'),
+    Lock: () => React.createElement('span', {}, 'PasswordIcon'),
+    Wifi: () => React.createElement('span', {}, 'WifiIcon'),
+    Security: () => React.createElement('span', {}, 'OTPIcon'),
+    VpnKey: () => React.createElement('span', {}, 'SSHIcon'),
+    Key: () => React.createElement('span', {}, 'GPGIcon'),
+    Note: () => React.createElement('span', {}, 'NoteIcon'),
+    AccountBalance: () => React.createElement('span', {}, 'BankIcon'),
+    CreditCard: () => React.createElement('span', {}, 'CreditCardIcon'),
+    Grid3x3: () => React.createElement('span', {}, 'Level3CardIcon'),
+  };
+  return { ...m, default: m };
+});
 
 describe('AddEntryMenu', () => {
   const mockOnEntryTypeSelect = vi.fn();

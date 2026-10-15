@@ -7,7 +7,8 @@ import SearchAndFilter from '../../components/SearchAndFilter';
 // Mock MUI to simplify Select behavior in tests
 vi.mock('@mui/material', async () => {
   const real = await vi.importActual('@mui/material');
-  return {
+  // Pre-bundled (deps.optimizer) packages are reached through `default` too.
+  const m = {
     ...real,
     // simple passthrough FormControl
     FormControl: (props) => <div {...props} />,
@@ -72,6 +73,7 @@ vi.mock('@mui/material', async () => {
       );
     },
   };
+  return { ...m, default: Object.assign({}, real.default, m) };
 });
 
 describe('SearchAndFilter Component', () => {

@@ -2,17 +2,21 @@
 import { vi } from 'vitest';
 
 // Mock Material-UI icons
-vi.mock('@mui/icons-material', () => ({
-  Lock: () => 'PasswordIcon',
-  Wifi: () => 'WifiIcon',
-  Security: () => 'OTPIcon',
-  VpnKey: () => 'SSHIcon',
-  Key: () => 'GPGIcon',
-  Note: () => 'NoteIcon',
-  AccountBalance: () => 'BankIcon',
-  CreditCard: () => 'CreditCardIcon',
-  Grid3x3: () => 'Level3CardIcon',
-}));
+vi.mock('@mui/icons-material', () => {
+  // Pre-bundled (deps.optimizer) packages are reached through `default` too.
+  const m = {
+    Lock: () => 'PasswordIcon',
+    Wifi: () => 'WifiIcon',
+    Security: () => 'OTPIcon',
+    VpnKey: () => 'SSHIcon',
+    Key: () => 'GPGIcon',
+    Note: () => 'NoteIcon',
+    AccountBalance: () => 'BankIcon',
+    CreditCard: () => 'CreditCardIcon',
+    Grid3x3: () => 'Level3CardIcon',
+  };
+  return { ...m, default: m };
+});
 
 import {
   ENTRY_TYPES,

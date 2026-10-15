@@ -7,7 +7,8 @@ import VaultLogin from '../../components/VaultLogin';
 // Mock MUI components
 vi.mock('@mui/material', async () => {
   const actual = await vi.importActual('@mui/material');
-  return {
+  // Pre-bundled (deps.optimizer) packages are reached through `default` too.
+  const m = {
     ...actual,
     TextField: ({
       label,
@@ -42,6 +43,7 @@ vi.mock('@mui/material', async () => {
       </button>
     ),
   };
+  return { ...m, default: Object.assign({}, actual.default, m) };
 });
 
 // Mock MUI icons

@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
@@ -63,10 +63,37 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    setupFiles: ['./src/setupTests.js'],
+    setupFiles: ['./src/__tests__/helpers/fastKdf.js', './src/setupTests.js'],
+    env: {
+      // Spawned CLI processes load the same test-only KDF patch.
+      NODE_OPTIONS: [
+        process.env.NODE_OPTIONS,
+        `--import ${pathToFileURL(resolve(root, 'src/__tests__/helpers/fastKdf.js')).href}`,
+      ]
+        .filter(Boolean)
+        .join(' '),
+    },
     css: true,
-    // Integration tests derive real keys at the production PBKDF2 work factor
-    // (~250 ms each), and some spawn the CLI many times.
+    // Pre-bundle the UI libraries once instead of loading MUI's icon barrel
+    // (thousands of modules) separately in every component test file.
+    deps: {
+      optimizer: {
+        client: {
+          enabled: true,
+          include: [
+            'react',
+            'react-dom',
+            'react/jsx-runtime',
+            'react/jsx-dev-runtime',
+            '@mui/material',
+            '@mui/icons-material',
+            '@emotion/react',
+            '@emotion/styled',
+          ],
+        },
+      },
+    },
+    // Integration tests spawn the CLI many times; leave room on loaded CI.
     testTimeout: 30000,
     // Setup hooks (e.g. beforeAll seeding a vault through the CLI) too.
     hookTimeout: 30000,

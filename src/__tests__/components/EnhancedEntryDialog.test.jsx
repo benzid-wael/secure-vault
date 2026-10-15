@@ -149,35 +149,39 @@ vi.mock('../../components/Level3CardGrid', () => ({
 }));
 
 // Mock icons
-vi.mock('@mui/icons-material', () => ({
-  Visibility: () => React.createElement('span', {}, 'VisibilityIcon'),
-  VisibilityOff: () => React.createElement('span', {}, 'VisibilityOffIcon'),
-  Refresh: () => React.createElement('span', {}, 'RefreshIcon'),
-  Lock: () => React.createElement('span', {}, 'LockIcon'),
-  Folder: () => React.createElement('span', {}, 'FolderIcon'),
-  Language: () => React.createElement('span', {}, 'LanguageIcon'),
-  Email: () => React.createElement('span', {}, 'EmailIcon'),
-  Work: () => React.createElement('span', {}, 'WorkIcon'),
-  Business: () => React.createElement('span', {}, 'BusinessIcon'),
-  School: () => React.createElement('span', {}, 'SchoolIcon'),
-  AccountBalance: () => React.createElement('span', {}, 'AccountBalanceIcon'),
-  Security: () => React.createElement('span', {}, 'SecurityIcon'),
-  Note: () => React.createElement('span', {}, 'NoteIcon'),
-  CreditCard: () => React.createElement('span', {}, 'CreditCardIcon'),
-  SportsEsports: () => React.createElement('span', {}, 'GamingIcon'),
-  Games: () => React.createElement('span', {}, 'GamingIcon'),
-  Cloud: () => React.createElement('span', {}, 'CloudIcon'),
-  Smartphone: () => React.createElement('span', {}, 'MobileIcon'),
-  Wifi: () => React.createElement('span', {}, 'WifiIcon'),
-  VpnKey: () => React.createElement('span', {}, 'KeyIcon'),
-  Key: () => React.createElement('span', {}, 'GPGIcon'),
-  Grid3x3: () => React.createElement('span', {}, 'GridIcon'),
-  MusicNote: () => React.createElement('span', {}, 'EntertainmentIcon'),
-  FitnessCenter: () => React.createElement('span', {}, 'HealthIcon'),
-  DirectionsCar: () => React.createElement('span', {}, 'TravelIcon'),
-  ShoppingCart: () => React.createElement('span', {}, 'ShoppingIcon'),
-  Home: () => React.createElement('span', {}, 'PersonalIcon'),
-}));
+vi.mock('@mui/icons-material', () => {
+  // Pre-bundled (deps.optimizer) packages are reached through `default` too.
+  const m = {
+    Visibility: () => React.createElement('span', {}, 'VisibilityIcon'),
+    VisibilityOff: () => React.createElement('span', {}, 'VisibilityOffIcon'),
+    Refresh: () => React.createElement('span', {}, 'RefreshIcon'),
+    Lock: () => React.createElement('span', {}, 'LockIcon'),
+    Folder: () => React.createElement('span', {}, 'FolderIcon'),
+    Language: () => React.createElement('span', {}, 'LanguageIcon'),
+    Email: () => React.createElement('span', {}, 'EmailIcon'),
+    Work: () => React.createElement('span', {}, 'WorkIcon'),
+    Business: () => React.createElement('span', {}, 'BusinessIcon'),
+    School: () => React.createElement('span', {}, 'SchoolIcon'),
+    AccountBalance: () => React.createElement('span', {}, 'AccountBalanceIcon'),
+    Security: () => React.createElement('span', {}, 'SecurityIcon'),
+    Note: () => React.createElement('span', {}, 'NoteIcon'),
+    CreditCard: () => React.createElement('span', {}, 'CreditCardIcon'),
+    SportsEsports: () => React.createElement('span', {}, 'GamingIcon'),
+    Games: () => React.createElement('span', {}, 'GamingIcon'),
+    Cloud: () => React.createElement('span', {}, 'CloudIcon'),
+    Smartphone: () => React.createElement('span', {}, 'MobileIcon'),
+    Wifi: () => React.createElement('span', {}, 'WifiIcon'),
+    VpnKey: () => React.createElement('span', {}, 'KeyIcon'),
+    Key: () => React.createElement('span', {}, 'GPGIcon'),
+    Grid3x3: () => React.createElement('span', {}, 'GridIcon'),
+    MusicNote: () => React.createElement('span', {}, 'EntertainmentIcon'),
+    FitnessCenter: () => React.createElement('span', {}, 'HealthIcon'),
+    DirectionsCar: () => React.createElement('span', {}, 'TravelIcon'),
+    ShoppingCart: () => React.createElement('span', {}, 'ShoppingIcon'),
+    Home: () => React.createElement('span', {}, 'PersonalIcon'),
+  };
+  return { ...m, default: m };
+});
 
 describe('EnhancedEntryDialog', () => {
   const mockOnClose = vi.fn();

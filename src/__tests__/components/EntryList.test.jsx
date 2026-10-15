@@ -8,11 +8,13 @@ import { ENTRY_TYPE_DEFINITIONS } from '../../utils/entryTypes';
 // Simplify MUI Menu to avoid portal/popover complexity
 vi.mock('@mui/material', async () => {
   const real = await vi.importActual('@mui/material');
-  return {
+  // Pre-bundled (deps.optimizer) packages are reached through `default` too.
+  const m = {
     ...real,
     Menu: ({ open, children }) =>
       open ? <div role="menu">{children}</div> : null,
   };
+  return { ...m, default: Object.assign({}, real.default, m) };
 });
 
 const onEdit = vi.fn();

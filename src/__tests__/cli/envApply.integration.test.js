@@ -1,10 +1,19 @@
 // @vitest-environment node
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import { seedVault, removeSeed } from '../helpers/seedVault.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.resolve(__dirname, '../../../bin/cli.js');
@@ -13,6 +22,7 @@ const PASSWORD = 'TestVault123!@#';
 
 let projectDir;
 let vaultPath;
+let seedPath;
 
 // Run the CLI with cwd set to the project dir so .vaultrc discovery + relative
 // artifact paths behave like a real invocation.
@@ -26,40 +36,40 @@ function cli(args, { cwd = projectDir } = {}) {
 
 const PLIST = Buffer.from('<plist>gs\x00info</plist>', 'utf-8');
 
+// Built once; each test gets a copy (see helpers/seedVault.js).
+beforeAll(() => {
+  seedPath = seedVault(PASSWORD, [
+    ['init', '-v', '{vault}'],
+    ['set', 'API_URL', 'https://api.example.com', '-e', 'dev', '-v', '{vault}'],
+    [
+      'set',
+      'SENTRY_DSN',
+      'https://sentry.example',
+      '-e',
+      'dev',
+      '-v',
+      '{vault}',
+    ],
+    [
+      'set',
+      'GOOGLE_PLIST',
+      PLIST.toString('base64'),
+      '-e',
+      'dev',
+      '-v',
+      '{vault}',
+    ],
+  ]);
+});
+afterAll(() => removeSeed(seedPath));
+
 beforeEach(() => {
   projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-apply-'));
   // Mark the project root so .vaultrc walk-up stops here.
   fs.mkdirSync(path.join(projectDir, '.git'));
   vaultPath = path.join(projectDir, 'test.env.vault');
 
-  cli(['init', '-v', vaultPath]);
-  cli([
-    'set',
-    'API_URL',
-    'https://api.example.com',
-    '-e',
-    'dev',
-    '-v',
-    vaultPath,
-  ]);
-  cli([
-    'set',
-    'SENTRY_DSN',
-    'https://sentry.example',
-    '-e',
-    'dev',
-    '-v',
-    vaultPath,
-  ]);
-  cli([
-    'set',
-    'GOOGLE_PLIST',
-    PLIST.toString('base64'),
-    '-e',
-    'dev',
-    '-v',
-    vaultPath,
-  ]);
+  fs.copyFileSync(seedPath, vaultPath);
 
   fs.mkdirSync(path.join(projectDir, 'ios'), { recursive: true });
   fs.writeFileSync(

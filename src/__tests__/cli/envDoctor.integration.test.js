@@ -1,10 +1,19 @@
 // @vitest-environment node
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import { seedVault, removeSeed } from '../helpers/seedVault.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.resolve(__dirname, '../../../bin/cli.js');
@@ -12,6 +21,7 @@ const NODE = process.execPath;
 const PASSWORD = 'TestVault123!@#';
 
 let projectDir;
+let seedPath;
 
 function cli(args, { cwd = projectDir, withPassword = false } = {}) {
   const env = { ...process.env };
@@ -27,25 +37,20 @@ function writeManifest(deliver) {
   );
 }
 
+// Built once; each test gets a copy (see helpers/seedVault.js).
+beforeAll(() => {
+  seedPath = seedVault(PASSWORD, [
+    ['init', '-v', '{vault}'],
+    ['set', 'API_URL', 'https://api.example.com', '-e', 'dev', '-v', '{vault}'],
+  ]);
+});
+afterAll(() => removeSeed(seedPath));
+
 beforeEach(() => {
   projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-doctor-'));
   fs.mkdirSync(path.join(projectDir, '.git')); // stop .vaultrc walk-up here
   // A vault with the app key set, but NOT the Firebase blob.
-  cli(['init', '-v', '.env.vault'], { withPassword: true });
-  cli(
-    [
-      'set',
-      'API_URL',
-      'https://api.example.com',
-      '-e',
-      'dev',
-      '-v',
-      '.env.vault',
-    ],
-    {
-      withPassword: true,
-    }
-  );
+  fs.copyFileSync(seedPath, path.join(projectDir, '.env.vault'));
   fs.writeFileSync(
     path.join(projectDir, 'Secrets.xcconfig.vtpl'),
     'API_URL = {{API_URL}}\n'

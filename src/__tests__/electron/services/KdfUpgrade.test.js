@@ -11,6 +11,7 @@ import { VaultSession } from '../../../electron/services/VaultSession.js';
 import { EnvironmentVaultService } from '../../../electron/services/EnvironmentVaultService.js';
 import { KeyRecoveryService } from '../../../electron/services/recovery/KeyRecoveryService.js';
 import { RecoveryData } from '../../../electron/services/recovery/IRecoveryMethod.js';
+import { PRODUCTION_KDF } from '../../helpers/fastKdf.js';
 
 const PW = 'Correct-Horse-9!';
 const NEW_PW = 'Battery-Staple-7?';
@@ -32,16 +33,27 @@ async function asLegacy(fn) {
 }
 
 describe('CryptographyService KDF parameters', () => {
-  it('uses 600k for new keys and records it', () => {
-    expect(ITERATIONS).toBe(600000);
-    expect(CryptographyService.kdfHeader()).toEqual({
-      name: 'pbkdf2-sha512',
-      iterations: 600000,
+  it('ships with 600k for new keys and 100k for legacy records', () => {
+    // The suite runs with lowered counts (helpers/fastKdf.js); these are the
+    // values production code defines.
+    expect(PRODUCTION_KDF).toEqual({
+      ITERATIONS: 600000,
+      LEGACY_ITERATIONS: 100000,
     });
   });
 
+  it('records the current count in the kdf header', () => {
+    expect(CryptographyService.kdfHeader()).toEqual({
+      name: 'pbkdf2-sha512',
+      iterations: ITERATIONS,
+    });
+    expect(ITERATIONS).toBeGreaterThan(LEGACY_ITERATIONS);
+  });
+
   it('reads records without a header at the legacy count', () => {
-    expect(CryptographyService.iterationsOf({ salt: 'aa' })).toBe(100000);
+    expect(CryptographyService.iterationsOf({ salt: 'aa' })).toBe(
+      LEGACY_ITERATIONS
+    );
     expect(CryptographyService.needsKdfUpgrade({ salt: 'aa' })).toBe(true);
     expect(
       CryptographyService.needsKdfUpgrade({
@@ -53,7 +65,7 @@ describe('CryptographyService KDF parameters', () => {
 
   it.each([
     [{ name: 'scrypt', iterations: 600000 }],
-    [{ name: 'pbkdf2-sha512', iterations: 1000 }],
+    [{ name: 'pbkdf2-sha512', iterations: LEGACY_ITERATIONS - 1 }],
     [{ name: 'pbkdf2-sha512', iterations: 1e9 }],
     [{ name: 'pbkdf2-sha512', iterations: '600000' }],
   ])('refuses unsupported or tampered parameters %j', (kdf) => {
