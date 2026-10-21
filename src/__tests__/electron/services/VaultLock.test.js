@@ -7,6 +7,7 @@ import path from 'path';
 
 import {
   VaultLock,
+  currentPidNamespace,
   isProcessAlive,
   machineBootTime,
 } from '../../../electron/services/VaultLock.js';
@@ -14,6 +15,8 @@ import {
 const BOOT = Date.parse('2026-10-20T08:00:00.000Z');
 const OTHER_BOOT = Date.parse('2026-10-01T09:30:00.000Z');
 const DEAD_PID = 999;
+const PIDNS = 'pid:[4026531836]';
+const CONTAINER_PIDNS = 'pid:[4026532461]';
 
 describe('VaultLock', () => {
   let dir;
@@ -33,6 +36,8 @@ describe('VaultLock', () => {
       },
       isAlive: (pid) => alive.has(pid),
       bootTime: () => BOOT,
+      // Pinned, so "same machine" means the same thing on macOS and Linux CI.
+      pidNamespace: () => PIDNS,
       pid: 100,
       host: 'this-host',
       ...overrides,
@@ -53,6 +58,7 @@ describe('VaultLock', () => {
     tool: 'cli',
     nonce: 'theirs',
     boot: new Date(BOOT).toISOString(),
+    pidns: PIDNS,
     acquiredAt: new Date(t).toISOString(),
     ...fields,
   });
@@ -89,6 +95,7 @@ describe('VaultLock', () => {
         host: 'this-host',
         tool: 'gui',
         boot: new Date(BOOT).toISOString(),
+        pidns: PIDNS,
         acquiredAt: new Date(t).toISOString(),
       });
       expect(info.nonce).toMatch(/^[0-9a-f]{32}$/);
@@ -245,6 +252,40 @@ describe('VaultLock', () => {
       expect(await makeLock({ timeoutMs: 0 }).acquire()).toEqual({
         success: true,
       });
+    });
+
+    it('waits on a fresh lock from a container on this kernel, even with a "dead" pid', async () => {
+      // Same boot time (shared kernel), but its pid 42 means nothing here.
+      writeHolder(holder({ pid: DEAD_PID, pidns: CONTAINER_PIDNS }), t - 1000);
+
+      const result = await makeLock({ timeoutMs: 0 }).acquire();
+
+      expect(result.code).toBe('BUSY');
+      expect(readLock().pidns).toBe(CONTAINER_PIDNS);
+    });
+
+    it('takes over a container lock once its mtime is stale', async () => {
+      writeHolder(holder({ pid: 200, pidns: CONTAINER_PIDNS }), t - 31000);
+
+      expect(await makeLock({ timeoutMs: 0 }).acquire()).toEqual({
+        success: true,
+      });
+    });
+
+    it('does not trust a pid probe when only one side knows its namespace', async () => {
+      writeHolder(holder({ pid: DEAD_PID, pidns: undefined }), t - 1000);
+
+      const result = await makeLock({ timeoutMs: 0 }).acquire();
+
+      expect(result.code).toBe('BUSY');
+    });
+
+    it('writes no pidns field where there is no namespace (macOS, Windows)', async () => {
+      const lock = makeLock({ pidNamespace: () => undefined });
+      await lock.acquire();
+
+      expect('pidns' in readLock()).toBe(false);
+      await lock.release();
     });
 
     it('judges an unreadable lock by its mtime alone', async () => {
@@ -429,6 +470,43 @@ describe('isProcessAlive', () => {
     killThrowing('EPERM');
     expect(isProcessAlive(1)).toBe(true);
   });
+});
+
+describe('currentPidNamespace', () => {
+  it('reads /proc/self/ns/pid on Linux', () => {
+    const readlink = vi.fn().mockReturnValue('pid:[4026531836]');
+
+    expect(currentPidNamespace({ platform: 'linux', readlink })).toBe(
+      'pid:[4026531836]'
+    );
+    expect(readlink).toHaveBeenCalledWith('/proc/self/ns/pid');
+  });
+
+  it('is undefined on Linux when /proc is unreadable', () => {
+    const readlink = () => {
+      throw Object.assign(new Error('denied'), { code: 'EACCES' });
+    };
+
+    expect(currentPidNamespace({ platform: 'linux', readlink })).toBe(
+      undefined
+    );
+  });
+
+  it('is undefined off Linux, without touching /proc', () => {
+    const readlink = vi.fn();
+
+    expect(currentPidNamespace({ platform: 'darwin', readlink })).toBe(
+      undefined
+    );
+    expect(readlink).not.toHaveBeenCalled();
+  });
+
+  it.runIf(process.platform === 'linux')(
+    'returns a real namespace id on this Linux machine',
+    () => {
+      expect(currentPidNamespace()).toMatch(/^pid:\[\d+\]$/);
+    }
+  );
 });
 
 describe('machineBootTime', () => {

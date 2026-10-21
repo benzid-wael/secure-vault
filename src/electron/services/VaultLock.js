@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import fsSync from 'fs';
 import fsDefault from 'fs/promises';
 import os from 'os';
 
@@ -23,12 +24,30 @@ export function machineBootTime() {
 }
 
 /**
+ * The pid namespace this process lives in (`pid:[4026531836]`), on Linux;
+ * undefined elsewhere or when /proc is unreadable. A container shares the
+ * host's kernel, so it reports the host's boot time, but its pids mean
+ * something else: a pid is only worth probing from the same namespace.
+ */
+export function currentPidNamespace({
+  platform = process.platform,
+  readlink = fsSync.readlinkSync,
+} = {}) {
+  if (platform !== 'linux') return undefined;
+  try {
+    return readlink('/proc/self/ns/pid');
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * An exclusive, cross-process lock on one vault file: `<vault>.lock`
  * (GUI-ENV-RFC §6.5). Every writer of the vault takes it for the length of a
  * single read-modify-write, so two writers can never interleave.
  *
- * Staleness: a lock left by a process on this machine (same boot time) is
- * stale only once that pid is dead. A live holder is never taken over, however
+ * Staleness: a lock left by a process on this machine (same boot time and,
+ * on Linux, same pid namespace) is stale only once that pid is dead. A live holder is never taken over, however
  * long it runs (a change-password re-keying many snapshots). A lock from
  * another machine (a synced folder) can't be probed, so it's stale once its
  * mtime, which the holder's heartbeat keeps touching, is older than `staleMs`.
@@ -43,6 +62,7 @@ export class VaultLock {
   #sleep;
   #isAlive;
   #bootTime;
+  #pidNamespace;
   #pid;
   #host;
   #tool;
@@ -64,6 +84,7 @@ export class VaultLock {
       sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       isAlive = isProcessAlive,
       bootTime = machineBootTime,
+      pidNamespace = currentPidNamespace,
       pid = process.pid,
       host = os.hostname(),
       fs = fsDefault,
@@ -75,6 +96,7 @@ export class VaultLock {
     this.#sleep = sleep;
     this.#isAlive = isAlive;
     this.#bootTime = bootTime;
+    this.#pidNamespace = pidNamespace;
     this.#pid = pid;
     this.#host = host;
     this.#tool = tool;
@@ -185,6 +207,8 @@ export class VaultLock {
           tool: this.#tool,
           nonce,
           boot: new Date(this.#bootTime()).toISOString(),
+          // Omitted (undefined) off Linux, so it compares equal there.
+          pidns: this.#pidNamespace(),
           acquiredAt: new Date(at).toISOString(),
         })
       );
@@ -221,10 +245,13 @@ export class VaultLock {
   }
 
   #isStale({ info, mtimeMs }) {
+    // Same boot time alone isn't enough on Linux: a container shares the
+    // kernel. Its pids are only meaningful in its own pid namespace.
     const sameMachine =
       info?.boot !== undefined &&
       Math.abs(Date.parse(info.boot) - this.#bootTime()) <=
-        SAME_BOOT_TOLERANCE_MS;
+        SAME_BOOT_TOLERANCE_MS &&
+      info.pidns === this.#pidNamespace();
     if (sameMachine && Number.isInteger(info.pid)) {
       return !this.#isAlive(info.pid);
     }

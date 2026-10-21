@@ -52,7 +52,7 @@ updated as each task finishes, not in a batch at the end.
 | New-7  | Commit a way to measure coverage of excluded files               | —   | P1  | ⬜     | New-1                       |
 | New-8  | `npm run lint` fails locally on gitignored build output          | —   | P2  | ⬜     | —                           |
 | New-9  | Type-check gate: confirm "no new errors" as this plan's rule     | —   | P1  | ✅     | —                           |
-| New-10 | Lock: a container sharing the kernel can look like this machine  | —   | P1  | ⬜     | 4 (blocks the release of 6) |
+| New-10 | Lock: a container sharing the kernel can look like this machine  | —   | P1  | 🟡     | 4 (blocks the release of 6) |
 | New-11 | Bring RFC §6.5 in line with Corrections 6 and 7                  | —   | P2  | ⬜     | 4                           |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
@@ -73,7 +73,8 @@ with M0 (1, 2) required before 19 ships to anyone.
 - Type check (`npx tsc --noEmit`): **345 errors**, report-only in CI
   (`continue-on-error`). The rule for this plan is no new errors (New-9).
 - Branch: `feat/vault-env-gui`, not merged, not released. Commits: `dd4e2e1`
-  (RFC + discovery), `92e9354` (Task 0), `3553e81` (Task 3).
+  (RFC + discovery), `92e9354` (Task 0), `3553e81` (Task 3), `2f01040`
+  (Task 4).
 
 ## Corrections to the plan
 
@@ -233,8 +234,9 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 
 ### Task 4: `VaultLock` module
 
-- **Status:** ✅ done 2026-10-21: its own validation is met. Uncommitted on
-  `feat/vault-env-gui`; not merged, not released. Not wired to anything yet
+- **Status:** ✅ done 2026-10-21: its own validation is met. Committed as
+  `2f01040` on `feat/vault-env-gui`; not merged, not released. Approved by
+  the author. Not wired to anything yet
   (Task 5 does that), so it changes no behavior.
 - **Built:** `src/electron/services/VaultLock.js`: `acquire()` /
   `release()` / `refresh()` / `lost`, plus `isProcessAlive` and
@@ -258,7 +260,7 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
     restore can fail because a third lock already exists, leaving two holders.
     This needs three contenders within microseconds of each other.
   - An unreadable lock can't be identity-checked after renaming it aside.
-  - A container sharing this machine's kernel is New-10, not accepted.
+  - A container sharing this machine's kernel: fixed by New-10.
 - **Tests:** `VaultLock.test.js`, 25 tests. They cover every rule in RFC
   §6.5 (with Corrections 6 and 7), and two takers racing in-process. **Real
   mutual exclusion:** 4 processes × 25 lock-protected increments of a shared
@@ -797,7 +799,35 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 
 ### New-10: Lock: a container sharing the kernel can look like this machine
 
-- **Status:** ⬜ not started.
+- **Status:** 🟡 partial 2026-10-21: built and unit-tested; uncommitted, not
+  merged, not released. **Waiting on:** the first CI run on Ubuntu
+  (`ci.yml`, after the branch is pushed). That's the only place the real
+  `/proc/self/ns/pid` read runs; this machine is macOS, where the test is
+  skipped.
+- **Built:**
+  - `currentPidNamespace()` reads `/proc/self/ns/pid` on Linux and returns
+    undefined elsewhere or when `/proc` is unreadable.
+  - The lock records it as `pidns`. The field is omitted when undefined, so
+    on macOS and Windows both sides compare equal and nothing changes there.
+  - "Same machine" now needs the same boot time **and** the same `pidns`.
+    Anything else falls back to the mtime rule, the safe direction. That
+    includes a lock where only one side knows its namespace.
+- **Tests:** 8 new tests (33 total, 1 Linux-only):
+  - a container lock with a "dead" pid and a fresh mtime is **not** taken
+    over; one with a stale mtime is;
+  - one-sided namespace knowledge: no pid probe;
+  - no `pidns` field off Linux;
+  - `currentPidNamespace` on Linux, with an unreadable `/proc`, and off
+    Linux;
+  - a real-namespace check that runs only on Linux.
+
+  Existing tests now pin the namespace, so "same machine" means the same
+  thing on macOS and Linux CI. Mutation: dropping the namespace condition
+  fails 3 tests.
+
+- **Evidence:** 885 passed + 1 skipped. `VaultLock.js` 96.39% lines.
+  Project totals unchanged. Lint on tracked files 0 errors / 344 warnings.
+  `tsc` 345 (= baseline), none in the lock files.
 - **Found:** Task 4, 2026-10-21.
 - **Goal:** A lock held by a process in another pid namespace is never judged
   stale by a pid probe from this one.
@@ -828,8 +858,9 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 - **Constraints:** Documentation only. Mark it as a revision with a date; don't
   rewrite history.
 - **Dependencies:** 4 (and New-10 if it changes the lock's fields).
-- **Implementation guidance:** Remove `refreshedAt` from the lock schema,
-  describe the mtime heartbeat, and replace "atomic, so only one taker wins"
+- **Implementation guidance:** Remove `refreshedAt` from the lock schema, add
+  `pidns` and the boot + namespace "same machine" rule (New-10), describe the
+  mtime heartbeat, and replace "atomic, so only one taker wins"
   with verify-and-restore. Do it after New-10, so the schema changes once.
 - **Validation:** RFC §6.5's table matches `VaultLock.js`, and its header
   notes the revision.

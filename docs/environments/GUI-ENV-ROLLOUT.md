@@ -68,7 +68,8 @@ Known so far. Each entry says what breaks.
 7. **Task 6 (CLI locking) not to Linux users before New-10.** A CLI in a
    container sharing the host kernel has the same boot time but its own pid
    namespace, so the host can take over its live lock and overwrite its
-   write. macOS and Windows are unaffected.
+   write. macOS and Windows are unaffected. _Status:_ New-10 is built; it clears this
+   item once its Linux-only test has passed in CI.
 
 ## Rollback
 
@@ -117,7 +118,7 @@ Known hazards so far, to be completed per task:
 - **Runtime change:** none yet. The module exists, but nothing calls it until
   Task 5/6.
 - **Schema:** defines a new on-disk file, `<vault>.lock` (v1:
-  `{ v, pid, host, tool, nonce, boot, acquiredAt }`, mode `0600`, mtime =
+  `{ v, pid, host, tool, nonce, boot, pidns?, acquiredAt }`, mode `0600`, mtime =
   heartbeat). Takeovers briefly create `<vault>.lock.stale.<hex>`, removed
   right after. Nothing writes either file until Task 6 ships.
 - **Before it ships:** nothing; it's inert on its own.
@@ -134,3 +135,24 @@ Known hazards so far, to be completed per task:
   the lock's mtime advances every 5 s.
 - **Rollback:** nothing to roll back on its own. Once Task 6 ships, older
   versions ignore `.lock` files (see the Rollback section).
+
+### New-10: pid namespace in the lock
+
+- **Runtime change:** none yet (the lock isn't wired until Task 5/6). Once it
+  is, on Linux a lock from another pid namespace (a container on the same
+  kernel) is judged by mtime, not by a pid probe.
+- **Schema:** the lock gains an optional `pidns` field (Linux only). Nothing
+  has written a lock yet, so there is no old format to stay compatible with.
+- **Before it ships:** its Linux-only test must pass on CI's Ubuntu runner.
+- **Gated by:** nothing.
+- **Must not ship early:** n/a. It's the fix that clears "must not ship early"
+  item 7.
+- **Per environment:** Linux reads `/proc/self/ns/pid`. If `/proc` is
+  unreadable (hardened kernels, some sandboxes), it falls back to the mtime
+  rule, which is safe but means a dead holder blocks writers for up to 30 s.
+  macOS and Windows: no field, no change.
+- **Verify after release:** on Linux, a lock written from inside a container
+  carries a different `pidns` from one written on the host
+  (`cat <vault>.lock`).
+- **Rollback:** reverting restores the boot-time-only rule and re-opens
+  "must not ship early" item 7.
