@@ -67,9 +67,11 @@ Known so far. Each entry says what breaks.
    app can't detect which CLI is installed.
 7. **Task 6 (CLI locking) not to Linux users before New-10.** A CLI in a
    container sharing the host kernel has the same boot time but its own pid
-   namespace, so the host can take over its live lock and overwrite its
-   write. macOS and Windows are unaffected. _Status:_ New-10 is built; it clears this
+   namespace, so the host can take over its live lock and overwrite its write. macOS and Windows are unaffected. _Status:_ New-10 is built; it clears this
    item once its Linux-only test has passed in CI.
+8. **Task 6 (CLI locking) not to Windows users before New-12.** Every write
+   then takes the lock and renames under it; without the rename retry, a
+   scanner or reader holding the file makes the write fail.
 
 ## Rollback
 
@@ -156,3 +158,19 @@ Known hazards so far, to be completed per task:
   (`cat <vault>.lock`).
 - **Rollback:** reverting restores the boot-time-only rule and re-opens
   "must not ship early" item 7.
+
+### Task 5: `read()` / `transact()`
+
+- **Runtime change:** none for users. The new methods exist but nothing calls
+  them until Task 6. `saveVault` now delegates its write to a shared private
+  helper; the `fs` calls and bytes written are unchanged, and the existing
+  suite (every CLI integration test included) passes unmodified.
+- **Schema or config change:** none.
+- **Before it ships:** nothing of its own. It rides with Task 6.
+- **Gated by:** nothing.
+- **Must not ship early:** n/a on its own. With Task 6 it inherits items 3, 7
+  and 8 (docs, New-10, New-12).
+- **Per environment:** same on every platform. The atomic rename it relies on
+  is New-12's concern on Windows.
+- **Verify after release:** n/a until Task 6.
+- **Rollback:** fully available; no data or format change.

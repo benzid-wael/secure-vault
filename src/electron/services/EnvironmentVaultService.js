@@ -1,8 +1,10 @@
+import crypto from 'crypto';
 import fs from 'fs-extra';
 import path from 'path';
 
 import { CryptographyService } from './CryptographyService.js';
 import { EnvironmentResolver } from './EnvironmentResolver.js';
+import { VaultLock } from './VaultLock.js';
 import { EnvironmentVault } from '../models/EnvironmentVault.js';
 
 /**
@@ -19,6 +21,46 @@ function resolvePath(...segments) {
   return process.platform === 'win32'
     ? path.win32.join(...segments)
     : path.posix.join(...segments);
+}
+
+/**
+ * @typedef {Object} VaultReadResult
+ * @property {boolean} success
+ * @property {string} [code] - on failure: NOT_FOUND, INVALID, AUTH, REKEYED, ERROR
+ * @property {string} [error]
+ * @property {EnvironmentVault} [vault]
+ * @property {string} [revision]
+ * @property {{key: Buffer, header: Object}} [keyMaterial]
+ */
+
+/**
+ * @typedef {Object} TransactResult
+ * @property {boolean} success
+ * @property {string} [code] - on failure: as VaultReadResult, plus STALE, BUSY
+ * @property {string} [error]
+ * @property {string} [revision] - the new one; on STALE, the current one
+ * @property {{key: Buffer, header: Object}} [keyMaterial]
+ * @property {*} [result] - what `mutate` returned
+ * @property {Object} [holder] - on BUSY, the lock's current holder
+ */
+
+/** A failed result: `code` says why, for callers that branch on it. */
+function fail(code, error) {
+  return { success: false, code, error };
+}
+
+/** `auth` as `{ password?, keyMaterial? }`; a bare string is a password. */
+function normalizeAuth(auth) {
+  return typeof auth === 'string' ? { password: auth } : auth || {};
+}
+
+/** True when a key derived for header `a` decrypts a file with header `b`. */
+function sameKeyHeader(a, b) {
+  return (
+    a?.salt === b.salt &&
+    a?.kdf?.name === b.kdf?.name &&
+    a?.kdf?.iterations === b.kdf?.iterations
+  );
 }
 
 export class EnvironmentVaultService {
@@ -246,43 +288,276 @@ export class EnvironmentVaultService {
           kdf: CryptographyService.kdfHeader(),
         };
       }
-      const encrypted = CryptographyService.encrypt(payload, key);
-
-      const vaultFile = {
-        type: 'environment-vault',
-        version: 1,
-        ...header,
-        iv: encrypted.iv,
-        authTag: encrypted.authTag,
-        encrypted: encrypted.encrypted,
-      };
-
-      await fs.ensureDir(path.dirname(vaultPath));
-
-      // Preserve the previous good state, then write atomically: the new
-      // content lands in a temp file and is renamed over the target only once
-      // fully written, so a crash mid-write can never corrupt the vault, and
-      // `<path>.bak` always holds the last good copy for manual recovery.
-      const backupPath = this.getBackupPath(vaultPath);
-      if (await fs.pathExists(vaultPath)) {
-        await fs.copy(vaultPath, backupPath, { overwrite: true });
-      }
-
-      const tmpPath = `${vaultPath}.tmp`;
-      await fs.writeJSON(tmpPath, vaultFile, { spaces: 2 });
-      await fs.move(tmpPath, vaultPath, { overwrite: true });
-
-      // After a re-key the "previous good state" is encrypted under the old
-      // key: it would still open with a password the user just retired (maybe
-      // because it leaked), or at the weaker legacy work factor. Once the new
-      // file is safely in place, the backup becomes a copy of it instead.
-      if (rekeyed && (await fs.pathExists(backupPath))) {
-        await fs.copy(vaultPath, backupPath, { overwrite: true });
-      }
-
+      await this.#writeEncrypted(vaultPath, payload, key, header, rekeyed);
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Encrypt `payload` under `key` and write it over `vaultPath` atomically,
+   * keeping `.bak` in step.
+   */
+  static async #writeEncrypted(vaultPath, payload, key, header, rekeyed) {
+    const encrypted = CryptographyService.encrypt(payload, key);
+
+    const vaultFile = {
+      type: 'environment-vault',
+      version: 1,
+      ...header,
+      iv: encrypted.iv,
+      authTag: encrypted.authTag,
+      encrypted: encrypted.encrypted,
+    };
+    await fs.ensureDir(path.dirname(vaultPath));
+
+    // Preserve the previous good state, then write atomically: the new
+    // content lands in a temp file and is renamed over the target only once
+    // fully written, so a crash mid-write can never corrupt the vault, and
+    // `<path>.bak` always holds the last good copy for manual recovery.
+    const backupPath = this.getBackupPath(vaultPath);
+    if (await fs.pathExists(vaultPath)) {
+      await fs.copy(vaultPath, backupPath, { overwrite: true });
+    }
+
+    const tmpPath = `${vaultPath}.tmp`;
+    await fs.writeJSON(tmpPath, vaultFile, { spaces: 2 });
+    await fs.move(tmpPath, vaultPath, { overwrite: true });
+
+    // After a re-key the "previous good state" is encrypted under the old
+    // key: it would still open with a password the user just retired (maybe
+    // because it leaked), or at the weaker legacy work factor. Once the new
+    // file is safely in place, the backup becomes a copy of it instead.
+    if (rekeyed && (await fs.pathExists(backupPath))) {
+      await fs.copy(vaultPath, backupPath, { overwrite: true });
+    }
+  }
+
+  /**
+   * A vault file's revision: `sha256:<hex>` of its bytes. Every write uses a
+   * fresh IV, so every write changes it (GUI-ENV-RFC §6.2).
+   */
+  static revisionOf(bytes) {
+    return `sha256:${crypto.createHash('sha256').update(bytes).digest('hex')}`;
+  }
+
+  /**
+   * Read and decrypt a vault without locking it (writes are atomic renames,
+   * so a reader always sees a whole file).
+   *
+   * @param {string | {password?: string, keyMaterial?: Object}} auth
+   *   A password, or the `keyMaterial` of an earlier read/transact (no PBKDF2),
+   *   or both: then a re-keyed file is opened with the password instead.   * @returns {Promise<VaultReadResult>}
+   */
+  static async read(vaultPath, auth) {
+    let bytes;
+    try {
+      bytes = await fs.readFile(vaultPath);
+    } catch (error) {
+      return error.code === 'ENOENT'
+        ? fail('NOT_FOUND', `Environment vault not found at ${vaultPath}`)
+        : fail('ERROR', error.message);
+    }
+    const opened = await this.#open(bytes, normalizeAuth(auth));
+    if (!opened.success) return opened;
+    return {
+      success: true,
+      vault: opened.vault,
+      revision: this.revisionOf(bytes),
+      keyMaterial: opened.keyMaterial,
+    };
+  }
+
+  /**
+   * The one write path for env vaults (GUI-ENV-RFC §6.2): lock, read once,
+   * check the revision, decrypt, `mutate`, write atomically, unlock.
+   *
+   * @param {string} vaultPath
+   * @param {string | {password?: string, keyMaterial?: Object}} auth  As `read`.
+   * @param {(vault: EnvironmentVault, ctx: {revision: string|null}) => any} mutate
+   *   Changes `vault` in place; its return value comes back as `result`.
+   *   Throwing aborts the transaction and nothing is written.
+   * @param {Object} [options]
+   * @param {string|null} [options.expectedRevision] Refuse with `STALE` unless
+   *   the file is still at this revision. null: no check (each CLI command
+   *   reads fresh under the lock, so it can't be stale).
+   * @param {boolean} [options.create] Allow a missing file: `mutate` gets an
+   *   empty vault, and `auth` must carry a password.
+   * @param {number} [options.lockTimeoutMs]
+   * @param {'cli'|'gui'} [options.tool] Recorded in the lock, for messages.   * @returns {Promise<TransactResult>} On success, `keyMaterial` is what the
+   *   file now uses: a legacy vault written with a
+   *   password is re-salted, and callers caching keys must keep the new one.
+   */
+  static async transact(
+    vaultPath,
+    auth,
+    mutate,
+    {
+      expectedRevision = null,
+      create = false,
+      lockTimeoutMs = 3000,
+      tool = 'cli',
+    } = {}
+  ) {
+    const { password, keyMaterial: givenKey } = normalizeAuth(auth);
+    try {
+      // VaultLock needs the directory: make it for a new vault; without
+      // `create`, a missing directory means a missing vault.
+      if (create) await fs.ensureDir(path.dirname(vaultPath));
+      else if (!(await fs.pathExists(path.dirname(vaultPath)))) {
+        return fail('NOT_FOUND', `Environment vault not found at ${vaultPath}`);
+      }
+    } catch (error) {
+      return fail('ERROR', error.message);
+    }
+
+    const lock = new VaultLock(vaultPath, { tool, timeoutMs: lockTimeoutMs });
+    const acquired = await lock.acquire();
+    if (!acquired.success) return acquired;
+
+    try {
+      let bytes = null;
+      try {
+        bytes = await fs.readFile(vaultPath);
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+        if (!create) {
+          return fail(
+            'NOT_FOUND',
+            `Environment vault not found at ${vaultPath}`
+          );
+        }
+      }
+
+      const revision = bytes ? this.revisionOf(bytes) : null;
+      if (expectedRevision !== null && expectedRevision !== revision) {
+        return {
+          ...fail('STALE', 'The vault changed since it was read'),
+          revision,
+        };
+      }
+
+      let vault = new EnvironmentVault();
+      let keyMaterial = null;
+      if (bytes) {
+        const opened = await this.#open(bytes, {
+          password,
+          keyMaterial: givenKey,
+        });
+        if (!opened.success) return opened;
+        ({ vault, keyMaterial } = opened);
+      }
+
+      let result;
+      try {
+        result = await mutate(vault, { revision });
+      } catch (error) {
+        return fail('ERROR', error.message);
+      }
+
+      // Reuse the key unless it's due for the work-factor upgrade and we hold
+      // the password to do it (a key-only caller can't, and keeps the old one).
+      let key;
+      let header;
+      let rekeyed = false;
+      if (
+        keyMaterial &&
+        !(password && CryptographyService.needsKdfUpgrade(keyMaterial.header))
+      ) {
+        ({ key, header } = keyMaterial);
+      } else {
+        if (typeof password !== 'string') {
+          return fail('AUTH', 'A password is required to create a vault');
+        }
+        const salt = CryptographyService.generateSalt();
+        key = await CryptographyService.deriveKeyAsync(
+          password,
+          salt,
+          CryptographyService.ITERATIONS
+        );
+        header = {
+          salt: salt.toString('hex'),
+          kdf: CryptographyService.kdfHeader(),
+        };
+        rekeyed = true;
+      }
+
+      // The heartbeat found our lock gone: another writer may be inside.
+      if (lock.lost) {
+        return fail('ERROR', 'Lost the vault lock; nothing was written');
+      }
+
+      await this.#writeEncrypted(
+        vaultPath,
+        vault.toJSON(),
+        key,
+        header,
+        rekeyed
+      );
+      // Still under the lock: nobody else can have written since.
+      const written = await fs.readFile(vaultPath);
+      return {
+        success: true,
+        revision: this.revisionOf(written),
+        keyMaterial: { key, header },
+        result,
+      };
+    } catch (error) {
+      return fail('ERROR', error.message);
+    } finally {
+      await lock.release();
+    }
+  }
+
+  /** Parse and decrypt one read's `bytes` → `{ vault, keyMaterial }`. */
+  static async #open(bytes, { password, keyMaterial }) {
+    let file;
+    try {
+      file = JSON.parse(bytes.toString('utf8'));
+    } catch {
+      file = null;
+    }
+    if (file?.type !== 'environment-vault') {
+      return fail('INVALID', 'Invalid environment vault file');
+    }
+    const header = CryptographyService.keyHeaderOf(file);
+
+    let key = null;
+    if (keyMaterial) {
+      if (sameKeyHeader(keyMaterial.header, header)) {
+        key = keyMaterial.key;
+      } else if (typeof password !== 'string') {
+        // Someone changed the password, or ran the KDF upgrade, since.
+        return fail('REKEYED', 'The vault was re-keyed since it was opened');
+      }
+    }
+    if (!key) {
+      if (typeof password !== 'string') {
+        return fail('AUTH', 'A password is required');
+      }
+      try {
+        key = await CryptographyService.deriveKeyForAsync(password, file);
+      } catch (error) {
+        return fail('INVALID', error.message);
+      }
+    }
+
+    try {
+      const payload = CryptographyService.decrypt(
+        { encrypted: file.encrypted, authTag: file.authTag, iv: file.iv },
+        key
+      );
+      return {
+        success: true,
+        vault: EnvironmentVault.fromJSON(payload),
+        keyMaterial: { key, header },
+      };
+    } catch {
+      return fail(
+        'AUTH',
+        'Failed to decrypt: wrong password or corrupted file'
+      );
     }
   }
 
