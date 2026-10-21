@@ -85,3 +85,25 @@ Known hazards so far, to be completed per task:
 
 - **Runtime, schema or config change:** none (documentation only).
 - **Ships with:** nothing; not in any release.
+
+### Task 3: async key derivation
+
+- **Runtime change:** env vault key derivation (create, load, save, snapshot
+  re-key) runs on libuv's thread pool instead of blocking the event loop. Same
+  keys, same KDF parameters. Password vaults are unchanged.
+- **Schema or config change:** none. Vault files are byte-compatible in both
+  directions.
+- **Before it ships:** New-5 must pass. The compiled CLI binaries run Bun's
+  `node:crypto`, and nothing in the test suite exercises them.
+- **Gated by:** nothing; no user-visible behavior changes.
+- **Must not ship early:** in no tag before New-5 passes (already listed as
+  "must not ship early" item 4).
+- **Per environment:**
+  - npm CLI (Node ≥ 20.10): covered by the suite.
+  - Standalone binaries (Bun): New-5.
+  - Desktop app: no effect yet; it doesn't touch env vaults until Task 17.
+- **Verify after release:** `vault env show <env>` on an existing vault, with
+  both the npm CLI and the binary, opens it with the same password.
+  `vault env set` then `vault env get` round-trips.
+- **Rollback:** fully available. Revert or downgrade; no data was changed and
+  keys are identical, so vaults written by either version open in the other.

@@ -140,7 +140,7 @@ export class EnvironmentVaultService {
 
       const payload = data || new EnvironmentVault().toJSON();
       const salt = CryptographyService.generateSalt();
-      const key = CryptographyService.deriveKey(
+      const key = await CryptographyService.deriveKeyAsync(
         password,
         salt,
         CryptographyService.ITERATIONS
@@ -181,7 +181,10 @@ export class EnvironmentVaultService {
         return { success: false, error: 'Invalid environment vault file' };
       }
 
-      const key = CryptographyService.deriveKeyFor(password, vaultFile);
+      const key = await CryptographyService.deriveKeyForAsync(
+        password,
+        vaultFile
+      );
       const encryptedData = {
         encrypted: vaultFile.encrypted,
         authTag: vaultFile.authTag,
@@ -233,7 +236,7 @@ export class EnvironmentVaultService {
       } else {
         rekeyed = true;
         const salt = CryptographyService.generateSalt();
-        key = CryptographyService.deriveKey(
+        key = await CryptographyService.deriveKeyAsync(
           password,
           salt,
           CryptographyService.ITERATIONS
@@ -340,11 +343,11 @@ export class EnvironmentVaultService {
         if (file.type !== 'environment-vault') throw new Error('not a vault');
         const payload = CryptographyService.decrypt(
           { encrypted: file.encrypted, authTag: file.authTag, iv: file.iv },
-          CryptographyService.deriveKeyFor(currentPassword, file)
+          await CryptographyService.deriveKeyForAsync(currentPassword, file)
         );
 
         const salt = CryptographyService.generateSalt();
-        const key = CryptographyService.deriveKey(
+        const key = await CryptographyService.deriveKeyAsync(
           newPassword,
           salt,
           CryptographyService.ITERATIONS

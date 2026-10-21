@@ -98,4 +98,75 @@ describe('CryptographyService', () => {
       expect(key1).not.toEqual(key2);
     });
   });
+
+  describe('deriveKeyAsync', () => {
+    it('derives the same key as deriveKey', async () => {
+      const salt = CryptographyService.generateSalt();
+
+      const key = await CryptographyService.deriveKeyAsync('pw', salt, 1000);
+
+      expect(key.length).toBe(32);
+      expect(key.equals(CryptographyService.deriveKey('pw', salt, 1000))).toBe(
+        true
+      );
+    });
+
+    it('requires iterations explicitly', async () => {
+      await expect(
+        CryptographyService.deriveKeyAsync('pw', Buffer.alloc(32))
+      ).rejects.toThrow('iterations is required');
+    });
+
+    it('leaves the event loop free while deriving', async () => {
+      // At this count PBKDF2 takes tens of ms: a sync derivation would run the
+      // whole of it before the already-queued immediate gets a turn.
+      const order = [];
+      setImmediate(() => order.push('immediate'));
+
+      await CryptographyService.deriveKeyAsync(
+        'pw',
+        CryptographyService.generateSalt(),
+        200000
+      ).then(() => order.push('derived'));
+
+      expect(order).toEqual(['immediate', 'derived']);
+    });
+  });
+
+  describe('deriveKeyForAsync', () => {
+    const salt = Buffer.alloc(32, 7).toString('hex');
+
+    it("derives the same key as deriveKeyFor at the record's count", async () => {
+      const record = { salt, kdf: CryptographyService.kdfHeader() };
+
+      const key = await CryptographyService.deriveKeyForAsync('pw', record);
+
+      expect(key.equals(CryptographyService.deriveKeyFor('pw', record))).toBe(
+        true
+      );
+    });
+
+    it('reads a record without a kdf header at the legacy count', async () => {
+      const key = await CryptographyService.deriveKeyForAsync('pw', { salt });
+
+      expect(
+        key.equals(
+          CryptographyService.deriveKey(
+            'pw',
+            Buffer.from(salt, 'hex'),
+            CryptographyService.LEGACY_ITERATIONS
+          )
+        )
+      ).toBe(true);
+    });
+
+    it('rejects unsupported kdf parameters', async () => {
+      await expect(
+        CryptographyService.deriveKeyForAsync('pw', {
+          salt,
+          kdf: { name: 'scrypt', iterations: 1000 },
+        })
+      ).rejects.toThrow('Unsupported key derivation parameters');
+    });
+  });
 });

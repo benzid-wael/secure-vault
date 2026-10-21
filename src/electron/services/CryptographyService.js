@@ -85,6 +85,38 @@ export class CryptographyService {
     );
   }
 
+  /**
+   * `deriveKey`, but PBKDF2 runs on libuv's thread pool instead of blocking
+   * the event loop: the Electron main process stays responsive and timers
+   * (a lock heartbeat) keep firing. Same inputs give the same key.
+   */
+  static deriveKeyAsync(password, salt, iterations) {
+    if (!Number.isInteger(iterations)) {
+      return Promise.reject(
+        new Error('deriveKeyAsync: iterations is required')
+      );
+    }
+    return new Promise((resolve, reject) => {
+      crypto.pbkdf2(
+        password,
+        salt,
+        iterations,
+        this.KEY_LENGTH,
+        this.HASH_ALGORITHM,
+        (error, key) => (error ? reject(error) : resolve(key))
+      );
+    });
+  }
+
+  /** `deriveKeyFor`, asynchronously (see `deriveKeyAsync`). */
+  static async deriveKeyForAsync(password, record) {
+    return this.deriveKeyAsync(
+      password,
+      Buffer.from(record.salt, 'hex'),
+      this.iterationsOf(record)
+    );
+  }
+
   static encrypt(data, key) {
     const iv = crypto.randomBytes(this.IV_LENGTH);
     const cipher = crypto.createCipheriv(this.ALGORITHM, key, iv);

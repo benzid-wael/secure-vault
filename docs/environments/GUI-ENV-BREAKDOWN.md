@@ -9,45 +9,49 @@ updated as each task finishes, not in a batch at the end.
 
 ## Rollup
 
-| #     | Task                                                       | RFC | Pri | Status | Depends on      |
-| ----- | ---------------------------------------------------------- | --- | --- | ------ | --------------- |
-| 0     | Write this breakdown and the rollout plan                  | —   | P0  | 🟡     | —               |
-| 1     | Make the renderer sandbox explicit and verified            | M0  | P1  | ⬜     | 0, New-1        |
-| 2     | Content-Security-Policy for the renderer                   | M0  | P1  | ⬜     | 1               |
-| 3     | Async key derivation (`deriveKeyAsync`)                    | M1  | P0  | ⬜     | 0, New-1        |
-| 4     | `VaultLock` module                                         | M1  | P0  | ⬜     | 3               |
-| 5     | `read()` / `transact()` with revisions and `REKEYED`       | M1  | P0  | ⬜     | 3, 4            |
-| 6     | Port every env op onto `transact`; `saveVault` private     | M1  | P0  | ⬜     | 5               |
-| 7     | `squash` snapshot, re-keyed by change-password             | M1  | P1  | ⬜     | 6               |
-| 8     | CLI docs, CHANGELOG, `doctor` reports stale locks          | M1  | P1  | ⬜     | 6               |
-| 9     | `applyVarChanges` model method                             | M2  | P0  | ⬜     | 6               |
-| 10    | Changeset apply + rebase in the service                    | M2  | P0  | ⬜     | 9               |
-| 11    | Single-instance lock for the app                           | M3  | P1  | ⬜     | 0               |
-| 12    | Main-process `ClipboardService` + IPC                      | M3  | P1  | ⬜     | 0, New-3        |
-| 13    | Idle lock for password vaults                              | M3  | P1  | ⬜     | New-2           |
-| 14    | `EnvVaultRegistry` (ids, dialogs, recents)                 | M3  | P0  | ⬜     | 6, 11, New-2    |
-| 15    | `EnvVaultSession` (keys, commit/recover, idle)             | M3  | P0  | ⬜     | 5, 14, New-2    |
-| 16    | `EnvVaultWatcher`                                          | M3  | P1  | ⬜     | 15              |
-| 17    | IPC gate + core channels + preload                         | M3  | P0  | ⬜     | 10, 12, 14, 15  |
-| 18    | IPC: structure, history, diff, import/export channels      | M3  | P2  | ⬜     | 17              |
-| 19    | Renderer: Environments switch, vault list, open/new/unlock | M4  | P0  | ⬜     | 2, 17, New-4    |
-| 20    | Renderer: env view (masked, reveal, copy, inline edit)     | M4  | P0  | ⬜     | 19              |
-| 21    | Renderer: bulk edit (table + dotenv text), conflicts       | M4  | P0  | ⬜     | 20              |
-| 22    | Renderer: move secret copy to `ClipboardService`           | M4  | P1  | ⬜     | 12, New-3       |
-| 23    | Renderer: Settings for idle timeout and recents            | M4  | P1  | ⬜     | 13, 14, New-2   |
-| 24    | Renderer: env structure ops                                | M5  | P2  | ⬜     | 18, 20          |
-| 25    | Renderer: history, rollback, squash                        | M5  | P2  | ⬜     | 7, 18, 20       |
-| 26    | Renderer: diff and validate                                | M5  | P2  | ⬜     | 18, 20          |
-| 27    | Renderer: import, export, template                         | M5  | P2  | ⬜     | 18, 20          |
-| 28    | Renderer: env vault change-password                        | M5  | P2  | ⬜     | 7, 18, 19       |
-| 29    | e2e scenario `env-vault-concurrent`                        | M6  | P1  | ⬜     | 21              |
-| 30    | CI e2e job (ubuntu + xvfb)                                 | M6  | P1  | ⬜     | 1, 29           |
-| 31    | User guide `docs/guide/gui/env-vaults.md`                  | M6  | P2  | ⬜     | 21              |
-| New-1 | Coverage can't see the code this plan changes              | —   | P1  | ⬜     | — (blocks 1, 3) |
-| New-2 | App-wide settings store                                    | M3  | P1  | ⬜     | 0               |
-| New-3 | Decide which secrets go through `ClipboardService`         | —   | P1  | ⬜     | —               |
-| New-4 | Feature gate for the Environments UI                       | M4  | P0  | ⬜     | 0               |
-| New-5 | Verify async PBKDF2 in the Bun-compiled CLI binary         | M1  | P1  | ⬜     | 3               |
+| #     | Task                                                             | RFC | Pri | Status | Depends on      |
+| ----- | ---------------------------------------------------------------- | --- | --- | ------ | --------------- |
+| 0     | Write this breakdown and the rollout plan                        | —   | P0  | ✅     | —               |
+| 1     | Make the renderer sandbox explicit and verified                  | M0  | P1  | ⬜     | 0, New-1        |
+| 2     | Content-Security-Policy for the renderer                         | M0  | P1  | ⬜     | 1               |
+| 3     | Async key derivation (`deriveKeyAsync`)                          | M1  | P0  | ✅     | 0, New-1        |
+| 4     | `VaultLock` module                                               | M1  | P0  | ⬜     | 3               |
+| 5     | `read()` / `transact()` with revisions and `REKEYED`             | M1  | P0  | ⬜     | 3, 4            |
+| 6     | Port every env op onto `transact`; `saveVault` private           | M1  | P0  | ⬜     | 5               |
+| 7     | `squash` snapshot, re-keyed by change-password                   | M1  | P1  | ⬜     | 6               |
+| 8     | CLI docs, CHANGELOG, `doctor` reports stale locks                | M1  | P1  | ⬜     | 6               |
+| 9     | `applyVarChanges` model method                                   | M2  | P0  | ⬜     | 6               |
+| 10    | Changeset apply + rebase in the service                          | M2  | P0  | ⬜     | 9               |
+| 11    | Single-instance lock for the app                                 | M3  | P1  | ⬜     | 0               |
+| 12    | Main-process `ClipboardService` + IPC                            | M3  | P1  | ⬜     | 0, New-3        |
+| 13    | Idle lock for password vaults                                    | M3  | P1  | ⬜     | New-2           |
+| 14    | `EnvVaultRegistry` (ids, dialogs, recents)                       | M3  | P0  | ⬜     | 6, 11, New-2    |
+| 15    | `EnvVaultSession` (keys, commit/recover, idle)                   | M3  | P0  | ⬜     | 5, 14, New-2    |
+| 16    | `EnvVaultWatcher`                                                | M3  | P1  | ⬜     | 15              |
+| 17    | IPC gate + core channels + preload                               | M3  | P0  | ⬜     | 10, 12, 14, 15  |
+| 18    | IPC: structure, history, diff, import/export channels            | M3  | P2  | ⬜     | 17              |
+| 19    | Renderer: Environments switch, vault list, open/new/unlock       | M4  | P0  | ⬜     | 2, 17, New-4    |
+| 20    | Renderer: env view (masked, reveal, copy, inline edit)           | M4  | P0  | ⬜     | 19              |
+| 21    | Renderer: bulk edit (table + dotenv text), conflicts             | M4  | P0  | ⬜     | 20              |
+| 22    | Renderer: move secret copy to `ClipboardService`                 | M4  | P1  | ⬜     | 12, New-3       |
+| 23    | Renderer: Settings for idle timeout and recents                  | M4  | P1  | ⬜     | 13, 14, New-2   |
+| 24    | Renderer: env structure ops                                      | M5  | P2  | ⬜     | 18, 20          |
+| 25    | Renderer: history, rollback, squash                              | M5  | P2  | ⬜     | 7, 18, 20       |
+| 26    | Renderer: diff and validate                                      | M5  | P2  | ⬜     | 18, 20          |
+| 27    | Renderer: import, export, template                               | M5  | P2  | ⬜     | 18, 20          |
+| 28    | Renderer: env vault change-password                              | M5  | P2  | ⬜     | 7, 18, 19       |
+| 29    | e2e scenario `env-vault-concurrent`                              | M6  | P1  | ⬜     | 21              |
+| 30    | CI e2e job (ubuntu + xvfb)                                       | M6  | P1  | ⬜     | 1, 29           |
+| 31    | User guide `docs/guide/gui/env-vaults.md`                        | M6  | P2  | ⬜     | 21              |
+| New-1 | Coverage can't see the code this plan changes                    | —   | P1  | ✅     | — (blocks 1, 3) |
+| New-2 | App-wide settings store                                          | M3  | P1  | ⬜     | 0               |
+| New-3 | Decide which secrets go through `ClipboardService`               | —   | P1  | ⬜     | —               |
+| New-4 | Feature gate for the Environments UI                             | M4  | P0  | ⬜     | 0               |
+| New-5 | Verify async PBKDF2 in the Bun-compiled CLI binary               | M1  | P1  | 🔶     | 3               |
+| New-6 | Decide whether project coverage should include `src/electron/**` | —   | P2  | ⬜     | New-1           |
+| New-7 | Commit a way to measure coverage of excluded files               | —   | P1  | ⬜     | New-1           |
+| New-8 | `npm run lint` fails locally on gitignored build output          | —   | P2  | ⬜     | —               |
+| New-9 | Type-check gate: confirm "no new errors" as this plan's rule     | —   | P1  | ⬜     | —               |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -57,8 +61,15 @@ with M0 (1, 2) required before 19 ships to anyone.
 - `npx vitest run --coverage`: **69 files, 847 tests, all pass.** Lines 77.98%,
   statements 77.21%, branches 72.74%, functions 71.19%. Gate in
   `vite.config.js`: 68 / 67 / 64 / 60. These numbers must not drop.
-- The coverage gate **excludes `src/electron/**`, `public/**`and`bin/**`\*\*:
+- The coverage gate excludes `src/electron/**`, `public/**` and `bin/**`:
   see New-1.
+- Suite time (`/usr/bin/time -p npx vitest run`, two runs): 25.9 s and 27.4 s.
+- Lint on tracked files
+  (`git ls-files '*.js' '*.jsx' '*.mjs' '*.cjs' | xargs npx eslint`):
+  **0 errors, 344 warnings.** Plain `npm run lint` also scans gitignored local
+  build output and fails locally (New-8); CI doesn't see those files.
+- Type check (`npx tsc --noEmit`): **345 errors**, report-only in CI
+  (`continue-on-error`). The rule for this plan is no new errors (New-9).
 - Branch: `feat/vault-env-gui`. The RFC and discovery notes are committed
   there as `dd4e2e1`, not merged and not released. This file and the rollout
   plan are uncommitted.
@@ -84,6 +95,11 @@ Numbered corrections to the RFC, recorded when executing proved it wrong.
    are per password vault, encrypted (`VaultSettingsService`). An idle timeout
    and a recents toggle need a store that's readable while every vault is
    locked (New-2). _Found during Task 0._
+5. **New-1's chosen method didn't work as written.** `--coverage.include` on
+   the command line is still filtered by the config's `exclude` list, so the
+   excluded paths reported nothing. The working method is a separate Vitest
+   config that reuses the project config with only the coverage scope changed
+   (New-7). _Found during Task 3._
 
 ## Decisions
 
@@ -110,8 +126,8 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 
 ### Task 0: Write this breakdown and the rollout plan
 
-- **Status:** 🟡 partial: both files written 2026-10-21; waiting on the
-  author's review and approval.
+- **Status:** ✅ done 2026-10-21: both files written; approved by the author
+  ("next").
 - **Goal:** The approved RFC is decomposed into reviewable tasks with
   dependencies, priorities and validation, and a rollout plan exists to be
   extended by each task.
@@ -161,7 +177,29 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 
 ### Task 3: Async key derivation (`deriveKeyAsync`)
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-21: its own validation is met. **Not released
+  until New-5 passes** (see the rollout plan). Uncommitted on
+  `feat/vault-env-gui`; not merged, not released.
+- **Built:**
+  - `CryptographyService.deriveKeyAsync` (async `crypto.pbkdf2`) and
+    `deriveKeyForAsync` (honors the record's `kdf`, legacy count when absent).
+  - All five derivations in `EnvironmentVaultService` use them: `createVault`,
+    `loadVault`, `saveVault`, and both in `#rekeySnapshots`. Each was already
+    inside an `async` method and a `try`, so a rejection reaches the same
+    `catch` the sync throw did.
+  - Password-vault services are unchanged and keep the sync `deriveKey`.
+- **Tests:** 6 new tests in `CryptographyService.test.js`: equal keys sync vs
+  async, the legacy record, missing iterations, an unsupported `kdf`, and
+  **the event loop staying free during derivation**. That test was checked
+  against a blocking stand-in, which it fails. `KdfUpgrade.test.js:297` ("a
+  mutation derives the key once") now spies on `deriveKeyAsync`, since the
+  derivation it counts moved there; its assertion is unchanged.
+- **Evidence:** 853/853 tests pass (847 + 6). Suite 25.2 s and 27.0 s vs
+  baseline 25.9 s and 27.4 s. Touched-file lines (New-7 method):
+  `CryptographyService.js` 100%, `EnvironmentVaultService.js` 91.41%. Project
+  totals unchanged (the touched files are excluded from them). Lint on tracked
+  files 0 errors / 344 warnings (= baseline); changed files have 0 problems.
+  `tsc` 345 errors (= baseline), none in changed lines.
 - **Goal:** `CryptographyService.deriveKeyAsync` exists (async
   `crypto.pbkdf2`), and the env vault load/save paths use it. Output is
   byte-identical to `deriveKey`.
@@ -527,7 +565,14 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 
 ### New-1: Coverage can't see the code this plan changes
 
-- **Status:** ⬜ not started (decision needed).
+- **Status:** ✅ decided 2026-10-21: option (a), approved with Task 0. Every
+  task measures its touched files and records the numbers in its entry. No
+  change to the project config. Option (b) moved to New-6. **The command
+  originally written here (`--coverage.include` alone) doesn't work**
+  (Correction 5). Until New-7 commits a tool, use a Vitest config that
+  spreads `vite.config.js` and replaces only `test.coverage.include` (the
+  touched files) and `exclude` (`node_modules`, `src/__tests__`), with
+  thresholds off. Run it with `--config <that file> --root <repo> --coverage`.
 - **Found:** Task 0, 2026-10-21.
 - **Goal:** Every task's "≥70% lines on touched files" check is measured and
   recorded, including files under `src/electron/**`, `public/**` and `bin/**`.
@@ -599,7 +644,9 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 
 ### New-5: Verify async PBKDF2 in the Bun-compiled CLI binary
 
-- **Status:** ⬜ not started.
+- **Status:** 🔶 ready to run since Task 3 (2026-10-21). Needs Bun installed
+  locally, or a CI run of `npm run package:cli`. Blocks the release that
+  carries Task 3.
 - **Found:** Task 0, 2026-10-21.
 - **Goal:** The standalone `vault` binaries (`scripts/build-cli.js`, Bun
   `--compile`) derive keys with the async path and produce the same keys as
@@ -612,3 +659,75 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
   created by the Node CLI, and the reverse.
 - **Cost of leaving it:** Binary users could fail to unlock vaults after the
   release, and no test would catch it.
+
+### New-6: Decide whether project coverage should include `src/electron/**`
+
+- **Status:** ⬜ not started (decision needed from the author; not blocking).
+- **Found:** Task 0, 2026-10-21 (split from New-1 option (b)).
+- **Goal:** A recorded decision on whether `src/electron/**` comes out of the
+  coverage `exclude` list in `vite.config.js`, and the thresholds that follow.
+- **Constraints:** Must not lower the existing thresholds to make the gate pass.
+- **Dependencies:** New-1 (decided). Independent of every numbered task.
+- **Implementation guidance:** First measure what the totals would be with the
+  exclusion removed; nobody recorded why it was added. A drop below the gate
+  means either tests for unrelated code or a new threshold, and both need a
+  decision, not a quiet edit.
+- **Validation:** The decision and the measured totals are recorded here.
+- **Cost of leaving it:** The per-task measurement (New-1) covers new work, but
+  existing services stay unmeasured, and a regression in them doesn't move the
+  project number.
+
+### New-7: Commit a way to measure coverage of excluded files
+
+- **Status:** ⬜ not started.
+- **Found:** Task 3, 2026-10-21 (Correction 5).
+- **Goal:** Anyone can measure line coverage for a chosen set of files,
+  including excluded paths, with one committed command, e.g.
+  `npm run coverage:files -- <file> [<file>…]`.
+- **Constraints:** Must not change what `npm run test:coverage` measures or its
+  thresholds (that's New-6). No new dependencies.
+- **Dependencies:** New-1 (decided). Every later task's DoD uses it.
+- **Implementation guidance:** The CLI flag doesn't work because the config's
+  `exclude` still applies. The working shape is a small config that imports
+  `vite.config.js`, spreads it, and overrides only the coverage scope; Task 3
+  used exactly that from a scratch directory. Put it under `scripts/` and point
+  `reportsDirectory` somewhere other than `./coverage`, so it doesn't overwrite
+  the real report.
+- **Validation:** Running it on `src/electron/services/CryptographyService.js`
+  prints that file's row (100% lines at Task 3), and `npm run test:coverage`
+  output is unchanged.
+- **Cost of leaving it:** Each task re-creates the config by hand from this
+  note. It lives outside the repo, so a reviewer can't re-run the measurement
+  the task recorded.
+
+### New-8: `npm run lint` fails locally on gitignored build output
+
+- **Status:** ⬜ not started.
+- **Found:** Task 3, 2026-10-21.
+- **Goal:** `npm run lint` on a developer machine reports the same as CI.
+- **Constraints:** Don't disable rules or lower severities; only stop scanning
+  generated files.
+- **Dependencies:** None.
+- **Implementation guidance:** The 782 local problems come from
+  `docs/.vitepress/cache` and `docs/.vitepress/dist`, which `.gitignore`
+  excludes but `eslint.config.js` doesn't. CI never builds the docs before
+  linting, so it stays green. Add them to the ESLint ignores.
+- **Validation:** After `npm run docs:build`, `npm run lint` exits 0 with the
+  same warning count as on tracked files (344 at Task 3).
+- **Cost of leaving it:** Local lint is always red, so nobody trusts it, and a
+  real new error goes unnoticed until CI.
+
+### New-9: Type-check gate: confirm "no new errors" as this plan's rule
+
+- **Status:** ⬜ not started (decision needed from the author).
+- **Found:** Task 3, 2026-10-21.
+- **Goal:** A recorded rule for the DoD's "type check passes", given 345
+  pre-existing `tsc` errors and CI running it report-only.
+- **Constraints:** Must not hide new errors in touched code.
+- **Dependencies:** None; every task's DoD reads it.
+- **Implementation guidance:** Proposed rule: the total stays ≤ the baseline
+  (345), and no error points at a line the task changed. Task 3 was checked
+  that way. Fixing the 345 is out of scope; if wanted, it's a separate task.
+- **Validation:** The rule is recorded under Decisions with its date.
+- **Cost of leaving it:** "Type check passes" stays impossible to meet
+  literally, so each task interprets it on its own.
