@@ -9,49 +9,51 @@ updated as each task finishes, not in a batch at the end.
 
 ## Rollup
 
-| #     | Task                                                             | RFC | Pri | Status | Depends on      |
-| ----- | ---------------------------------------------------------------- | --- | --- | ------ | --------------- |
-| 0     | Write this breakdown and the rollout plan                        | —   | P0  | ✅     | —               |
-| 1     | Make the renderer sandbox explicit and verified                  | M0  | P1  | ⬜     | 0, New-1        |
-| 2     | Content-Security-Policy for the renderer                         | M0  | P1  | ⬜     | 1               |
-| 3     | Async key derivation (`deriveKeyAsync`)                          | M1  | P0  | ✅     | 0, New-1        |
-| 4     | `VaultLock` module                                               | M1  | P0  | ⬜     | 3               |
-| 5     | `read()` / `transact()` with revisions and `REKEYED`             | M1  | P0  | ⬜     | 3, 4            |
-| 6     | Port every env op onto `transact`; `saveVault` private           | M1  | P0  | ⬜     | 5               |
-| 7     | `squash` snapshot, re-keyed by change-password                   | M1  | P1  | ⬜     | 6               |
-| 8     | CLI docs, CHANGELOG, `doctor` reports stale locks                | M1  | P1  | ⬜     | 6               |
-| 9     | `applyVarChanges` model method                                   | M2  | P0  | ⬜     | 6               |
-| 10    | Changeset apply + rebase in the service                          | M2  | P0  | ⬜     | 9               |
-| 11    | Single-instance lock for the app                                 | M3  | P1  | ⬜     | 0               |
-| 12    | Main-process `ClipboardService` + IPC                            | M3  | P1  | ⬜     | 0, New-3        |
-| 13    | Idle lock for password vaults                                    | M3  | P1  | ⬜     | New-2           |
-| 14    | `EnvVaultRegistry` (ids, dialogs, recents)                       | M3  | P0  | ⬜     | 6, 11, New-2    |
-| 15    | `EnvVaultSession` (keys, commit/recover, idle)                   | M3  | P0  | ⬜     | 5, 14, New-2    |
-| 16    | `EnvVaultWatcher`                                                | M3  | P1  | ⬜     | 15              |
-| 17    | IPC gate + core channels + preload                               | M3  | P0  | ⬜     | 10, 12, 14, 15  |
-| 18    | IPC: structure, history, diff, import/export channels            | M3  | P2  | ⬜     | 17              |
-| 19    | Renderer: Environments switch, vault list, open/new/unlock       | M4  | P0  | ⬜     | 2, 17, New-4    |
-| 20    | Renderer: env view (masked, reveal, copy, inline edit)           | M4  | P0  | ⬜     | 19              |
-| 21    | Renderer: bulk edit (table + dotenv text), conflicts             | M4  | P0  | ⬜     | 20              |
-| 22    | Renderer: move secret copy to `ClipboardService`                 | M4  | P1  | ⬜     | 12, New-3       |
-| 23    | Renderer: Settings for idle timeout and recents                  | M4  | P1  | ⬜     | 13, 14, New-2   |
-| 24    | Renderer: env structure ops                                      | M5  | P2  | ⬜     | 18, 20          |
-| 25    | Renderer: history, rollback, squash                              | M5  | P2  | ⬜     | 7, 18, 20       |
-| 26    | Renderer: diff and validate                                      | M5  | P2  | ⬜     | 18, 20          |
-| 27    | Renderer: import, export, template                               | M5  | P2  | ⬜     | 18, 20          |
-| 28    | Renderer: env vault change-password                              | M5  | P2  | ⬜     | 7, 18, 19       |
-| 29    | e2e scenario `env-vault-concurrent`                              | M6  | P1  | ⬜     | 21              |
-| 30    | CI e2e job (ubuntu + xvfb)                                       | M6  | P1  | ⬜     | 1, 29           |
-| 31    | User guide `docs/guide/gui/env-vaults.md`                        | M6  | P2  | ⬜     | 21              |
-| New-1 | Coverage can't see the code this plan changes                    | —   | P1  | ✅     | — (blocks 1, 3) |
-| New-2 | App-wide settings store                                          | M3  | P1  | ⬜     | 0               |
-| New-3 | Decide which secrets go through `ClipboardService`               | —   | P1  | ⬜     | —               |
-| New-4 | Feature gate for the Environments UI                             | M4  | P0  | ⬜     | 0               |
-| New-5 | Verify async PBKDF2 in the Bun-compiled CLI binary               | M1  | P1  | 🔶     | 3               |
-| New-6 | Decide whether project coverage should include `src/electron/**` | —   | P2  | ⬜     | New-1           |
-| New-7 | Commit a way to measure coverage of excluded files               | —   | P1  | ⬜     | New-1           |
-| New-8 | `npm run lint` fails locally on gitignored build output          | —   | P2  | ⬜     | —               |
-| New-9 | Type-check gate: confirm "no new errors" as this plan's rule     | —   | P1  | ⬜     | —               |
+| #      | Task                                                             | RFC | Pri | Status | Depends on                  |
+| ------ | ---------------------------------------------------------------- | --- | --- | ------ | --------------------------- |
+| 0      | Write this breakdown and the rollout plan                        | —   | P0  | ✅     | —                           |
+| 1      | Make the renderer sandbox explicit and verified                  | M0  | P1  | ⬜     | 0, New-1                    |
+| 2      | Content-Security-Policy for the renderer                         | M0  | P1  | ⬜     | 1                           |
+| 3      | Async key derivation (`deriveKeyAsync`)                          | M1  | P0  | ✅     | 0, New-1                    |
+| 4      | `VaultLock` module                                               | M1  | P0  | ✅     | 3                           |
+| 5      | `read()` / `transact()` with revisions and `REKEYED`             | M1  | P0  | ⬜     | 3, 4                        |
+| 6      | Port every env op onto `transact`; `saveVault` private           | M1  | P0  | ⬜     | 5                           |
+| 7      | `squash` snapshot, re-keyed by change-password                   | M1  | P1  | ⬜     | 6                           |
+| 8      | CLI docs, CHANGELOG, `doctor` reports stale locks                | M1  | P1  | ⬜     | 6                           |
+| 9      | `applyVarChanges` model method                                   | M2  | P0  | ⬜     | 6                           |
+| 10     | Changeset apply + rebase in the service                          | M2  | P0  | ⬜     | 9                           |
+| 11     | Single-instance lock for the app                                 | M3  | P1  | ⬜     | 0                           |
+| 12     | Main-process `ClipboardService` + IPC                            | M3  | P1  | ⬜     | 0, New-3                    |
+| 13     | Idle lock for password vaults                                    | M3  | P1  | ⬜     | New-2                       |
+| 14     | `EnvVaultRegistry` (ids, dialogs, recents)                       | M3  | P0  | ⬜     | 6, 11, New-2                |
+| 15     | `EnvVaultSession` (keys, commit/recover, idle)                   | M3  | P0  | ⬜     | 5, 14, New-2                |
+| 16     | `EnvVaultWatcher`                                                | M3  | P1  | ⬜     | 15                          |
+| 17     | IPC gate + core channels + preload                               | M3  | P0  | ⬜     | 10, 12, 14, 15              |
+| 18     | IPC: structure, history, diff, import/export channels            | M3  | P2  | ⬜     | 17                          |
+| 19     | Renderer: Environments switch, vault list, open/new/unlock       | M4  | P0  | ⬜     | 2, 17, New-4                |
+| 20     | Renderer: env view (masked, reveal, copy, inline edit)           | M4  | P0  | ⬜     | 19                          |
+| 21     | Renderer: bulk edit (table + dotenv text), conflicts             | M4  | P0  | ⬜     | 20                          |
+| 22     | Renderer: move secret copy to `ClipboardService`                 | M4  | P1  | ⬜     | 12, New-3                   |
+| 23     | Renderer: Settings for idle timeout and recents                  | M4  | P1  | ⬜     | 13, 14, New-2               |
+| 24     | Renderer: env structure ops                                      | M5  | P2  | ⬜     | 18, 20                      |
+| 25     | Renderer: history, rollback, squash                              | M5  | P2  | ⬜     | 7, 18, 20                   |
+| 26     | Renderer: diff and validate                                      | M5  | P2  | ⬜     | 18, 20                      |
+| 27     | Renderer: import, export, template                               | M5  | P2  | ⬜     | 18, 20                      |
+| 28     | Renderer: env vault change-password                              | M5  | P2  | ⬜     | 7, 18, 19                   |
+| 29     | e2e scenario `env-vault-concurrent`                              | M6  | P1  | ⬜     | 21                          |
+| 30     | CI e2e job (ubuntu + xvfb)                                       | M6  | P1  | ⬜     | 1, 29                       |
+| 31     | User guide `docs/guide/gui/env-vaults.md`                        | M6  | P2  | ⬜     | 21                          |
+| New-1  | Coverage can't see the code this plan changes                    | —   | P1  | ✅     | — (blocks 1, 3)             |
+| New-2  | App-wide settings store                                          | M3  | P1  | ⬜     | 0                           |
+| New-3  | Decide which secrets go through `ClipboardService`               | —   | P1  | ⬜     | —                           |
+| New-4  | Feature gate for the Environments UI                             | M4  | P0  | ⬜     | 0                           |
+| New-5  | Verify async PBKDF2 in the Bun-compiled CLI binary               | M1  | P1  | 🔶     | 3                           |
+| New-6  | Decide whether project coverage should include `src/electron/**` | —   | P2  | ⬜     | New-1                       |
+| New-7  | Commit a way to measure coverage of excluded files               | —   | P1  | ⬜     | New-1                       |
+| New-8  | `npm run lint` fails locally on gitignored build output          | —   | P2  | ⬜     | —                           |
+| New-9  | Type-check gate: confirm "no new errors" as this plan's rule     | —   | P1  | ✅     | —                           |
+| New-10 | Lock: a container sharing the kernel can look like this machine  | —   | P1  | ⬜     | 4 (blocks the release of 6) |
+| New-11 | Bring RFC §6.5 in line with Corrections 6 and 7                  | —   | P2  | ⬜     | 4                           |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -70,9 +72,8 @@ with M0 (1, 2) required before 19 ships to anyone.
   build output and fails locally (New-8); CI doesn't see those files.
 - Type check (`npx tsc --noEmit`): **345 errors**, report-only in CI
   (`continue-on-error`). The rule for this plan is no new errors (New-9).
-- Branch: `feat/vault-env-gui`. The RFC and discovery notes are committed
-  there as `dd4e2e1`, not merged and not released. This file and the rollout
-  plan are uncommitted.
+- Branch: `feat/vault-env-gui`, not merged, not released. Commits: `dd4e2e1`
+  (RFC + discovery), `92e9354` (Task 0), `3553e81` (Task 3).
 
 ## Corrections to the plan
 
@@ -100,6 +101,18 @@ Numbered corrections to the RFC, recorded when executing proved it wrong.
    excluded paths reported nothing. The working method is a separate Vitest
    config that reuses the project config with only the coverage scope changed
    (New-7). _Found during Task 3._
+6. **The lock heartbeat can't rewrite the lock file.** RFC §6.5 has the
+   holder rewrite a `refreshedAt` field. A rewrite that can't be seen half
+   written is a temp file renamed over the lock, and that rename would
+   **recreate** a lock someone else already took over. The heartbeat touches
+   the file's mtime instead (`utimes`, which fails cleanly once the file is
+   gone), and staleness for a lock from another machine reads that mtime. The
+   lock file has no `refreshedAt` field. _Found during Task 4._
+7. **"Rename, so only one taker wins" was not enough.** Two takers can both
+   judge a dead lock stale. One renames it away and creates a fresh lock, and
+   the other's rename then moves **that live lock** away. After renaming, the
+   taker checks that it moved the lock it judged stale, and puts it back (a
+   hard link) if not. _Found during Task 4._
 
 ## Decisions
 
@@ -116,6 +129,9 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
   D5 recents on by default with a toggle · D6 one main-side clipboard service.
 - **Tasks are split below milestone size** so each one is reviewable alone
   (decided 2026-10-21).
+- **Type-check rule for this plan** (New-9, 2026-10-21): `tsc --noEmit`
+  errors stay ≤ the baseline (345), and none points at a line the task
+  changed. Fixing the existing 345 is not part of this plan.
 - **Coverage rule for this plan:** ≥70% **lines** on every file a task adds or
   changes, and project totals never below the baseline above (decided
   2026-10-21). How to measure it for excluded paths is New-1.
@@ -127,7 +143,7 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 ### Task 0: Write this breakdown and the rollout plan
 
 - **Status:** ✅ done 2026-10-21: both files written; approved by the author
-  ("next").
+  ("next"). Committed as `92e9354`; not merged, not released.
 - **Goal:** The approved RFC is decomposed into reviewable tasks with
   dependencies, priorities and validation, and a rollout plan exists to be
   extended by each task.
@@ -178,8 +194,8 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 ### Task 3: Async key derivation (`deriveKeyAsync`)
 
 - **Status:** ✅ done 2026-10-21: its own validation is met. **Not released
-  until New-5 passes** (see the rollout plan). Uncommitted on
-  `feat/vault-env-gui`; not merged, not released.
+  until New-5 passes** (see the rollout plan). Committed as `3553e81` on
+  `feat/vault-env-gui`; not merged, not released. Approved by the author.
 - **Built:**
   - `CryptographyService.deriveKeyAsync` (async `crypto.pbkdf2`) and
     `deriveKeyForAsync` (honors the record's `kdf`, legacy count when absent).
@@ -217,7 +233,47 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 
 ### Task 4: `VaultLock` module
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-21: its own validation is met. Uncommitted on
+  `feat/vault-env-gui`; not merged, not released. Not wired to anything yet
+  (Task 5 does that), so it changes no behavior.
+- **Built:** `src/electron/services/VaultLock.js`: `acquire()` /
+  `release()` / `refresh()` / `lost`, plus `isProcessAlive` and
+  `machineBootTime`.
+  - `<vault>.lock` is created with `wx` and mode `0600`, holding
+    `{ v, pid, host, tool, nonce, boot, acquiredAt }`, with its mtime set to
+    the creation time.
+  - Backoff is 50 → 100 → 200 → 400 ms (capped) for up to `timeoutMs`
+    (3 s), then `BUSY` naming the holder and the file.
+  - Same machine (boot time within ±1 min): stale only when the pid is dead.
+    Another machine, or an unreadable lock: stale when the mtime is older than
+    30 s.
+  - Takeover: rename aside, verify, restore if it was a live lock (Correction
+    7), clean up.
+  - A heartbeat touches the mtime every 5 s (Correction 6); the timer is
+    `unref`'d, so it never keeps a CLI process alive.
+  - A half-written lock is removed. Unexpected filesystem errors come back as
+    `ERROR` results, never as rejections.
+- **Known limits (accepted):**
+  - With **three** writers racing on a dead lock in the same instant, the
+    restore can fail because a third lock already exists, leaving two holders.
+    This needs three contenders within microseconds of each other.
+  - An unreadable lock can't be identity-checked after renaming it aside.
+  - A container sharing this machine's kernel is New-10, not accepted.
+- **Tests:** `VaultLock.test.js`, 25 tests. They cover every rule in RFC
+  §6.5 (with Corrections 6 and 7), and two takers racing in-process. **Real
+  mutual exclusion:** 4 processes × 25 lock-protected increments of a shared
+  counter end at 100. Three mutations were each caught by a test: no restore
+  after a racing takeover; age-based staleness on the same machine (the H1
+  bug); and a non-exclusive create (the counter ended at 21/100). The
+  in-process "two takers" test did **not** catch the first mutation, because
+  in one process the two acquisitions run in sequence; the injected-rename
+  test covers that path.
+- **Evidence:** 878/878 tests pass. Suite time, alternating with and without
+  the change: 28.28 s vs 28.30 s, then 29.19 s vs 29.14 s (no change).
+  `VaultLock.js` 96.22% lines (New-7 method). Project totals unchanged
+  (the new file is excluded from them). Lint on tracked + new files: 0 errors,
+  344 warnings (= baseline). `tsc` 345 (= baseline), none in the new files.
+  A first pass had 9 new `tsc` errors, fixed with a JSDoc typedef.
 - **Goal:** A standalone lock implementing RFC §6.5 (exclusive create,
   backoff, `boot` + pid same-machine staleness, `refreshedAt` heartbeat, rename
   takeover, nonce-checked release, `BUSY`). Not yet wired to anything.
@@ -246,6 +302,10 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 - **Implementation guidance:** Hash and parse **the same buffer**: re-reading
   the file to decrypt reopens the race. Legacy-KDF vaults get re-salted by
   `saveVault`, so the returned `keyMaterial` must be the new one (RFC H3).
+  From Task 4: `VaultLock` needs the vault's directory to exist, so a
+  `create` transaction makes it **before** locking. Check `lock.lost` right
+  before the final rename and abort if set: a lost lock means another writer
+  may be inside. Map `acquire()`'s `BUSY`/`ERROR` results straight through.
 - **Validation:** Tests for `STALE`, `REKEYED`, a KDF-upgrade write returning
   new `keyMaterial`, and a throwing `mutate` leaving the file byte-identical.
   ≥70% lines on changed files.
@@ -287,7 +347,9 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 
 - **Status:** ⬜ not started.
 - **Goal:** Users learn about the concurrency change before they hit `BUSY`,
-  and `vault env doctor` reports a stale or orphaned `.lock`.
+  and `vault env doctor` reports a stale or orphaned `.lock`, plus any
+  `<vault>.lock.stale.*` file (left only if a process dies between a
+  takeover's rename and its cleanup, Task 4).
 - **Constraints:** `doctor` stays read-only: it reports, it doesn't delete.
 - **Dependencies:** 6.
 - **Implementation guidance:** The `BUSY` message, the docs and `doctor` must
@@ -719,7 +781,8 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 
 ### New-9: Type-check gate: confirm "no new errors" as this plan's rule
 
-- **Status:** ⬜ not started (decision needed from the author).
+- **Status:** ✅ decided 2026-10-21, approved with Task 3 ("next"): the
+  proposed rule below is this plan's type-check gate (see Decisions).
 - **Found:** Task 3, 2026-10-21.
 - **Goal:** A recorded rule for the DoD's "type check passes", given 345
   pre-existing `tsc` errors and CI running it report-only.
@@ -731,3 +794,45 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 - **Validation:** The rule is recorded under Decisions with its date.
 - **Cost of leaving it:** "Type check passes" stays impossible to meet
   literally, so each task interprets it on its own.
+
+### New-10: Lock: a container sharing the kernel can look like this machine
+
+- **Status:** ⬜ not started.
+- **Found:** Task 4, 2026-10-21.
+- **Goal:** A lock held by a process in another pid namespace is never judged
+  stale by a pid probe from this one.
+- **Constraints:** Keep the boot-time rule (it's what survives macOS hostname
+  changes, RFC review finding L1). No new dependencies.
+- **Dependencies:** 4. **Blocks the release of Task 6** on Linux.
+- **Implementation guidance:** On Linux, a Docker container shares the host
+  kernel, so it reports the **same boot time**. Its pids live in a different
+  namespace, though. A `vault` CLI in a devcontainer locking a bind-mounted
+  `.env.vault` writes, say, pid 42. The host probes its own pid 42, finds it
+  dead (or someone else), and takes over a **live** lock, which is exactly the
+  lost update this plan prevents. Fix: record the pid-namespace id (inode of
+  `/proc/self/ns/pid`, Linux only) in the lock and require it to match before
+  trusting a pid probe. Otherwise fall back to the mtime rule. macOS and
+  Windows have no shared-kernel containers (Docker Desktop runs a VM with its
+  own boot time), so they're unaffected.
+- **Validation:** A unit test with an injected namespace id: a same-boot lock
+  with a different namespace and a "dead" pid is **not** taken over while its
+  mtime is fresh. Existing VaultLock tests stay green.
+- **Cost of leaving it:** On Linux with containers, a GUI or host CLI can
+  silently overwrite a write made from inside a container.
+
+### New-11: Bring RFC §6.5 in line with Corrections 6 and 7
+
+- **Status:** ⬜ not started.
+- **Found:** Task 4, 2026-10-21.
+- **Goal:** The approved RFC describes the lock that was actually built.
+- **Constraints:** Documentation only. Mark it as a revision with a date; don't
+  rewrite history.
+- **Dependencies:** 4 (and New-10 if it changes the lock's fields).
+- **Implementation guidance:** Remove `refreshedAt` from the lock schema,
+  describe the mtime heartbeat, and replace "atomic, so only one taker wins"
+  with verify-and-restore. Do it after New-10, so the schema changes once.
+- **Validation:** RFC §6.5's table matches `VaultLock.js`, and its header
+  notes the revision.
+- **Cost of leaving it:** Anyone reading the approved design (a reviewer, or
+  whoever implements Task 8's `doctor`) builds against a field that doesn't
+  exist.

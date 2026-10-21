@@ -65,6 +65,10 @@ Known so far. Each entry says what breaks.
 6. **The GUI release with the env UI must state the minimum CLI version.** An
    older CLI takes no lock, so it can still overwrite GUI writes (RFC §8). The
    app can't detect which CLI is installed.
+7. **Task 6 (CLI locking) not to Linux users before New-10.** A CLI in a
+   container sharing the host kernel has the same boot time but its own pid
+   namespace, so the host can take over its live lock and overwrite its
+   write. macOS and Windows are unaffected.
 
 ## Rollback
 
@@ -107,3 +111,26 @@ Known hazards so far, to be completed per task:
   `vault env set` then `vault env get` round-trips.
 - **Rollback:** fully available. Revert or downgrade; no data was changed and
   keys are identical, so vaults written by either version open in the other.
+
+### Task 4: `VaultLock` module
+
+- **Runtime change:** none yet. The module exists, but nothing calls it until
+  Task 5/6.
+- **Schema:** defines a new on-disk file, `<vault>.lock` (v1:
+  `{ v, pid, host, tool, nonce, boot, acquiredAt }`, mode `0600`, mtime =
+  heartbeat). Takeovers briefly create `<vault>.lock.stale.<hex>`, removed
+  right after. Nothing writes either file until Task 6 ships.
+- **Before it ships:** nothing; it's inert on its own.
+- **Gated by:** nothing.
+- **Must not ship early:** the lock becomes live with Task 6. New-10 must land
+  before that release reaches Linux users ("must not ship early" item 7).
+- **Per environment:** works on macOS, Linux and Windows (`process.kill(pid, 0)`
+  and `utimes` exist on all three). Shared-kernel containers on Linux: New-10.
+  Network and synced folders: the mtime rule applies; documented as
+  unsupported for concurrent multi-machine use (RFC §11).
+- **Verify after release:** n/a until Task 6. Then: while
+  `vault env set … --value-stdin` waits for input, `ls <vault>.lock` shows
+  nothing (no lock across user think time). During a long change-password,
+  the lock's mtime advances every 5 s.
+- **Rollback:** nothing to roll back on its own. Once Task 6 ships, older
+  versions ignore `.lock` files (see the Rollback section).
