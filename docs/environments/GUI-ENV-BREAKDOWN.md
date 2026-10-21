@@ -54,7 +54,8 @@ updated as each task finishes, not in a batch at the end.
 | New-9  | Type-check gate: confirm "no new errors" as this plan's rule     | —   | P1  | ✅     | —                                      |
 | New-10 | Lock: a container sharing the kernel can look like this machine  | —   | P1  | 🟡     | 4 (blocks the release of 6)            |
 | New-11 | Bring RFC §6.5 in line with Corrections 6 and 7                  | —   | P2  | ⬜     | 4                                      |
-| New-12 | Windows: retry the final rename on `EPERM`                       | M1  | P1  | ⬜     | 5 (blocks the release of 6 on Windows) |
+| New-12 | Windows: retry the final rename on `EPERM`                       | M1  | P1  | ✅     | 5 (blocks the release of 6 on Windows) |
+| New-13 | CI runs the unit tests on Windows and macOS too                  | —   | P1  | ⬜     | — (verifies 4, New-12)                 |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -75,7 +76,7 @@ with M0 (1, 2) required before 19 ships to anyone.
   (`continue-on-error`). The rule for this plan is no new errors (New-9).
 - Branch: `feat/vault-env-gui`, not merged, not released. Commits: `dd4e2e1`
   (RFC + discovery), `92e9354` (Task 0), `3553e81` (Task 3), `2f01040`
-  (Task 4), `ac641ad` (New-10).
+  (Task 4), `ac641ad` (New-10), `c87c53f` (Task 5).
 
 ## Corrections to the plan
 
@@ -294,9 +295,9 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 
 ### Task 5: `read()` / `transact()` with revisions and `REKEYED`
 
-- **Status:** ✅ done 2026-10-21: its own validation is met. Uncommitted on
-  `feat/vault-env-gui`; not merged, not released. Nothing calls the new
-  methods yet (Task 6 does).
+- **Status:** ✅ done 2026-10-21: its own validation is met. Committed as
+  `c87c53f` on `feat/vault-env-gui`; not merged, not released. Approved by
+  the author. Nothing calls the new methods yet (Task 6 does).
 - **Built:** in `EnvironmentVaultService`:
   - `revisionOf(bytes)` returns `sha256:<hex>`.
   - `read(path, auth)` reads the file once, then hashes and parses that same
@@ -826,8 +827,10 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
   used exactly that from a scratch directory. Put it under `scripts/` and point
   `reportsDirectory` somewhere other than `./coverage`, so it doesn't overwrite
   the real report.
-- **Validation:** Running it on `src/electron/services/CryptographyService.js`
-  prints that file's row (100% lines at Task 3), and `npm run test:coverage`
+- **Note from New-12:** the `text` reporter hides fully covered files (a 100%
+  file printed no row). Use the `json-summary` reporter and read
+  `coverage-summary.json` for exact per-file numbers.
+- **Validation:** Running it on `src/electron/services/CryptographyService.js` prints that file's row (100% lines at Task 3), and `npm run test:coverage`
   output is unchanged.
 - **Cost of leaving it:** Each task re-creates the config by hand from this
   note. It lives outside the repo, so a reviewer can't re-run the measurement
@@ -939,7 +942,35 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### New-12: Windows: retry the final rename on `EPERM`
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-21: its own validation is met. Uncommitted on
+  `feat/vault-env-gui`; not merged, not released. **Simulated, not run on
+  Windows:** no machine or CI job here runs the tests on Windows (New-13).
+- **Built:**
+  - `src/electron/utils/moveWithRetry.js`: `fs.move(…, { overwrite: true })`,
+    retried up to 3 tries, 50 ms apart, **only on `win32`** and only for
+    `EPERM`/`EBUSY`/`EACCES`. Other errors, and the same codes on other
+    platforms (where they're real permission problems), fail at once.
+    Platform, move and sleep are injectable.
+  - `#writeEncrypted` (shared by `saveVault` and `transact`) uses it.
+    When the rename finally fails, it removes the `.tmp` and rethrows; the
+    vault is untouched.
+  - That cleanup applies on **every platform**, not just Windows. A failed
+    rename used to leave `<vault>.tmp` behind everywhere. Removing it is
+    harmless (it was never the vault) and the validation required it.
+- **Tests:**
+  - 9 unit tests: the retry per code, giving up after 3 tries, no retry on a
+    non-transient code, no retry on darwin/linux, a real move.
+  - 2 filesystem tests through `transact` with `process.platform` set to
+    `win32`: saves after 2 blocked renames; after 3, `ERROR` with the vault
+    byte-identical, no `.tmp` and no lock left.
+
+  Mutations, each caught: never retry; retry on every platform; skip the
+  `.tmp` cleanup.
+
+- **Evidence:** 914 passed + 1 skipped. `moveWithRetry.js` 100% lines,
+  `EnvironmentVaultService.js` 92.3%. Project totals unchanged. Lint clean.
+  `tsc` 345 (= baseline), 0 on changed lines. A first pass had 6 new errors
+  in the test (options typed from their defaults), fixed with JSDoc.
 - **Found:** Task 5, 2026-10-21. RFC §11 lists it as a mitigation ("bounded
   retry, 3× / 50 ms"), but no task owned it.
 - **Goal:** On Windows, a vault write doesn't fail because another process
@@ -960,3 +991,28 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 - **Cost of leaving it:** Windows users get sporadic "failed to save" errors,
   most likely while the GUI is open. Nothing is lost (the old file stays), but
   the CLI looks unreliable there.
+
+### New-13: CI runs the unit tests on Windows and macOS too
+
+- **Status:** ⬜ not started.
+- **Found:** New-12, 2026-10-21.
+- **Goal:** Every PR runs `npm run test:coverage` (or at least
+  `npx vitest run`) on `windows-latest` and `macos-latest` as well as
+  Ubuntu.
+- **Constraints:** Don't slow the existing Ubuntu gate. Run the extra
+  platforms as parallel matrix jobs. Coverage thresholds stay enforced on one
+  platform only, so platform-specific branches don't make the gate flaky.
+- **Dependencies:** None. It verifies Task 4 and New-10 (Linux already runs),
+  and New-12, Task 6 and Task 16 on Windows.
+- **Implementation guidance:** `release.yml` already builds on Windows and
+  macOS, so the runners work. Tests that touch POSIX-only behavior (file modes
+  like `0600`, `process.kill` semantics, `/proc`) are already guarded or
+  injected, but expect a first run to surface a few path-separator and
+  file-locking assumptions in older tests. Those are findings, not reasons to
+  skip the job.
+- **Validation:** A PR shows green Windows and macOS test jobs. Then a
+  Windows-only assertion (for example in `moveWithRetry.test.js`, which runs
+  the real move) runs there instead of being simulated.
+- **Cost of leaving it:** Windows behavior in the lock (pid probes, `utimes`,
+  rename-aside takeover) and in the write path (New-12) stays simulated.
+  Windows users would be the first to run it for real.

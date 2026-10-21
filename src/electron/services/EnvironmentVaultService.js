@@ -15,6 +15,7 @@ const SUSPICIOUS_VALUE_RE =
   /-----BEGIN |sk_live_|AKIA[0-9A-Z]{16}|[0-9a-f]{64,}/;
 import { validatePasswordStrength } from '../../utils/passwordValidation.js';
 import { getAppDataPath, getEnvsDir } from '../utils/appPaths.js';
+import { moveWithRetry } from '../utils/moveWithRetry.js';
 import { toDotenv } from '../../utils/dotenv.js';
 
 function resolvePath(...segments) {
@@ -323,7 +324,17 @@ export class EnvironmentVaultService {
 
     const tmpPath = `${vaultPath}.tmp`;
     await fs.writeJSON(tmpPath, vaultFile, { spaces: 2 });
-    await fs.move(tmpPath, vaultPath, { overwrite: true });
+    try {
+      await moveWithRetry(tmpPath, vaultPath);
+    } catch (error) {
+      // The vault is untouched; don't leave the unrenamed copy beside it.
+      try {
+        await fs.remove(tmpPath);
+      } catch {
+        // Best effort: the original error is the one to report.
+      }
+      throw error;
+    }
 
     // After a re-key the "previous good state" is encrypted under the old
     // key: it would still open with a password the user just retired (maybe

@@ -385,6 +385,65 @@ describe('EnvironmentVaultService read / transact', () => {
     });
   });
 
+  describe('on Windows, a target briefly held open (New-12)', () => {
+    let realPlatform;
+
+    beforeEach(() => {
+      realPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', realPlatform);
+    });
+
+    /** Make the first `n` renames fail as if a scanner held the target. */
+    const blockRenames = (n) => {
+      const realMove = fs.move.bind(fs);
+      let left = n;
+      return vi.spyOn(fs, 'move').mockImplementation(async (...args) => {
+        if (left-- > 0) {
+          throw Object.assign(new Error('EPERM: operation not permitted'), {
+            code: 'EPERM',
+          });
+        }
+        return realMove(...args);
+      });
+    };
+
+    it('saves after two blocked renames', async () => {
+      const move = blockRenames(2);
+
+      const result = await EnvironmentVaultService.transact(
+        vaultPath,
+        PW,
+        setVar('dev', 'A', '1')
+      );
+
+      expect(result.success).toBe(true);
+      expect(move).toHaveBeenCalledTimes(3);
+      const reread = await EnvironmentVaultService.read(vaultPath, PW);
+      expect(reread.vault.getActiveVersion('dev').vars).toEqual({ A: '1' });
+    });
+
+    it('after three blocked renames, fails with the vault intact and no .tmp left', async () => {
+      blockRenames(3);
+      const before = fs.readFileSync(vaultPath);
+
+      const result = await EnvironmentVaultService.transact(
+        vaultPath,
+        PW,
+        setVar('dev', 'A', '1')
+      );
+
+      expect(result).toMatchObject({ success: false, code: 'ERROR' });
+      expect(result.error).toContain('EPERM');
+      expect(fs.readFileSync(vaultPath).equals(before)).toBe(true);
+      expect(fs.existsSync(`${vaultPath}.tmp`)).toBe(false);
+      expect(lockLeft()).toBe(false);
+    });
+  });
+
   describe('revisionOf', () => {
     it('is the sha256 of the bytes', () => {
       expect(EnvironmentVaultService.revisionOf(Buffer.from('abc'))).toBe(

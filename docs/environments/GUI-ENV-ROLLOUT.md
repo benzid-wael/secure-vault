@@ -70,8 +70,9 @@ Known so far. Each entry says what breaks.
    namespace, so the host can take over its live lock and overwrite its write. macOS and Windows are unaffected. _Status:_ New-10 is built; it clears this
    item once its Linux-only test has passed in CI.
 8. **Task 6 (CLI locking) not to Windows users before New-12.** Every write
-   then takes the lock and renames under it; without the rename retry, a
-   scanner or reader holding the file makes the write fail.
+   then takes the lock and renames under it; without the rename retry, a scanner or reader holding the file makes the
+   write fail. _Status:_ New-12 is built and tested by simulation; real
+   Windows coverage waits on New-13.
 
 ## Rollback
 
@@ -174,3 +175,25 @@ Known hazards so far, to be completed per task:
   is New-12's concern on Windows.
 - **Verify after release:** n/a until Task 6.
 - **Rollback:** fully available; no data or format change.
+
+### New-12: Windows rename retry
+
+- **Runtime change:** every env vault write (`saveVault` and `transact`, so
+  every CLI env command that writes) now:
+  - on Windows, retries the final rename up to 3 times, 50 ms apart, when it
+    fails with `EPERM`/`EBUSY`/`EACCES`;
+  - on every platform, removes `<vault>.tmp` when the rename finally fails,
+    where it used to leave it behind.
+- **Schema or config change:** none.
+- **Before it ships:** nothing required; New-13 would show it working on real
+  Windows.
+- **Gated by:** nothing.
+- **Must not ship early:** n/a. It's what clears "must not ship early" item 8.
+- **Per environment:** Windows retries. macOS and Linux behave as before,
+  apart from the `.tmp` cleanup. A save that still fails after 3 tries shows
+  the same error as today; nothing is lost.
+- **Verify after release:** on Windows, with the vault open in an editor or
+  scanned by antivirus, `vault env set` succeeds. No `<vault>.tmp` is left
+  next to any vault after a failed write.
+- **Rollback:** fully available. Reverting restores leaving `.tmp` behind on
+  failure.
