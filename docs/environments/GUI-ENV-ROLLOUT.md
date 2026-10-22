@@ -271,3 +271,23 @@ Known hazards so far, to be completed per task:
   on, the `env-vault` e2e scenario's steps work by hand.
 - **Rollback:** reinstall the previous app. Nothing on disk changes format;
   env vaults written by the GUI are ordinary vault files.
+
+### After first testing: copy, export, move, long values, "Unknown view" fix
+
+- **Runtime change (gated, desktop only):**
+  - Copy writes the **system clipboard** from main; a copied secret is
+    cleared after 30 s unless the clipboard changed since.
+  - Export writes a dotenv file (resolved values, `0600`) where the user
+    chooses in the save dialog.
+  - Move and duplicate write new versions in both environments.
+- **Schema or config change:** none.
+- **Before it ships:** as for the MVP entry. Release notes should say an
+  export holds plaintext secrets and is the user's to protect.
+- **Gated by:** the Environments UI gate.
+- **Per environment:** desktop only. Clipboard clearing relies on the app
+  running: if it quits within 30 s of a copy, the value stays on the
+  clipboard (accepted; the same as the CLI piping to `pbcopy`).
+- **Verify after release:** copy a secret, wait 30 s, paste: empty. Copy,
+  then copy something else, wait: the other text is still there.
+- **Rollback:** reinstall the previous app. Exported files remain where the
+  user saved them.

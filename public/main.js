@@ -1,4 +1,11 @@
-import { app, BrowserWindow, ipcMain, dialog, powerMonitor } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  powerMonitor,
+  clipboard,
+} from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -42,6 +49,7 @@ import { getVaultsDir } from '../src/electron/utils/appPaths.js';
 import { readFeatures } from '../src/electron/utils/features.js';
 import { EnvVaultRegistry } from '../src/electron/services/EnvVaultRegistry.js';
 import { EnvVaultSession } from '../src/electron/services/EnvVaultSession.js';
+import { ClipboardService } from '../src/electron/services/ClipboardService.js';
 import { createEnvVaultHandlers } from '../src/electron/services/EnvVaultIpc.js';
 
 class ElectronApp {
@@ -240,6 +248,8 @@ class ElectronApp {
         registry: this.envRegistry,
         session: this.envSession,
         getWindow: () => this.mainWindow,
+        dialog,
+        clipboard: new ClipboardService({ clipboard }),
       });
       for (const [channel, fn] of Object.entries(envHandlers)) {
         handle(channel, fn);

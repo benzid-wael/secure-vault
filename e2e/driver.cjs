@@ -4,7 +4,14 @@
 // everything else is the production main + renderer.
 const path = require('path');
 const fs = require('fs');
-const { app, dialog, BrowserWindow, ipcMain, session } = require('electron');
+const {
+  app,
+  dialog,
+  BrowserWindow,
+  ipcMain,
+  session,
+  clipboard,
+} = require('electron');
 
 const REPO = process.env.E2E_REPO;
 const OUT = process.env.E2E_OUT;
@@ -123,6 +130,7 @@ module.exports = function scenario(fn) {
       sandboxed: () =>
         Promise.race([sandboxed, sleep(5000).then(() => 'no report')]),
       cspViolations,
+      clipboardText: () => clipboard.readText(),
       api: (call) => js(`window.electronAPI.${call}`),
       clickLabel: (label) =>
         js(`(() => {
@@ -163,7 +171,13 @@ module.exports = function scenario(fn) {
       },
     };
 
-    await fn(t);
+    // Scenarios may copy to the real clipboard: give the user theirs back.
+    const savedClipboard = clipboard.readText();
+    try {
+      await fn(t);
+    } finally {
+      clipboard.writeText(savedClipboard);
+    }
 
     const failed = results.filter((ok) => !ok).length;
     console.log(`\n${results.length - failed}/${results.length} passed`);

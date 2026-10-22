@@ -201,6 +201,10 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked }) {
               vaultId={vault.id}
               env={selected}
               onLocked={onLocked}
+              otherEnvs={(envs || [])
+                .map((e) => e.name)
+                .filter((name) => name !== selected)}
+              onChanged={load}
             />
           )}
         </Box>

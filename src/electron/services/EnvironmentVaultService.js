@@ -38,7 +38,7 @@ function resolvePath(...segments) {
  * @typedef {Object} TransactResult
  * @property {boolean} success
  * @property {string} [code] - on failure: as VaultReadResult, plus STALE, BUSY,
- *   LIMIT
+ *   LIMIT, CONFLICT
  * @property {string} [error]
  * @property {string} [revision] - the new one; on STALE, the current one
  * @property {{key: Buffer, header: Object}} [keyMaterial]
@@ -474,8 +474,12 @@ export class EnvironmentVaultService {
       try {
         result = await mutate(vault, { revision });
       } catch (error) {
-        // LIMIT (the version cap) is the one refusal a caller can act on.
-        return fail(error.code === 'LIMIT' ? 'LIMIT' : 'ERROR', error.message);
+        // Refusals a caller can act on keep their code: LIMIT (the version
+        // cap), CONFLICT (the change would overwrite something).
+        const code = ['LIMIT', 'CONFLICT'].includes(error.code)
+          ? error.code
+          : 'ERROR';
+        return fail(code, error.message);
       }
 
       // Reuse the key unless it's due for the work-factor upgrade and we hold

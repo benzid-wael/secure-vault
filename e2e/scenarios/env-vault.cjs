@@ -4,6 +4,7 @@
 // create a new vault with an env and a variable. Plus the M0 checks: the
 // renderer is sandboxed and the CSP blocks inline scripts.
 process.env.SECURE_VAULT_ENV_UI = '1';
+const fs = require('fs');
 const path = require('path');
 const scenario = require('../driver.cjs');
 
@@ -147,6 +148,40 @@ scenario(async (t) => {
   await t.click('Reload');
   await t.sleep(800);
   t.check('reload clears the warning', !(await t.hasText('changed elsewhere')));
+
+  // Copy, export and move: values go through main, never the page.
+  await t.clickLabel('Copy API_KEY');
+  t.check(
+    'copy reports the clipboard timeout',
+    await t.waitText('Copied API_KEY. It is cleared')
+  );
+  t.check(
+    'the value is on the clipboard',
+    t.clipboardText() === 'sk-second-edit'
+  );
+  await t.click('Export .env');
+  t.check('export reports the file', await t.waitText('Exported prod to'));
+  const exported = fs.readFileSync(t.EXPORT_PATH, 'utf8');
+  t.check(
+    'the export holds resolved values',
+    exported.includes('API_KEY=sk-second-edit') &&
+      exported.includes('LOG_LEVEL=debug')
+  );
+  t.check(
+    'the export is private (0600)',
+    process.platform === 'win32' ||
+      (fs.statSync(t.EXPORT_PATH).mode & 0o777) === 0o600
+  );
+  await t.clickLabel('More actions for FROM_CLI');
+  await t.click('Move to environment…');
+  await t.waitText('To environment');
+  await t.click('Move');
+  t.check('move reports success', await t.waitText('Moved FROM_CLI to base.'));
+  t.check(
+    'the key moved in the file',
+    (await activeVars('base')).FROM_CLI === 'cli-value-2' &&
+      !('FROM_CLI' in (await activeVars('prod')))
+  );
 
   // Lock
   await t.click('Lock');

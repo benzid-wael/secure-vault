@@ -23,7 +23,7 @@ updated as each task finishes, not in a batch at the end.
 | 9      | `applyVarChanges` model method                                   | M2  | P0  | 🟡     | 6                                      |
 | 10     | Changeset apply + rebase in the service                          | M2  | P0  | ⏸     | 9                                      |
 | 11     | Single-instance lock for the app                                 | M3  | P1  | ⬜     | 0                                      |
-| 12     | Main-process `ClipboardService` + IPC                            | M3  | P1  | ⬜     | 0, New-3                               |
+| 12     | Main-process `ClipboardService` + IPC                            | M3  | P1  | 🟡     | 0, New-3                               |
 | 13     | Idle lock for password vaults                                    | M3  | P1  | ⬜     | New-2                                  |
 | 14     | `EnvVaultRegistry` (ids, dialogs, recents)                       | M3  | P0  | 🟡     | 6, 11, New-2                           |
 | 15     | `EnvVaultSession` (keys, commit/recover, idle)                   | M3  | P0  | 🟡     | 5, 14, New-2                           |
@@ -38,7 +38,7 @@ updated as each task finishes, not in a batch at the end.
 | 24     | Renderer: env structure ops                                      | M5  | P2  | ⬜     | 18, 20                                 |
 | 25     | Renderer: history, rollback, squash                              | M5  | P2  | ⬜     | 7, 18, 20                              |
 | 26     | Renderer: diff and validate                                      | M5  | P2  | ⬜     | 18, 20                                 |
-| 27     | Renderer: import, export, template                               | M5  | P2  | ⬜     | 18, 20                                 |
+| 27     | Renderer: import, export, template                               | M5  | P2  | 🟡     | 18, 20                                 |
 | 28     | Renderer: env vault change-password                              | M5  | P2  | ⬜     | 7, 18, 19                              |
 | 29     | e2e scenario `env-vault-concurrent`                              | M6  | P1  | 🟡     | 21                                     |
 | 30     | CI e2e job (ubuntu + xvfb)                                       | M6  | P1  | ⬜     | 1, 29                                  |
@@ -62,6 +62,11 @@ updated as each task finishes, not in a batch at the end.
 | New-17 | Shared test mock lacks `removeAllListeners` / `onVaultLocked`    | —   | P2  | ⬜     | —                                      |
 | New-18 | Dev-mode Content-Security-Policy                                 | M0  | P2  | ⬜     | 2                                      |
 | New-19 | Verify the CSP and sandbox in packaged builds (asar)             | M0  | P1  | ⬜     | 2 (blocks the next tag)                |
+| New-20 | Fix: reveal/edit fail with "Unknown view" in dev                 | M4  | P0  | ✅     | 15, 20                                 |
+| New-21 | Move or duplicate keys between environments                      | M4  | P0  | ✅     | 9, 17, 20                              |
+| New-22 | Open a folder and find the vault the CLI would use               | M3  | P1  | ⬜     | 14                                     |
+| New-23 | Unlock error says which file, without "corrupted" first          | M4  | P2  | ⬜     | 19                                     |
+| New-24 | Unlock an env vault with the password a profile injects          | M4  | P2  | ⬜     | 15                                     |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -83,7 +88,7 @@ with M0 (1, 2) required before 19 ships to anyone.
 - Branch: `feat/vault-env-gui`, not merged, not released. Commits: `dd4e2e1`
   (RFC + discovery), `92e9354` (Task 0), `3553e81` (Task 3), `2f01040`
   (Task 4), `ac641ad` (New-10), `c87c53f` (Task 5), `8b2a0f4`
-  (New-12), `8c2a3c2` (Task 6).
+  (New-12), `8c2a3c2` (Task 6), `618b51b` (the env vault MVP).
 
 ## Corrections to the plan
 
@@ -578,7 +583,15 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 12: Main-process `ClipboardService` + IPC
 
-- **Status:** ⬜ not started.
+- **Status:** 🟡 partial 2026-10-22, pulled into the MVP after testing. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Built:** `ClipboardService` (main): writes the clipboard; a sensitive
+  copy is cleared after 30 s unless the clipboard has changed since; a new
+  copy replaces the pending clear. `env:copy` takes a view, a key and a
+  format (`value`, `pair`, `key`) and returns no value. Key names and
+  public values aren't cleared. The e2e driver saves and restores the
+  real clipboard around each scenario.
+- **Not done:** password-vault entries still copy from the renderer
+  (Task 22, New-3).
 - **Goal:** Main writes secrets to the clipboard and clears them after 30 s if
   the clipboard still holds the same value (D6). It's exposed as one IPC channel
   that takes a reference, never a value from an env vault.
@@ -680,7 +693,10 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
   `env:commit` (against the view's base revision), `env:create`. Preload:
   `window.electronAPI.envVaults` and `getFeatures`. 99% lines;
   contract tests drive the handlers on a real vault.
-- **Not done:** `env:copy` (Task 12), `env:bulk-load` (Task 21),
+- **Added after testing (2026-10-22):** `env:copy`, `env:transfer`,
+  `env:export` (preload: `copy`, `transfer`, `exportEnv`). `transact`
+  now keeps `CONFLICT` from `mutate`, as it does `LIMIT`.
+- **Not done:** `env:bulk-load` (Task 21),
   `env-vault-changed` (Task 16), and the M5 channels (Task 18).
   `env-vaults:create` supports `mode: 'appdata'` only.
 - **Goal:** `handleEnvVault` and the M4 channels (`env-vaults:*`,
@@ -733,8 +749,12 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
   dropped on unmount and on lock. 96% lines.
 - **Decision:** editing a masked value reveals it first, so saving an
   untouched field can't wipe the secret.
-- **Not done:** Copy (Task 12), refresh on window focus or file change
-  (Task 16).
+- **Added after testing (2026-10-22):** Copy (value, key name,
+  `KEY=value`) through main; values over 80 characters or multi-line
+  are shortened in the table, with a dialog showing the whole value and
+  a Copy button; multi-select; Export .env (New-21 and Task 27 have the
+  details).
+- **Not done:** refresh on window focus or file change (Task 16).
 - **Goal:** Masked table, per-row reveal, copy through main, inline edit as a
   one-op changeset, refresh banner, inherited keys marked.
 - **Constraints:** Revealed values are cleared on view close and on
@@ -798,7 +818,12 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 27: Renderer: import, export, template
 
-- **Status:** ⬜ not started.
+- **Status:** 🟡 partial 2026-10-22: **export only**, pulled in after testing. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Built:** `env:export`: main resolves the env like `vault env export`
+  (extends, templates), asks for the file in a native save dialog (default
+  `<env>.env`), and writes it `0600`, narrowing an existing file too. No
+  value crosses IPC.
+- **Not done:** import, template, JSON format.
 - **Goal:** Import a `.env` through main's open dialog; export and template
   through main's save dialog.
 - **Dependencies:** 18, 20.
@@ -1272,3 +1297,78 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
   "Content Security Policy" line.
 - **Cost of leaving it:** a blank window for every user if `file://` inside
   asar treats `'self'` differently.
+
+### New-20: Fix: reveal/edit fail with "Unknown view" in dev
+
+- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Found:** author testing `npm run dev:electron` on a real 194 KB vault:
+  Reveal and Edit failed with "Unknown view" in some environments.
+- **Cause:** React StrictMode mounts `EnvView` twice in dev, so two
+  `env:view` calls run at once. `openView` dropped any older view of the same
+  env; when the abandoned call finished last, it dropped the view the page
+  showed. The e2e didn't see it: it runs the production build.
+- **Fix:**
+  - Main no longer drops other views of an env. At most 32 views per vault,
+    oldest evicted first.
+  - The page closes a view that comes back to an unmounted component.
+- **Validation:** `EnvVaultsReal.test.jsx` renders the panel in StrictMode
+  on the real handlers, with the first `env:view` slowed. It failed (3/3)
+  before the fix. A session test pins the cap; it caught an off-by-sign bug
+  in the first version (a negative `slice` end dropped 9 of 20 views).
+
+### New-21: Move or duplicate keys between environments
+
+- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Found:** author testing, 2026-10-22.
+- **Built:**
+  - `env:transfer`: `{ viewId, keys, target, mode: 'copy'|'move', overwrite }`
+    in one transaction against the revision on screen. Values and
+    sensitivity carry over, including keys inherited from a parent, which
+    can be copied but not moved.
+  - Keys the target already has → `CONFLICT` naming them; the dialog offers
+    Overwrite.
+  - A move writes one version in each env.
+  - UI: a row's ⋮ menu, and multi-select with Copy to… / Move to….
+- **Validation:** contract tests (copy, move, conflict and overwrite,
+  inherited, unknown target, `STALE`, nothing written on refusal), UI tests
+  on the real handlers, and e2e (move `FROM_CLI` to `base`).
+
+### New-22: Open a folder and find the vault the CLI would use
+
+- **Status:** ⬜ not started.
+- **Found:** author testing, 2026-10-22: the app list showed an older
+  `Superxpense.env.vault` in the app folder, while `pvault` used the
+  project's hidden `.env.vault`.
+- **Goal:** Open… accepts a folder and resolves it the way the CLI does
+  (`resolveVaultPath`: upward to the git root, `config/.env.vault`, the app
+  folder).
+- **Constraints:** Same validation as a picked file; the resolved path is
+  shown before unlocking.
+- **Dependencies:** 14. Remembering opened vaults across restarts is the rest
+  of Task 14.
+- **Validation:** opening `services/Superxpense` lists its `.env.vault`.
+- **Cost of leaving it:** users have to find a hidden file, and can unlock a
+  different vault from the one their CLI uses without noticing.
+
+### New-23: Unlock error says which file, without "corrupted" first
+
+- **Status:** ⬜ not started.
+- **Found:** author testing, 2026-10-22.
+- **Goal:** a failed unlock reads "Wrong password for <path>" and mentions
+  damage only as the rarer case.
+- **Constraints:** the CLI's message is unchanged (scripts may match it).
+- **Dependencies:** 19.
+- **Validation:** a component test on the unlock dialog.
+- **Cost of leaving it:** a wrong password looks like a bug (it did here).
+
+### New-24: Unlock an env vault with the password a profile injects
+
+- **Status:** ⬜ not started.
+- **Found:** author testing, 2026-10-22: `pvault` gets the password from
+  `VAULT_ENV_PASSWORD`, set by a profile wrapper, so it's never typed.
+- **Goal:** decide whether the GUI should offer "Unlock with profile <name>".
+- **Constraints:** the password must stay in main.
+- **Dependencies:** 15; a design note first.
+- **Validation:** to be set by the design note.
+- **Cost of leaving it:** users who never type the password can't unlock in
+  the GUI without looking it up.

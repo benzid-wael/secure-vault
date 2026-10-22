@@ -13,9 +13,14 @@ import { EnvVaultRegistry } from '../../../electron/services/EnvVaultRegistry.js
 import {
   EnvVaultSession,
   ENV_VAULT_IDLE_MS,
+  MAX_VIEWS_PER_VAULT,
 } from '../../../electron/services/EnvVaultSession.js';
 import { createEnvVaultHandlers } from '../../../electron/services/EnvVaultIpc.js';
 import { readFeatures } from '../../../electron/utils/features.js';
+import {
+  ClipboardService,
+  CLIPBOARD_CLEAR_MS,
+} from '../../../electron/services/ClipboardService.js';
 
 const PW = 'Env-Pass-7&x';
 const SECRET = 'sk-very-secret';
@@ -294,17 +299,88 @@ describe('EnvVaultSession', () => {
     expect(read.success).toBe(true);
   });
 
-  it('scopes views to their vault and replaces a view of the same env', () => {
+  it('scopes views to their vault and keeps concurrent views of one env', () => {
     const session = new EnvVaultSession();
     const v1 = session.openView('a', 'prod', 'r1');
     expect(session.getView('b', v1)).toBeNull();
+    // A later view of the same env must not invalidate an earlier one: the
+    // calls can finish in either order (the "Unknown view" bug).
     const v2 = session.openView('a', 'prod', 'r2');
-    expect(session.getView('a', v1)).toBeNull();
+    expect(session.getView('a', v1)).toMatchObject({ revision: 'r1' });
     expect(session.getView('a', v2)).toMatchObject({ env: 'prod' });
     session.closeView('b', v2); // another vault's id can't close it
     expect(session.getView('a', v2)).not.toBeNull();
     session.closeView('a', v2);
     expect(session.getView('a', v2)).toBeNull();
+  });
+});
+
+describe('EnvVaultSession view cap', () => {
+  it('keeps at most MAX_VIEWS_PER_VAULT views per vault, dropping the oldest', () => {
+    const session = new EnvVaultSession();
+    const other = session.openView('b', 'prod', 'r');
+    const ids = Array.from({ length: MAX_VIEWS_PER_VAULT + 2 }, (_, i) =>
+      session.openView('a', 'prod', `r${i}`)
+    );
+    expect(session.getView('a', ids[0])).toBeNull();
+    expect(session.getView('a', ids[1])).toBeNull();
+    expect(session.getView('a', ids[2])).not.toBeNull();
+    expect(session.getView('a', ids.at(-1))).not.toBeNull();
+    expect(session.getView('b', other)).not.toBeNull(); // per vault
+  });
+});
+
+/** A clipboard like Electron's, plus a clock we fire by hand. */
+function fakeClipboard() {
+  let text = '';
+  const timers = [];
+  return {
+    clipboard: {
+      writeText: (t) => {
+        text = t;
+      },
+      readText: () => text,
+    },
+    timers,
+    setTimer: (fn, ms) => {
+      const timer = { fn, ms };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimer: (timer) => timers.splice(timers.indexOf(timer), 1),
+    fire: () => timers.splice(0).forEach((t) => t.fn()),
+  };
+}
+
+describe('ClipboardService', () => {
+  it('clears a copied secret after 30 s', () => {
+    const fake = fakeClipboard();
+    const service = new ClipboardService(fake);
+    expect(service.copy('s3cret')).toEqual({ clearsInMs: CLIPBOARD_CLEAR_MS });
+    expect(fake.clipboard.readText()).toBe('s3cret');
+    expect(fake.timers[0].ms).toBe(30000);
+    fake.fire();
+    expect(fake.clipboard.readText()).toBe('');
+  });
+
+  it('leaves what the user copied afterwards', () => {
+    const fake = fakeClipboard();
+    new ClipboardService(fake).copy('s3cret');
+    fake.clipboard.writeText('something else');
+    fake.fire();
+    expect(fake.clipboard.readText()).toBe('something else');
+  });
+
+  it('does not clear non-sensitive text, and a new copy replaces the timer', () => {
+    const fake = fakeClipboard();
+    const service = new ClipboardService(fake);
+    expect(service.copy('KEY', { sensitive: false })).toEqual({
+      clearsInMs: null,
+    });
+    expect(fake.timers).toHaveLength(0);
+    service.copy('a');
+    service.copy('b');
+    expect(fake.timers).toHaveLength(1);
   });
 });
 
@@ -314,13 +390,29 @@ describe('env vault IPC handlers (contract)', () => {
   let session;
   let h;
   let id;
+  let clip;
+  let dialog;
   const ev = {};
 
   beforeEach(async () => {
     filePath = await seed();
     registry = new EnvVaultRegistry({ envsDir });
     session = new EnvVaultSession();
-    h = createEnvVaultHandlers({ registry, session });
+    clip = fakeClipboard();
+    dialog = {
+      showSaveDialog: vi.fn(async () => ({
+        canceled: false,
+        filePath: path.join(dir, 'out', 'prod.env'),
+      })),
+    };
+    await fs.ensureDir(path.join(dir, 'out'));
+    h = createEnvVaultHandlers({
+      registry,
+      session,
+      dialog,
+      clipboard: new ClipboardService(clip),
+      getWindow: () => 'main-window',
+    });
     id = (await h['env-vaults:list']()).vaults[0].id;
   });
   afterEach(() => session.lockAll());
@@ -339,6 +431,9 @@ describe('env vault IPC handlers (contract)', () => {
       'env:view-close',
       'env:commit',
       'env:create',
+      'env:copy',
+      'env:transfer',
+      'env:export',
     ]) {
       expect(await h[channel](ev, filePath, 'prod')).toMatchObject({
         success: false,
@@ -535,6 +630,171 @@ describe('env vault IPC handlers (contract)', () => {
       'main-window',
       expect.anything()
     );
+  });
+
+  const activeVars = async (env) =>
+    (await EnvironmentVaultService.read(filePath, PW)).vault.getActiveVersion(
+      env
+    )?.vars ?? {};
+
+  it('copies a value, a KEY=value pair or a key name without returning it', async () => {
+    await unlock();
+    const view = await h['env:view'](ev, id, 'prod');
+    const copied = await h['env:copy'](ev, id, view.viewId, 'API_KEY');
+    expect(copied).toEqual({ success: true, clearsInMs: 30000 });
+    expect(JSON.stringify(copied)).not.toContain(SECRET);
+    expect(clip.clipboard.readText()).toBe(SECRET);
+
+    await h['env:copy'](ev, id, view.viewId, 'API_KEY', 'pair');
+    expect(clip.clipboard.readText()).toBe(`API_KEY=${SECRET}`);
+
+    // A key name or a public value isn't a secret: no clearing.
+    expect(await h['env:copy'](ev, id, view.viewId, 'API_KEY', 'key')).toEqual({
+      success: true,
+      clearsInMs: null,
+    });
+    expect(clip.clipboard.readText()).toBe('API_KEY');
+    expect(
+      (await h['env:copy'](ev, id, view.viewId, 'LOG_LEVEL')).clearsInMs
+    ).toBeNull();
+    expect(clip.clipboard.readText()).toBe('debug'); // inherited value
+
+    expect(
+      (await h['env:copy'](ev, id, view.viewId, 'API_KEY', 'html')).code
+    ).toBe('INVALID');
+    expect((await h['env:copy'](ev, id, view.viewId, 'NOPE')).code).toBe(
+      'NOT_FOUND'
+    );
+    expect((await h['env:copy'](ev, id, 'bogus', 'API_KEY')).code).toBe(
+      'INVALID'
+    );
+    await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'X', '1');
+    expect((await h['env:copy'](ev, id, view.viewId, 'API_KEY')).code).toBe(
+      'STALE'
+    );
+  });
+
+  it('copies keys to another env, keeping their sensitivity', async () => {
+    await unlock();
+    const view = await h['env:view'](ev, id, 'prod');
+    const result = await h['env:transfer'](ev, id, {
+      viewId: view.viewId,
+      keys: ['API_KEY', 'HOST', 'LOG_LEVEL'],
+      target: 'base',
+    });
+    expect(result).toMatchObject({ success: false, code: 'CONFLICT' });
+    expect(result.error).toBe('base already has LOG_LEVEL');
+
+    const ok = await h['env:transfer'](ev, id, {
+      viewId: view.viewId,
+      keys: ['API_KEY', 'HOST'],
+      target: 'base',
+    });
+    expect(ok.success).toBe(true);
+    const read = await EnvironmentVaultService.read(filePath, PW);
+    const base = read.vault.getActiveVersion('base');
+    expect(base.vars).toMatchObject({ API_KEY: SECRET, HOST: 'prod.example' });
+    expect(base.nonSensitive.sort()).toEqual(['HOST', 'LOG_LEVEL']);
+    expect((await activeVars('prod')).API_KEY).toBe(SECRET); // copy keeps it
+    // The view followed its own write.
+    expect((await h['env:reveal'](ev, id, view.viewId, 'HOST')).success).toBe(
+      true
+    );
+  });
+
+  it('moves keys, overwriting only when asked', async () => {
+    await unlock();
+    await EnvironmentVaultService.setEnv(filePath, PW, 'base', 'HOST', 'old');
+    const view = await h['env:view'](ev, id, 'prod');
+    const move = (overwrite) =>
+      h['env:transfer'](ev, id, {
+        viewId: view.viewId,
+        keys: ['HOST', 'API_KEY'],
+        target: 'base',
+        mode: 'move',
+        overwrite,
+      });
+    expect((await move(false)).code).toBe('CONFLICT');
+    expect((await activeVars('base')).HOST).toBe('old');
+    expect((await move(true)).success).toBe(true);
+    expect(await activeVars('base')).toMatchObject({
+      HOST: 'prod.example',
+      API_KEY: SECRET,
+    });
+    expect(Object.keys(await activeVars('prod'))).toEqual(['SHARED']);
+  });
+
+  it('refuses a bad transfer without writing', async () => {
+    await unlock();
+    const view = await h['env:view'](ev, id, 'prod');
+    const before = await fs.readFile(filePath);
+    const transfer = (request) =>
+      h['env:transfer'](ev, id, { viewId: view.viewId, ...request });
+    expect(
+      (await transfer({ keys: ['LOG_LEVEL'], target: 'base', mode: 'move' }))
+        .error
+    ).toBe("'LOG_LEVEL' is inherited from base; copy it instead");
+    expect((await transfer({ keys: ['NOPE'], target: 'base' })).error).toBe(
+      "Key 'NOPE' not found"
+    );
+    expect((await transfer({ keys: ['HOST'], target: 'qa' })).error).toBe(
+      "Environment 'qa' not found"
+    );
+    expect((await transfer({ keys: ['HOST'], target: 'prod' })).code).toBe(
+      'INVALID'
+    );
+    expect((await transfer({ keys: [], target: 'base' })).code).toBe('INVALID');
+    expect(
+      (await transfer({ keys: ['HOST'], target: 'base', mode: 'swap' })).code
+    ).toBe('INVALID');
+    expect(
+      (await h['env:transfer'](ev, id, { viewId: 'x', keys: ['HOST'] })).code
+    ).toBe('INVALID');
+    expect((await fs.readFile(filePath)).equals(before)).toBe(true);
+
+    await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'X', '1');
+    expect((await transfer({ keys: ['HOST'], target: 'base' })).code).toBe(
+      'STALE'
+    );
+  });
+
+  it('exports an env, resolved, to the file picked in the dialog, mode 0600', async () => {
+    await unlock();
+    const out = path.join(dir, 'out', 'prod.env');
+    const result = await h['env:export'](ev, id, 'prod');
+    expect(result).toEqual({ success: true, path: out });
+    expect(JSON.stringify(result)).not.toContain(SECRET);
+    expect(dialog.showSaveDialog).toHaveBeenCalledWith(
+      'main-window',
+      expect.objectContaining({ defaultPath: 'prod.env' })
+    );
+    const content = await fs.readFile(out, 'utf8');
+    expect(content).toContain(`API_KEY=${SECRET}`);
+    expect(content).toContain('LOG_LEVEL=debug'); // inherited
+    expect(content).toContain('SHARED=own'); // child wins
+    if (process.platform !== 'win32') {
+      expect((await fs.stat(out)).mode & 0o777).toBe(0o600);
+      // An existing file is narrowed to 0600 too.
+      await fs.chmod(out, 0o644);
+      await h['env:export'](ev, id, 'prod');
+      expect((await fs.stat(out)).mode & 0o777).toBe(0o600);
+    }
+  });
+
+  it('reports a canceled export, a missing env, and a locked vault', async () => {
+    expect((await h['env:export'](ev, id, 'prod')).code).toBe('LOCKED');
+    await unlock();
+    expect((await h['env:export'](ev, id, 'nope')).code).toBe('NOT_FOUND');
+    dialog.showSaveDialog.mockResolvedValueOnce({ canceled: true });
+    expect(await h['env:export'](ev, id, 'prod')).toEqual({
+      success: false,
+      canceled: true,
+    });
+    dialog.showSaveDialog.mockResolvedValueOnce({
+      canceled: false,
+      filePath: path.join(dir, 'no', 'such', 'dir', 'x.env'),
+    });
+    expect((await h['env:export'](ev, id, 'prod')).code).toBe('ERROR');
   });
 
   it('locks the vault when its password was changed elsewhere', async () => {

@@ -4,6 +4,9 @@ import { EnvironmentVaultService } from './EnvironmentVaultService.js';
 /** Idle time before an unlocked env vault locks itself (RFC §12 D1). */
 export const ENV_VAULT_IDLE_MS = 5 * 60 * 1000;
 
+/** Open views per vault; past this the oldest is dropped. */
+export const MAX_VIEWS_PER_VAULT = 32;
+
 const locked = () => ({
   success: false,
   code: 'LOCKED',
@@ -155,10 +158,18 @@ export class EnvVaultSession {
     for (const id of [...this.#vaults.keys()]) this.lock(id);
   }
 
-  /** A new view of `env`; a previous view of the same env is dropped. */
+  /**
+   * A new view of `env`. Other views of the same env stay valid: two
+   * `env:view` calls can be in flight at once (React StrictMode mounts twice
+   * in dev) and finish in either order, so dropping the older one could drop
+   * the one the page shows. The page closes views it no longer uses; a cap
+   * bounds what a page forgets to close.
+   */
   openView(id, env, revision) {
-    for (const [viewId, view] of this.#views) {
-      if (view.id === id && view.env === env) this.#views.delete(viewId);
+    const own = [...this.#views].filter(([, view]) => view.id === id);
+    const excess = Math.max(0, own.length - MAX_VIEWS_PER_VAULT + 1);
+    for (const [viewId] of own.slice(0, excess)) {
+      this.#views.delete(viewId); // oldest first: a Map keeps insertion order
     }
     const viewId = crypto.randomBytes(16).toString('hex');
     this.#views.set(viewId, { id, env, revision });

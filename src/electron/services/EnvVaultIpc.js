@@ -1,4 +1,7 @@
+import fs from 'fs-extra';
 import { EnvironmentVaultService } from './EnvironmentVaultService.js';
+import { EnvironmentResolver } from './EnvironmentResolver.js';
+import { quoteDotenvValue, toDotenv } from '../../utils/dotenv.js';
 
 const invalid = (error) => ({ success: false, code: 'INVALID', error });
 
@@ -54,12 +57,16 @@ const masked = (rows) =>
  * @param {import('./EnvVaultSession.js').EnvVaultSession} deps.session
  * @param {typeof EnvironmentVaultService} [deps.service]
  * @param {() => any} [deps.getWindow] Parent for native dialogs.
+ * @param {{showSaveDialog: Function}} [deps.dialog] Electron's `dialog`.
+ * @param {import('./ClipboardService.js').ClipboardService} [deps.clipboard]
  */
 export function createEnvVaultHandlers({
   registry,
   session,
   service = EnvironmentVaultService,
   getWindow = () => null,
+  dialog = null,
+  clipboard = null,
 }) {
   const withVault =
     (fn) =>
@@ -80,6 +87,36 @@ export function createEnvVaultHandlers({
         tool: 'gui',
       })
     );
+
+  /**
+   * The rows of a view, read fresh, or a failure: `INVALID` for an unknown
+   * view, `STALE` if the file moved since it was shown (act on what the user
+   * is looking at, or on nothing).
+   */
+  const rowsOfView = async (id, viewId) => {
+    const view = session.getView(id, viewId);
+    if (!view) return invalid('Unknown view');
+    const result = await read(id);
+    if (!result.success) return result;
+    if (result.revision !== view.revision) {
+      return {
+        success: false,
+        code: 'STALE',
+        error: 'The vault changed since it was shown',
+      };
+    }
+    return {
+      success: true,
+      view,
+      vault: result.vault,
+      rows: describeEnv(result.vault, view.env),
+    };
+  };
+  const notFound = () => ({
+    success: false,
+    code: 'NOT_FOUND',
+    error: 'No such key',
+  });
 
   /** `env:view` and `env:refresh`: a fresh masked snapshot of one env. */
   const snapshot = async (id, env, viewId = null) => {
@@ -180,24 +217,142 @@ export function createEnvVaultHandlers({
 
     'env:reveal': withVault(async ({ id }, viewId, key) => {
       session.touch(id);
+      const found = await rowsOfView(id, viewId);
+      if (!found.success) return found;
+      const row = found.rows.find((r) => r.key === key);
+      return row ? { success: true, value: row.value } : notFound();
+    }),
+
+    // Main writes the clipboard: the value never crosses IPC. A secret is
+    // cleared after 30 s unless the user copied something else since.
+    'env:copy': withVault(async ({ id }, viewId, key, format = 'value') => {
+      session.touch(id);
+      if (!['value', 'pair', 'key'].includes(format)) {
+        return invalid('Unknown copy format');
+      }
+      const found = await rowsOfView(id, viewId);
+      if (!found.success) return found;
+      const row = found.rows.find((r) => r.key === key);
+      if (!row) return notFound();
+      const text =
+        format === 'key'
+          ? row.key
+          : format === 'pair'
+            ? `${row.key}=${quoteDotenvValue(row.value)}`
+            : row.value;
+      const { clearsInMs } = clipboard.copy(text, {
+        sensitive: format !== 'key' && row.sensitive,
+      });
+      return { success: true, clearsInMs };
+    }),
+
+    // Copy or move keys of the view's env to another env, as one transaction
+    // against the revision on screen. Keys the target already has are
+    // refused with CONFLICT unless `overwrite`.
+    'env:transfer': withVault(async ({ id }, request) => {
+      session.touch(id);
+      const {
+        viewId,
+        keys,
+        target,
+        mode = 'copy',
+        overwrite = false,
+      } = request ?? {};
       const view = session.getView(id, viewId);
       if (!view) return invalid('Unknown view');
+      if (!['copy', 'move'].includes(mode)) return invalid('Unknown mode');
+      if (!Array.isArray(keys) || keys.length === 0) {
+        return invalid('Choose at least one key');
+      }
+      if (target === view.env) return invalid('Choose another environment');
+      const result = await write(
+        id,
+        (vault) => {
+          if (!vault.environments[target]) {
+            throw new Error(`Environment '${target}' not found`);
+          }
+          const rows = describeEnv(vault, view.env);
+          const picked = keys.map((key) => {
+            const row = rows.find((r) => r.key === key);
+            if (!row) throw new Error(`Key '${key}' not found`);
+            if (mode === 'move' && row.inheritedFrom) {
+              throw new Error(
+                `'${key}' is inherited from ${row.inheritedFrom}; copy it instead`
+              );
+            }
+            return row;
+          });
+          const existing = Object.keys(
+            vault.getActiveVersion(target)?.vars ?? {}
+          ).filter((key) => keys.includes(key));
+          if (existing.length > 0 && !overwrite) {
+            throw Object.assign(
+              new Error(`${target} already has ${existing.join(', ')}`),
+              { code: 'CONFLICT' }
+            );
+          }
+          const verb = mode === 'move' ? 'Moved' : 'Copied';
+          vault.applyVarChanges(
+            target,
+            picked.map((r) => ({
+              op: 'set',
+              key: r.key,
+              value: r.value,
+              sensitive: r.sensitive,
+            })),
+            { message: `${verb} from ${view.env} in the desktop app` }
+          );
+          if (mode === 'move') {
+            vault.applyVarChanges(
+              view.env,
+              picked.map((r) => ({ op: 'rm', key: r.key })),
+              { message: `Moved to ${target} in the desktop app` }
+            );
+          }
+        },
+        view.revision
+      );
+      if (!result.success) return result;
+      view.revision = result.revision;
+      return { success: true, revision: result.revision };
+    }),
+
+    // Main picks the file in a native dialog and writes it 0600; the values
+    // never cross IPC. Resolved like `vault env export` (extends, templates).
+    'env:export': withVault(async ({ id }, env) => {
+      session.touch(id);
       const result = await read(id);
       if (!result.success) return result;
-      // Reveal what the user is looking at, or nothing.
-      if (result.revision !== view.revision) {
+      if (!result.vault.environments[env]) {
         return {
           success: false,
-          code: 'STALE',
-          error: 'The vault changed since it was shown',
+          code: 'NOT_FOUND',
+          error: `Environment '${env}' not found`,
         };
       }
-      const row = describeEnv(result.vault, view.env).find(
-        (r) => r.key === key
-      );
-      if (!row)
-        return { success: false, code: 'NOT_FOUND', error: 'No such key' };
-      return { success: true, value: row.value };
+      let content;
+      try {
+        content = toDotenv(
+          new EnvironmentResolver(result.vault).resolveEnvironment(env)
+        );
+      } catch (error) {
+        return { success: false, code: 'ERROR', error: error.message };
+      }
+      const picked = await dialog.showSaveDialog(getWindow(), {
+        title: `Export ${env}`,
+        defaultPath: `${env}.env`,
+        showsTagField: false,
+      });
+      if (picked.canceled || !picked.filePath) {
+        return { success: false, canceled: true };
+      }
+      try {
+        await fs.writeFile(picked.filePath, content, { mode: 0o600 });
+        await fs.chmod(picked.filePath, 0o600); // an existing file kept its mode
+      } catch (error) {
+        return { success: false, code: 'ERROR', error: error.message };
+      }
+      return { success: true, path: picked.filePath };
     }),
 
     'env:view-close': withVault(({ id }, viewId) => {

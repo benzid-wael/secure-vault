@@ -141,6 +141,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('env:reveal', id, viewId, key),
     closeView: (id, viewId) => ipcRenderer.invoke('env:view-close', id, viewId),
     commit: (id, changeset) => ipcRenderer.invoke('env:commit', id, changeset),
+    // Copy and export happen in main: no value comes back.
+    copy: (id, viewId, key, format) =>
+      ipcRenderer.invoke('env:copy', id, viewId, key, format),
+    transfer: (id, request) => ipcRenderer.invoke('env:transfer', id, request),
+    exportEnv: (id, env) => ipcRenderer.invoke('env:export', id, env),
     onLocked: (callback) => {
       const listener = (event, payload) => {
         try {
