@@ -24,13 +24,13 @@ From [`docs/RELEASING.md`](../RELEASING.md) and `.github/workflows/release.yml`:
 
 ## Environments
 
-| Environment                      | Runtime                      | How it's deployed                                | Notes                                                        |
-| -------------------------------- | ---------------------------- | ------------------------------------------------ | ------------------------------------------------------------ |
-| Local dev                        | Electron + Vite dev server   | `npm run dev:electron`                           | Inline scripts present (React Refresh); CSP differs (Task 2) |
-| Desktop app, macOS/Windows/Linux | Electron `^42.3.3`, packaged | GitHub Release asset, manual install, no updater | Unsigned; the CSP must be tested on this build, not in dev   |
-| npm CLI                          | Node ≥ 20.10                 | `npm install -g @benzid.wael/secure-vault`       | Users upgrade on their own schedule                          |
-| Standalone CLI binaries          | Bun-compiled                 | GitHub Release asset, manual install             | Different `node:crypto` implementation (New-5)               |
-| CI                               | ubuntu-latest, Node 20       | `.github/workflows/ci.yml`                       | e2e not run in CI yet (Task 30)                              |
+| Environment                      | Runtime                                                       | How it's deployed                                | Notes                                                        |
+| -------------------------------- | ------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------ |
+| Local dev                        | Electron + Vite dev server                                    | `npm run dev:electron`                           | Inline scripts present (React Refresh); CSP differs (Task 2) |
+| Desktop app, macOS/Windows/Linux | Electron `^42.3.3`, packaged                                  | GitHub Release asset, manual install, no updater | Unsigned; the CSP must be tested on this build, not in dev   |
+| npm CLI                          | Node ≥ 20.10                                                  | `npm install -g @benzid.wael/secure-vault`       | Users upgrade on their own schedule                          |
+| Standalone CLI binaries          | Bun-compiled                                                  | GitHub Release asset, manual install             | Different `node:crypto` implementation (New-5)               |
+| CI                               | ubuntu-latest (unit tests also on Windows and macOS), Node 22 | `.github/workflows/ci.yml`                       | e2e job added (Task 30); waits on its first green run        |
 
 There is no server, no database and no remote config. "Schema" here means the
 vault file and the files next to it (`.bak`, `.lock`, `.deleted.<ts>`,

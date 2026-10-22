@@ -107,3 +107,30 @@ jobs:
 
       - name: Unit tests
         run: npx vitest run
+
+  # Every e2e scenario against the built app (GUI-ENV-BREAKDOWN Task 30), in
+  # parallel with Verify. The renderer stays sandboxed: Chromium's sandbox
+  # is made to work, never switched off.
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Allow Chromium's sandbox
+        # Ubuntu 24.04 blocks the unprivileged user namespaces it needs; an
+        # installed desktop allows them via AppArmor.
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: e2e scenarios
+        run: xvfb-run -a npm run test:e2e

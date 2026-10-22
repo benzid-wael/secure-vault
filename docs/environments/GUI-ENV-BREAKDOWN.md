@@ -41,7 +41,7 @@ updated as each task finishes, not in a batch at the end.
 | 27     | Renderer: import, export, template                                 | M5  | P2  | ✅     | 18, 20                                 |
 | 28     | Renderer: env vault change-password                                | M5  | P2  | ✅     | 7, 18, 19                              |
 | 29     | e2e scenario `env-vault-concurrent`                                | M6  | P1  | 🟡     | 21                                     |
-| 30     | CI e2e job (ubuntu + xvfb)                                         | M6  | P1  | ⬜     | 1, 29                                  |
+| 30     | CI e2e job (ubuntu + xvfb)                                         | M6  | P1  | 🟡     | 1, 29                                  |
 | 31     | User guide `docs/guide/gui/env-vaults.md`                          | M6  | P2  | ⬜     | 21                                     |
 | New-1  | Coverage can't see the code this plan changes                      | —   | P1  | ✅     | — (blocks 1, 3)                        |
 | New-2  | App-wide settings store                                            | M3  | P1  | ⬜     | 0                                      |
@@ -943,7 +943,8 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 30: CI e2e job (ubuntu + xvfb)
 
-- **Status:** ⬜ not started.
+- **Status:** 🟡 built 2026-10-22; done when a push shows the `e2e` job
+  green. Uncommitted on `feat/vault-env-gui`.
 - **Goal:** Every PR runs all e2e scenarios (D3).
 - **Constraints:** Must not make the existing CI job slower; run as a separate
   job.
@@ -954,6 +955,19 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
   Don't weaken Task 1 to make CI pass.
 - **Validation:** A green e2e job on a PR; a deliberately broken scenario turns
   it red.
+- **Built:** an `e2e` job in `ci.yml` on `ubuntu-latest`, in parallel with
+  Verify: `npm ci`, then `xvfb-run -a npm run test:e2e`. The renderer
+  sandbox (Task 1) is untouched; the job lifts Ubuntu 24.04's AppArmor
+  restriction on unprivileged user namespaces so Chromium's own sandbox can
+  start (the same step as the release workflow's packaged check, New-19).
+- **Checked so far:**
+  - Linux: all 5 scenarios pass ("the renderer is sandboxed" among their
+    checks) in a Debian bookworm arm64 container with `xvfb-run`, run
+    as a non-root user from a fresh `npm ci`. The container was privileged,
+    which the GitHub runner (a VM) isn't; the sysctl step stands in for it.
+  - A deliberately failing scenario makes `e2e/run.mjs` exit 1, which fails
+    the job.
+  - Still to see: the job green on a GitHub push.
 
 ### Task 31: User guide `docs/guide/gui/env-vaults.md`
 
