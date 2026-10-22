@@ -337,6 +337,57 @@ describe('VaultLock', () => {
     });
   });
 
+  describe('inspect (doctor, Task 8)', () => {
+    it('reports no lock', async () => {
+      expect(await makeLock().inspect()).toEqual({
+        state: 'none',
+        path: lockPath,
+        holder: null,
+        asides: [],
+      });
+    });
+
+    it('reports a live holder as held, and changes nothing', async () => {
+      writeHolder(holder({ pid: 200 }));
+      const before = fs.readFileSync(lockPath, 'utf8');
+      const result = await makeLock().inspect();
+      expect(result).toMatchObject({ state: 'held', holder: { pid: 200 } });
+      expect(fs.readFileSync(lockPath, 'utf8')).toBe(before);
+    });
+
+    it('reports a dead holder as stale, without taking it over', async () => {
+      writeHolder(holder({ pid: DEAD_PID }));
+      expect((await makeLock().inspect()).state).toBe('stale');
+      expect(readLock().pid).toBe(DEAD_PID);
+    });
+
+    it('judges another machine by mtime', async () => {
+      const remote = holder({ boot: new Date(OTHER_BOOT).toISOString() });
+      writeHolder(remote, t - 1000);
+      expect((await makeLock().inspect()).state).toBe('held');
+      writeHolder(remote, t - 60_000);
+      expect((await makeLock().inspect()).state).toBe('stale');
+    });
+
+    it('lists leftover .lock.stale.* files and nothing else', async () => {
+      fs.writeFileSync(`${lockPath}.stale.bb`, '{}');
+      fs.writeFileSync(`${lockPath}.stale.aa`, '{}');
+      fs.writeFileSync(path.join(dir, 'other.vault.lock.stale.cc'), '{}');
+      expect((await makeLock().inspect()).asides).toEqual([
+        `${lockPath}.stale.aa`,
+        `${lockPath}.stale.bb`,
+      ]);
+    });
+
+    it('reports nothing for a missing directory', async () => {
+      vaultPath = path.join(dir, 'gone', '.env.vault');
+      expect(await makeLock().inspect()).toMatchObject({
+        state: 'none',
+        asides: [],
+      });
+    });
+  });
+
   describe('heartbeat', () => {
     it('refresh touches the mtime so another machine sees the lock alive', async () => {
       const lock = makeLock();

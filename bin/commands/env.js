@@ -39,7 +39,13 @@ import {
   renderDeliverEntry,
 } from './envDeliverHelpers.js';
 import { getPreset, scaffoldPreset } from './envScaffold.js';
-import { checkStructure, checkResolution, hasErrors } from './envDoctor.js';
+import {
+  checkStructure,
+  checkResolution,
+  checkLock,
+  hasErrors,
+} from './envDoctor.js';
+import { VaultLock } from '../../src/electron/services/VaultLock.js';
 import { EnvironmentResolver } from '../../src/electron/services/EnvironmentResolver.js';
 import { SessionManager } from '../../src/agent/sessionManager.js';
 import { MountRegistry } from '../../src/agent/mountRegistry.js';
@@ -1126,7 +1132,9 @@ export function registerEnvCommand(program) {
 
   env
     .command('doctor')
-    .description('Diagnose the .vaultrc delivery wiring (read-only)')
+    .description(
+      'Diagnose the .vaultrc delivery wiring and the vault lock (read-only)'
+    )
     .argument('[envName]', 'Environment to resolve variables against')
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
@@ -1136,7 +1144,7 @@ export function registerEnvCommand(program) {
     .action(async (envArg, options) => {
       try {
         const { config, dir } = findProjectConfig();
-        if (!dir) {
+        if (!dir && !options.vault && !options.name) {
           console.log(
             chalk.yellow('No .vaultrc found — nothing to diagnose.') +
               chalk.gray(
@@ -1156,11 +1164,10 @@ export function registerEnvCommand(program) {
           // No .gitignore — coverage checks will flag artifacts as unignored.
         }
 
-        const { results, manifest } = checkStructure({
-          config,
-          baseDir,
-          gitignore,
-        });
+        // Without a .vaultrc (only -v/--name), just the vault itself.
+        const { results, manifest } = dir
+          ? checkStructure({ config, baseDir, gitignore })
+          : { results: [], manifest: null };
 
         // A vault must exist for delivery to work at all.
         const vaultPath = EnvironmentVaultService.resolveVaultPath({
@@ -1176,6 +1183,8 @@ export function registerEnvCommand(program) {
             title: 'No environment vault found',
             fix: 'Create one with `vault env init` (or pass -v/--name).',
           });
+        } else {
+          results.push(...checkLock(await new VaultLock(vaultPath).inspect()));
         }
 
         // Deep check: only when the vault is unlockable without a prompt, so

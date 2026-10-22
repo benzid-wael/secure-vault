@@ -29,6 +29,15 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Changed
 
+- **Concurrent writes are safe.** Every `vault env` command that changes a
+  vault now takes `<vault>.lock` while it reads, changes and saves it, so two
+  commands (or a command and the desktop app) no longer overwrite each
+  other's changes; before, the last writer silently won. A command that finds
+  the vault locked waits up to 3 seconds, then fails with "Vault is busy",
+  naming the holder and the lock file. A lock left by a dead process is taken
+  over automatically. `vault env doctor` now reports the lock (held, stale,
+  leftover files) and runs with just `-v`/`--name`, without a `.vaultrc`.
+  Older versions ignore the lock: upgrade every machine that writes a vault.
 - **`vault env set` keeps a key's public flag.** Setting a new value without
   `--public` used to make a public key secret again; it now stays as it was
   until `--secret`. A new key is still secret by default.

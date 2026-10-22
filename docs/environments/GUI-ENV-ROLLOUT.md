@@ -385,3 +385,20 @@ Known hazards so far, to be completed per task:
   app says the saved password no longer works and asks for it.
 - **Rollback:** reinstall the previous version. It ignores the passwords
   file; delete it to remove the kept passwords.
+
+### Task 8: concurrent-writes docs, CHANGELOG, `doctor` lock check
+
+- **Runtime change (CLI, not gated):** `vault env doctor` reports the
+  vault's write lock (held, stale, leftover `.lock.stale.*` files) as info or
+  warnings, never as an error, so its exit code is unchanged for existing
+  projects. It now also runs with `-v`/`--name` alone, without a `.vaultrc`;
+  before, it printed "No .vaultrc found" and stopped.
+- **Schema or config change:** none.
+- **Before it ships:** this closes Task 6's step 1: Task 6 and Task 8 go out
+  in the same release. Release notes repeat the CHANGELOG's upgrade advice.
+- **Gated by:** nothing.
+- **Verify after release:** `kill -9` a `vault env set` mid-write (or write
+  a lock with a dead pid); `vault env doctor -v <vault>` warns "Stale write
+  lock" with the path; the next `set` succeeds and the lock is gone.
+- **Rollback:** reinstall the previous version; `doctor` loses the lock
+  check. Nothing on disk changes.

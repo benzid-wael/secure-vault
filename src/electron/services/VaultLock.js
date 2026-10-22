@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import fsSync from 'fs';
 import fsDefault from 'fs/promises';
 import os from 'os';
+import path from 'path';
 
 const BACKOFF_MS = [50, 100, 200, 400];
 // Two readings of the boot time on the same machine differ by clock noise
@@ -163,6 +164,38 @@ export class VaultLock {
       }
       await this.#sleep(BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)]);
     }
+  }
+
+  /**
+   * What is at the lock path now, without touching it (`vault env doctor`,
+   * Task 8): `none`, `held` (a live holder, or another machine's lock still
+   * fresh) or `stale` (the next writer takes it over). `asides` lists
+   * `<vault>.lock.stale.*` files, left only if a process died between a
+   * takeover's rename and its cleanup.
+   *
+   * @returns {Promise<{state: 'none'|'held'|'stale', path: string,
+   *   holder: Object|null, asides: string[]}>}
+   */
+  async inspect() {
+    const holder = await this.#readHolder();
+    const dir = path.dirname(this.#path);
+    const prefix = `${path.basename(this.#path)}.stale.`;
+    let names = [];
+    try {
+      names = await this.#fs.readdir(dir);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    return {
+      state:
+        holder === null ? 'none' : this.#isStale(holder) ? 'stale' : 'held',
+      path: this.#path,
+      holder: holder?.info ?? null,
+      asides: names
+        .filter((n) => n.startsWith(prefix))
+        .sort()
+        .map((n) => path.join(dir, n)),
+    };
   }
 
   /** Remove the lock if it is still ours. Safe to call more than once. */

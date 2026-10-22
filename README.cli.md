@@ -314,6 +314,7 @@ never touches your secrets:
 ```bash
 vault env doctor            # structural checks, no password needed
 vault env doctor -e dev     # + verify every manifest variable resolves (needs a password)
+vault env doctor -v ./app.env.vault   # just the vault, without a .vaultrc
 ```
 
 `doctor` reports:
@@ -323,12 +324,40 @@ vault env doctor -e dev     # + verify every manifest variable resolves (needs a
 - **.gitignore coverage** — every delivered artifact is ignored (a warning if not,
   so a decoded secret can't be committed by accident);
 - **vault present** — an environment vault is discoverable;
+- **write lock** — whether a command is writing the vault right now, a stale
+  `<vault>.lock` left by a process that died, and any leftover
+  `<vault>.lock.stale.*` file (see [Concurrent writes](#concurrent-writes));
 - **variable resolution** — when a password is available
   (`--password-stdin`/`--password-file`/`VAULT_ENV_PASSWORD`), every variable the
   manifest references actually exists in the environment.
 
 Only real breakage (invalid manifest, missing template, unresolved variables)
-makes `doctor` exit non-zero; coverage nits are warnings.
+makes `doctor` exit non-zero; coverage nits and lock findings are warnings.
+
+#### Concurrent writes
+
+Every command that changes a vault (`set`, `rm`, `import`, `rename`,
+`squash`, `change-password`, …) takes a lock file next to it,
+`<vault>.lock`, for the moment it reads, changes and saves the vault. Two
+commands, or a command and the desktop app, can't overwrite each other's
+changes. Reading commands (`show`, `run`, `export`, …) don't lock.
+
+If another writer holds the lock, a command waits up to 3 seconds, then
+fails:
+
+```
+Vault is busy (held by cli pid 4242 since 2026-10-22T10:00:00.000Z).
+Try again, or remove /path/app.env.vault.lock if no vault command is running.
+```
+
+A lock left by a process that died (a `kill -9`, a crash) is taken over by
+the next write on the same machine, so you rarely need to remove it. A lock
+from another machine (a vault in a synced folder) is taken over once it has
+gone 30 seconds without its holder refreshing it. `vault env doctor` shows
+the lock's state and names the file to remove; it never removes anything.
+
+Older versions of the CLI don't know about the lock and can still overwrite a
+concurrent change: upgrade every machine that writes the vault.
 
 ## Where data is stored
 

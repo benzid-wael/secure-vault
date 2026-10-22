@@ -129,4 +129,64 @@ describe('vault env doctor (integration)', () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toMatch(/All manifest variables resolve/);
   });
+
+  // Task 8: the lock is reported, never removed.
+  // The CLI runs in the real path (/private/var/… on macOS).
+  const lockFile = () =>
+    path.join(fs.realpathSync(projectDir), '.env.vault.lock');
+  const writeLock = (pid) =>
+    fs.writeFileSync(
+      lockFile(),
+      JSON.stringify({
+        v: 1,
+        pid,
+        host: os.hostname(),
+        tool: 'cli',
+        nonce: 'n',
+        boot: new Date(Date.now() - os.uptime() * 1000).toISOString(),
+        acquiredAt: new Date().toISOString(),
+      })
+    );
+
+  it('reports no lock with -v and no .vaultrc', () => {
+    const r = cli(['doctor', '-v', '.env.vault']);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/No write lock on the vault/);
+  });
+
+  it('warns about a lock whose process is dead, and leaves it', () => {
+    const dead = spawnSync(NODE, ['-e', '']).pid; // has exited
+    writeLock(dead);
+    const r = cli(['doctor', '-v', '.env.vault']);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(
+      new RegExp(`Stale write lock left by cli pid ${dead}`)
+    );
+    expect(r.stdout).toContain(lockFile());
+    expect(fs.existsSync(lockFile())).toBe(true);
+  });
+
+  it("reports a live holder with the busy error's remedy", () => {
+    writeLock(process.pid); // this test runner: alive
+    writeManifest([{ path: '.env', format: 'dotenv', keys: ['API_URL'] }]);
+    fs.writeFileSync(path.join(projectDir, '.gitignore'), '.env\n');
+    const r = cli(['doctor']);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(
+      new RegExp(`Vault is being written: locked by cli pid ${process.pid}`)
+    );
+    expect(r.stdout).toContain(
+      `If no vault command is running, remove ${lockFile()}.`
+    );
+    expect(fs.existsSync(lockFile())).toBe(true);
+  });
+
+  it('lists a leftover takeover file', () => {
+    const aside = `${lockFile()}.stale.0a1b`;
+    fs.writeFileSync(aside, '{}');
+    const r = cli(['doctor', '-v', '.env.vault']);
+    expect(r.stdout).toMatch(/Leftover lock file from an interrupted takeover/);
+    expect(r.stdout).toContain(aside);
+    expect(fs.existsSync(aside)).toBe(true);
+  });
 });

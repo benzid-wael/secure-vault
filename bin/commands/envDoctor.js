@@ -142,3 +142,43 @@ export function checkResolution(manifest, vars, readTemplate) {
   }
   return [{ level: 'ok', title: 'All manifest variables resolve' }];
 }
+
+/**
+ * The vault's write lock (Task 8), from `VaultLock#inspect`. Read-only:
+ * it names the file and the remedy, the same ones the "Vault is busy"
+ * error gives, and never deletes anything.
+ */
+export function checkLock({ state, path: lockPath, holder, asides }) {
+  const who = holder
+    ? `${holder.tool ?? 'a vault process'} pid ${holder.pid}` +
+      (holder.host ? ` on ${holder.host}` : '') +
+      (holder.acquiredAt ? ` since ${holder.acquiredAt}` : '')
+    : 'an unknown process';
+  const results = [];
+  if (state === 'none') {
+    results.push({ level: 'ok', title: 'No write lock on the vault' });
+  } else if (state === 'held') {
+    results.push({
+      level: 'info',
+      title: `Vault is being written: locked by ${who}`,
+      detail: lockPath,
+      fix: `Wait for it to finish. If no vault command is running, remove ${lockPath}.`,
+    });
+  } else {
+    results.push({
+      level: 'warn',
+      title: `Stale write lock left by ${who}`,
+      detail: `${lockPath}. Its holder is gone; the next write takes it over.`,
+      fix: `Nothing to do, or remove ${lockPath} if no vault command is running.`,
+    });
+  }
+  for (const aside of asides) {
+    results.push({
+      level: 'warn',
+      title: 'Leftover lock file from an interrupted takeover',
+      detail: aside,
+      fix: `Remove ${aside}; no vault command reads it.`,
+    });
+  }
+  return results;
+}

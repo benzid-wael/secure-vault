@@ -19,7 +19,7 @@ updated as each task finishes, not in a batch at the end.
 | 5      | `read()` / `transact()` with revisions and `REKEYED`               | M1  | P0  | ✅     | 3, 4                                   |
 | 6      | Port every env op onto `transact`; `saveVault` private             | M1  | P0  | ✅     | 5                                      |
 | 7      | `squash` snapshot, re-keyed by change-password                     | M1  | P1  | ✅     | 6                                      |
-| 8      | CLI docs, CHANGELOG, `doctor` reports stale locks                  | M1  | P1  | ⬜     | 6                                      |
+| 8      | CLI docs, CHANGELOG, `doctor` reports stale locks                  | M1  | P1  | ✅     | 6                                      |
 | 9      | `applyVarChanges` model method                                     | M2  | P0  | 🟡     | 6                                      |
 | 10     | Changeset apply + rebase in the service                            | M2  | P0  | ✅     | 9                                      |
 | 11     | Single-instance lock for the app                                   | M3  | P1  | ⬜     | 0                                      |
@@ -534,7 +534,24 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 8: CLI docs, CHANGELOG, `doctor` reports stale locks
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
+  `feat/vault-env-gui`; not merged, not released.
+- **Built:**
+  - `VaultLock#inspect()`: read-only; `none`, `held` or `stale` by the same
+    rule `acquire` uses, plus the `<vault>.lock.stale.*` files.
+  - `checkLock` in `envDoctor.js`: ok, info (held: holder, file, "If no
+    vault command is running, remove <path>", the busy error's remedy) or
+    warn (stale; each leftover file). Never an error, never deletes.
+  - `vault env doctor` runs it when the vault exists, and now also runs
+    with only `-v`/`--name` and no `.vaultrc` (lock check alone).
+  - README.cli.md: a "Concurrent writes" section (the busy error, takeover,
+    3 s wait, 30 s for another machine, upgrade every machine) and the lock
+    in the `doctor` list. CHANGELOG: "Concurrent writes are safe" under
+    Unreleased / Changed.
+- **Validated:** `VaultLock` tests for none, a live holder, a dead holder
+  (not taken over), another machine by mtime, leftover files; `checkLock`
+  unit tests; CLI tests with a dead-pid lock and a live one, both left in
+  place.
 - **Goal:** Users learn about the concurrency change before they hit `BUSY`,
   and `vault env doctor` reports a stale or orphaned `.lock`, plus any
   `<vault>.lock.stale.*` file (left only if a process dies between a

@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest';
 import {
   checkStructure,
   checkResolution,
+  checkLock,
   hasErrors,
 } from '../../../bin/commands/envDoctor.js';
 
@@ -125,5 +126,73 @@ describe('checkResolution', () => {
       throwing
     );
     expect(hasErrors(results)).toBe(false);
+  });
+});
+
+describe('checkLock (Task 8)', () => {
+  const LOCK = '/p/.env.vault.lock';
+  const holder = {
+    tool: 'cli',
+    pid: 4242,
+    host: 'box',
+    acquiredAt: '2026-10-22T10:00:00.000Z',
+  };
+
+  it('is ok with no lock', () => {
+    expect(
+      checkLock({ state: 'none', path: LOCK, holder: null, asides: [] })
+    ).toEqual([{ level: 'ok', title: 'No write lock on the vault' }]);
+  });
+
+  it('names a live holder and the same remedy as the busy error', () => {
+    const [r] = checkLock({ state: 'held', path: LOCK, holder, asides: [] });
+    expect(r.level).toBe('info');
+    expect(r.title).toBe(
+      'Vault is being written: locked by cli pid 4242 on box since 2026-10-22T10:00:00.000Z'
+    );
+    expect(r.fix).toContain(`If no vault command is running, remove ${LOCK}.`);
+  });
+
+  it('warns about a stale lock, which stays a warning, not an error', () => {
+    const results = checkLock({
+      state: 'stale',
+      path: LOCK,
+      holder: null,
+      asides: [],
+    });
+    expect(results[0]).toMatchObject({
+      level: 'warn',
+      title: 'Stale write lock left by an unknown process',
+    });
+    expect(results[0].fix).toContain(`remove ${LOCK}`);
+    expect(hasErrors(results)).toBe(false);
+  });
+
+  it('lists each leftover takeover file', () => {
+    const results = checkLock({
+      state: 'none',
+      path: LOCK,
+      holder: null,
+      asides: [`${LOCK}.stale.aa`, `${LOCK}.stale.bb`],
+    });
+    expect(results.slice(1).map((r) => r.detail)).toEqual([
+      `${LOCK}.stale.aa`,
+      `${LOCK}.stale.bb`,
+    ]);
+    expect(results[1].fix).toBe(
+      `Remove ${LOCK}.stale.aa; no vault command reads it.`
+    );
+  });
+
+  it('describes a holder with only a pid', () => {
+    const [r] = checkLock({
+      state: 'held',
+      path: LOCK,
+      holder: { pid: 7 },
+      asides: [],
+    });
+    expect(r.title).toBe(
+      'Vault is being written: locked by a vault process pid 7'
+    );
   });
 });
