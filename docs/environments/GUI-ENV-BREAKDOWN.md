@@ -55,7 +55,7 @@ updated as each task finishes, not in a batch at the end.
 | New-10 | Lock: a container sharing the kernel can look like this machine    | —   | P1  | 🟡     | 4 (blocks the release of 6)            |
 | New-11 | Bring RFC §6.5 in line with Corrections 6 and 7                    | —   | P2  | ⬜     | 4                                      |
 | New-12 | Windows: retry the final rename on `EPERM`                         | M1  | P1  | ✅     | 5 (blocks the release of 6 on Windows) |
-| New-13 | CI runs the unit tests on Windows and macOS too                    | —   | P1  | ⬜     | — (verifies 4, New-12)                 |
+| New-13 | CI runs the unit tests on Windows and macOS too                    | —   | P1  | 🟡     | — (verifies 4, New-12)                 |
 | New-14 | Remove the env `saveVault` and its mocked tests                    | —   | P2  | ⬜     | 6                                      |
 | New-15 | Type `window.electronAPI` once for the type check                  | —   | P2  | ⬜     | —                                      |
 | New-16 | ESLint flags MUI components used only in JSX as unused             | —   | P2  | ⬜     | —                                      |
@@ -617,7 +617,8 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 11: Single-instance lock for the app
 
-- **Status:** ⬜ not started.
+- **Status:** 🟡 built 2026-10-22; waits on its first CI run. Uncommitted on
+  `feat/vault-env-gui`. Done when a push shows both new jobs green.
 - **Goal:** A second launch focuses the existing window instead of starting a
   second process.
 - **Constraints:** e2e runs must still be able to launch the app per scenario.
@@ -1306,6 +1307,20 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 - **Cost of leaving it:** Windows behavior in the lock (pid probes, `utimes`,
   rename-aside takeover) and in the write path (New-12) stays simulated.
   Windows users would be the first to run it for real.
+- **Built:**
+  - `ci.yml` has a second job, "Unit tests", on `windows-latest` and
+    `macos-latest` (`fail-fast: false`), in parallel with Verify. It runs
+    `npx vitest run` without coverage, so thresholds stay on Ubuntu. It
+    checks out with `core.autocrlf false`, so files keep the line endings
+    they were committed with.
+  - `moveWithRetry.test.js` gains two Windows-only tests on a real file: a
+    PowerShell process holds the target open without delete sharing; a
+    rename with no retries fails with `EPERM`/`EBUSY`/`EACCES`, and with
+    retries it lands once the holder closes. They skip elsewhere.
+- **Validation:** macOS: the full suite passes locally (1222, the two
+  Windows tests skipped). Windows: not run yet; the first run may surface
+  path-separator or file-locking assumptions in older tests, to fix rather
+  than skip.
 
 ### New-14: Remove the env `saveVault` and its mocked tests
 

@@ -75,3 +75,35 @@ jobs:
 
       - name: Build (no release)
         run: npm run build:all
+
+  # The unit tests on the other desktop platforms (GUI-ENV-BREAKDOWN New-13):
+  # the vault lock, the Windows rename retry and file modes behave
+  # differently there. In parallel with Verify, so it doesn't slow the gate;
+  # no coverage here, so thresholds are enforced on one platform only.
+  tests:
+    name: Unit tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - name: Keep line endings as committed
+        # Otherwise Windows checks files out with CRLF, and tests that read
+        # fixtures or compare output see a difference no user would.
+        run: git config --global core.autocrlf false
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npx vitest run

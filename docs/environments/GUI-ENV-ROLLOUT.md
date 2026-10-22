@@ -73,7 +73,8 @@ Known so far. Each entry says what breaks.
 8. **Task 6 (CLI locking) not to Windows users before New-12.** Every write
    then takes the lock and renames under it; without the rename retry, a scanner or reader holding the file makes the
    write fail. _Status:_ New-12 is built and tested by simulation; real
-   Windows coverage waits on New-13.
+   Windows coverage waits on New-13, whose CI job is built and runs on the
+   next push.
 
 ## Rollback
 

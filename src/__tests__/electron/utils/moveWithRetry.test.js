@@ -3,6 +3,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
+import { spawn } from 'child_process';
 
 import { moveWithRetry } from '../../../electron/utils/moveWithRetry.js';
 
@@ -123,4 +124,52 @@ describe('moveWithRetry on a real directory', () => {
     expect(await fsx.pathExists(`${target}.tmp`)).toBe(false);
     await fsx.remove(dir);
   });
+});
+
+// New-13: on a real Windows runner, not simulated. Another process holds the
+// target open without FILE_SHARE_DELETE (as a scanner can), so a rename over
+// it fails until that process lets go.
+describe.runIf(process.platform === 'win32')('moveWithRetry on Windows', () => {
+  /** Hold `file` open for `ms` in another process; resolves once it's held. */
+  function holdOpen(file, ms) {
+    const script =
+      `$f = [System.IO.File]::Open('${file}', 'Open', 'Read', 'Read'); ` +
+      `Write-Output held; Start-Sleep -Milliseconds ${ms}; $f.Close()`;
+    const child = spawn('powershell', ['-NoProfile', '-Command', script]);
+    const held = new Promise((resolve, reject) => {
+      child.stdout.on('data', (d) => String(d).includes('held') && resolve());
+      child.on('exit', (code) => reject(new Error(`holder exited ${code}`)));
+    });
+    const exited = new Promise((resolve) => child.on('exit', resolve));
+    return { held, exited };
+  }
+
+  it('fails at once while the target is held, without retries', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-move-win-'));
+    const target = path.join(dir, 'vault');
+    fs.writeFileSync(target, 'old');
+    fs.writeFileSync(`${target}.tmp`, 'new');
+    const holder = holdOpen(target, 1500);
+    await holder.held;
+    await expect(
+      moveWithRetry(`${target}.tmp`, target, { tries: 1 })
+    ).rejects.toMatchObject({
+      code: expect.stringMatching(/EPERM|EBUSY|EACCES/),
+    });
+    await holder.exited;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }, 20000);
+
+  it('replaces the target once the holder lets go', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-move-win-'));
+    const target = path.join(dir, 'vault');
+    fs.writeFileSync(target, 'old');
+    fs.writeFileSync(`${target}.tmp`, 'new');
+    const holder = holdOpen(target, 300);
+    await holder.held;
+    await moveWithRetry(`${target}.tmp`, target, { tries: 40, delayMs: 50 });
+    expect(fs.readFileSync(target, 'utf8')).toBe('new');
+    await holder.exited;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }, 20000);
 });
