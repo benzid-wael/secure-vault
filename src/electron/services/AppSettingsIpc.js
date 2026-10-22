@@ -26,16 +26,24 @@ export function createAppSettingsHandlers({ settings, apply }) {
 }
 
 /**
- * Put settings into effect: the env vault idle timeout, and, when
- * remembering vaults is turned off, forgetting the kept list (D5).
+ * Put settings into effect: the idle timeout of the password vault (Task 13)
+ * and of env vaults, and, when remembering vaults is turned off, forgetting
+ * the kept list (D5).
  *
- * @param {{session: {setIdleMs: (ms: number) => void},
+ * @param {{vaultSession: {setIdleMs: (ms: number) => void},
+ *   envSession: {setIdleMs: (ms: number) => void},
  *   registry: {clearRecents: () => Promise<void>}}} targets
  * @param {import('./AppSettingsStore.js').AppSettings} next
  * @param {import('./AppSettingsStore.js').AppSettings} [previous]
  */
-export async function applyAppSettings({ session, registry }, next, previous) {
-  session.setIdleMs(next.idleMinutes * 60 * 1000);
+export async function applyAppSettings(
+  { vaultSession, envSession, registry },
+  next,
+  previous
+) {
+  const idleMs = next.idleMinutes * 60 * 1000;
+  vaultSession.setIdleMs(idleMs);
+  envSession.setIdleMs(idleMs);
   if (previous?.rememberRecents && !next.rememberRecents) {
     await registry.clearRecents();
   }

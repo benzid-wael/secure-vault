@@ -13,10 +13,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   unlockVault: (vaultName, password) =>
     ipcRenderer.invoke('unlock-vault', vaultName, password),
   lockVault: () => ipcRenderer.invoke('lock-vault'),
+  // Input in the window: keeps the unlocked vault from locking (Task 13).
+  vaultActivity: () => ipcRenderer.invoke('vault-activity'),
+  // `info.reason` is 'idle' (with `info.minutes`) after an idle lock.
   onVaultLocked: (callback) =>
-    ipcRenderer.on('vault-locked', () => {
+    ipcRenderer.on('vault-locked', (event, info) => {
       try {
-        callback();
+        callback(info ?? {});
       } catch (error) {
         console.error('Error in vault-locked handler:', error);
       }

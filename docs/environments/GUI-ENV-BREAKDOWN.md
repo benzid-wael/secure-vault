@@ -24,7 +24,7 @@ updated as each task finishes, not in a batch at the end.
 | 10     | Changeset apply + rebase in the service                            | M2  | P0  | ✅     | 9                                      |
 | 11     | Single-instance lock for the app                                   | M3  | P1  | ✅     | 0                                      |
 | 12     | Main-process `ClipboardService` + IPC                              | M3  | P1  | 🟡     | 0, New-3                               |
-| 13     | Idle lock for password vaults                                      | M3  | P1  | ⬜     | New-2                                  |
+| 13     | Idle lock for password vaults                                      | M3  | P1  | ✅     | New-2                                  |
 | 14     | `EnvVaultRegistry` (ids, dialogs, recents)                         | M3  | P0  | 🟡     | 6, 11, New-2                           |
 | 15     | `EnvVaultSession` (keys, commit/recover, idle)                     | M3  | P0  | 🟡     | 5, 14, New-2                           |
 | 16     | `EnvVaultWatcher`                                                  | M3  | P1  | ✅     | 15                                     |
@@ -84,6 +84,8 @@ updated as each task finishes, not in a batch at the end.
 | New-39 | Fix: a failed page load loops instead of showing the error page    | —   | P2  | ✅     | —                                      |
 | New-40 | Refuse `--remote-debugging-port` in packaged builds                | M0  | P2  | ⬜     | New-38                                 |
 | New-41 | Find the unit test that failed once in ten full runs               | —   | P2  | ⬜     | —                                      |
+| New-42 | Decide whether input in the window keeps env vaults unlocked       | —   | P2  | ⬜     | 13                                     |
+| New-43 | `npm run lint` lints the docs site's ignored build output          | —   | P3  | ⬜     | —                                      |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -669,7 +671,52 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 13: Idle lock for password vaults
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
+  `feat/vault-env-gui`; not merged, not released. Not gated: every user
+  gets it (CHANGELOG "Changed").
+- **Decided (activity):** input in the window counts: keys, clicks,
+  scrolling, touch. The page reports it on `vault-activity`, at most every
+  15 s, and only while a vault is unlocked. Nothing else counts, including
+  every call the page makes on its own (`load-vault`, `save-vault`, …).
+  User-initiated IPC alone wouldn't work here: the page holds the open
+  vault's entries, so searching, reading and copying make no call, and a
+  user doing that would be locked out every 5 minutes. Env vaults keep their
+  rule (user-initiated env calls) for now; New-42 asks whether to align them.
+- **Built:**
+  - `VaultSession` takes `idleMs`, `onIdle` and injectable timers. `open`
+    starts the timer; `touch()` restarts it; `close()` stops it;
+    `setIdleMs` restarts it with the new time, counted from now. On expiry
+    it closes itself (keys zeroed, as before), then calls
+    `onIdle(vaultName, idleMs)`.
+  - Main: `vault-locked` is sent with `{reason: 'idle', minutes}` after an
+    idle lock (sleep and screen lock send no reason, as before). The
+    `vault-activity` channel calls `session.touch()`.
+  - The saved timeout applies to both sessions at startup and on each
+    change (`applyAppSettings({vaultSession, envSession, registry})`).
+  - The `app-settings:*` channels left the env UI gate. Configuration always
+    shows App settings: "Lock vaults after"; "Remember environment vaults I
+    open" only with the gate on.
+  - The page shows "Vault locked after N minutes without activity." It
+    stays until dismissed, because the user was away when it happened.
+- **Validation done:**
+  - `VaultSession.test.js` with a fake clock: locks at 5 min by default
+    and calls `onIdle` once; `touch` restarts the time; `withPassword` calls
+    don't; no timer after close or while locked; reopening or switching
+    vault leaves one timer; `setIdleMs` applies from now; bad values are
+    ignored; the real timers work.
+  - `AppSession.test.jsx`: the idle message, which stays until dismissed;
+    no message for other locks; keys, clicks, wheel and touch are reported
+    at most once per 15 s, and only while unlocked.
+  - `AppSettingsSection.test.jsx`: the idle time without the env gate, and
+    no env setting there.
+  - e2e `idle-lock` (env gate off; seeded 1-minute timeout): Configuration
+    shows the setting without the env one; unlocked; still unlocked after
+    30 s with a `loadVault` call in between; locked about a minute after
+    unlock, with the message; main refuses `loadVault` afterwards. 8/8
+    scenarios.
+  - Coverage: `VaultSession.js` 84% lines (the rest is key derivation,
+    covered in `KdfUpgrade.test.js`), `App.jsx` 93%,
+    `AppSettingsSection.jsx` 97.5%, `ConfigurationDialog.jsx` 98%.
 - **Goal:** An unlocked password vault locks after the configured idle time
   (default 5 min) without user activity (D1).
 - **Constraints:** Existing locks on suspend, screen lock and quit are
@@ -891,9 +938,9 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 ### Task 23: Renderer: Settings for idle timeout and recents
 
 - **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
-  `feat/vault-env-gui`; not merged, not released. Behind the env UI gate.
-  The idle timeout applies to env vaults; password vaults pick it up with
-  their idle lock (Task 13).
+  `feat/vault-env-gui`; not merged, not released. Since Task 13 the idle
+  timeout covers password vaults too, and the section is no longer gated
+  (its env vault setting still is).
 - **Goal:** Settings UI for D1 (timeout) and D5 (recents toggle, which clears
   the list when turned off).
 - **Dependencies:** 13, 14, New-2.
@@ -910,7 +957,7 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
       the old value and shows why; a damaged settings file shows its warning.
   - Channels `app-settings:get` / `app-settings:update`
     (`AppSettingsIpc.js`), behind the env UI gate while both settings
-    concern env vaults; they leave the gate with Task 13. Preload
+    concerned env vaults; they left the gate with Task 13. Preload
     `appSettings.get/update`.
   - `applyAppSettings`: `EnvVaultSession.setIdleMs` (restarts every unlocked
     vault's timer from now), and `registry.clearRecents()` when remembering
@@ -2081,3 +2128,28 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
   and fixed.
 - **Cost of leaving it:** CI goes red now and then for no change, and people
   learn to re-run instead of read.
+
+### New-42: Decide whether input in the window keeps env vaults unlocked
+
+- **Status:** ⬜ found 2026-10-22 during Task 13.
+- **Found:** the password vault stays unlocked while there is input in the
+  window (Task 13). Env vaults count only their own user-initiated calls
+  (RFC §6.6), so scrolling through an env's keys or editing a value without
+  saving for 5 minutes locks the vault.
+- **Goal:** one rule for both, decided with the user.
+- **Implementation guidance:** the options are: (a) input anywhere keeps
+  every unlocked env vault open; (b) input on a vault's own screen keeps
+  that vault open (the page reports the vault id; main checks it's
+  unlocked); (c) keep today's rule and say so in Settings. (b) keeps the RFC's
+  per-vault intent. An unsaved edit lost to the lock is the case to test.
+- **Validation:** whichever is chosen, a test with a fake clock for "reading
+  for longer than the timeout"; the setting's help text says what counts.
+
+### New-43: `npm run lint` lints the docs site's ignored build output
+
+- **Status:** ⬜ found 2026-10-22 during Task 13.
+- **Found:** after a local docs build, `npm run lint` reports 460 errors,
+  all in `docs/.vitepress/cache` and `docs/.vitepress/dist`. Git ignores
+  both; the ESLint config doesn't. A clean checkout and CI are unaffected.
+- **Goal:** `npm run lint` checks only source.
+- **Validation:** with the docs built, `npm run lint` reports 0 errors.

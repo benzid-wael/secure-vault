@@ -74,6 +74,7 @@ describe('App vault session', () => {
       getVaults: vi.fn().mockResolvedValue({ success: true, data: ['main'] }),
       unlockVault: vi.fn().mockResolvedValue({ success: true }),
       lockVault: vi.fn().mockResolvedValue({ success: true }),
+      vaultActivity: vi.fn().mockResolvedValue({ success: true }),
       onVaultLocked: vi.fn((cb) => {
         vaultLockedCallback = cb;
       }),
@@ -88,6 +89,7 @@ describe('App vault session', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     // @ts-ignore
     delete window.electronAPI;
   });
@@ -158,5 +160,66 @@ describe('App vault session', () => {
   it('does not flag a vault unlocked with its own password', async () => {
     await unlock();
     expect(received.passwordManager.usesDefaultPassword).toBe(false);
+  });
+
+  it('says so after an idle lock, until dismissed', async () => {
+    await unlock();
+    act(() => vaultLockedCallback({ reason: 'idle', minutes: 5 }));
+
+    expect(await screen.findByText('select')).toBeInTheDocument();
+    const message = screen.getByText(
+      'Vault locked after 5 minutes without activity.'
+    );
+    // Not dismissed by a click elsewhere: the user was away.
+    fireEvent.click(screen.getByText('select'));
+    expect(message).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() =>
+      expect(
+        screen.queryByText('Vault locked after 5 minutes without activity.')
+      ).toBeNull()
+    );
+  });
+
+  it('says nothing for other locks (sleep, screen lock)', async () => {
+    await unlock();
+    act(() => vaultLockedCallback({}));
+    expect(await screen.findByText('select')).toBeInTheDocument();
+    expect(screen.queryByText(/without activity/)).toBeNull();
+  });
+
+  it('reports input while unlocked, at most every 15 s', async () => {
+    let now = 1_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    render(<App />);
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(api.vaultActivity).not.toHaveBeenCalled(); // nothing unlocked yet
+
+    fireEvent.click(screen.getByText('select'));
+    fireEvent.click(screen.getByText('login'));
+    await screen.findByTestId('password-manager');
+    for (const send of [
+      () => fireEvent.keyDown(window, { key: 'a' }),
+      () => fireEvent.pointerDown(window),
+      () => fireEvent.wheel(window),
+      () => fireEvent.touchStart(window),
+    ]) {
+      api.vaultActivity.mockClear();
+      now += 15_000;
+      send();
+      send(); // the same moment: not reported again
+      expect(api.vaultActivity).toHaveBeenCalledOnce();
+    }
+    now += 14_999;
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(api.vaultActivity).toHaveBeenCalledOnce();
+
+    // Locked: input no longer reported.
+    act(() => vaultLockedCallback({}));
+    await screen.findByText('select');
+    api.vaultActivity.mockClear();
+    now += 60_000;
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(api.vaultActivity).not.toHaveBeenCalled();
   });
 });

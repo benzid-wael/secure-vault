@@ -28,13 +28,13 @@ import {
 } from '@mui/icons-material';
 import AppSettingsSection from './AppSettingsSection';
 
-// `vaultName` is set only while that vault is unlocked. `appSettings`: show
-// the editable app settings (Task 23; behind the env vault gate for now).
+// `vaultName` is set only while that vault is unlocked. `envVaults`: the env
+// vault gate is on, so the settings that concern only env vaults show too.
 const ConfigurationDialog = ({
   open,
   onClose,
   vaultName,
-  appSettings = false,
+  envVaults = false,
 }) => {
   const [loading, setLoading] = useState(true);
   const [vaultDirectory, setVaultDirectory] = useState('');
@@ -149,12 +149,8 @@ const ConfigurationDialog = ({
           </Box>
         ) : (
           <Box sx={{ display: 'grid', gap: 3 }}>
-            {appSettings && (
-              <>
-                <AppSettingsSection />
-                <Divider sx={{ borderColor: 'rgba(255, 255, 255, 0.1)' }} />
-              </>
-            )}
+            <AppSettingsSection envVaults={envVaults} />
+            <Divider sx={{ borderColor: 'rgba(255, 255, 255, 0.1)' }} />
             {/* System Information */}
             <Box>
               <Typography

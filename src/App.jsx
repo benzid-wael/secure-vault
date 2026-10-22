@@ -24,6 +24,12 @@ import VaultRecovery from './components/VaultRecovery';
 import EnvVaultsPanel from './components/env/EnvVaultsPanel';
 import './App.css';
 
+/** Input is reported to main at most this often (Task 13). */
+const ACTIVITY_REPORT_MS = 15 * 1000;
+const ACTIVITY_EVENTS = ['keydown', 'pointerdown', 'wheel', 'touchstart'];
+
+const minutes = (n) => (n === 1 ? '1 minute' : `${n} minutes`);
+
 const darkTheme = createTheme({
   palette: {
     mode: 'dark',
@@ -69,11 +75,15 @@ function App() {
   // main says `envVaults`.
   const [features, setFeatures] = useState({ envVaults: false });
   const [selectorMode, setSelectorMode] = useState('passwords'); // passwords, environments
-  const [snackbar, setSnackbar] = useState({
-    open: false,
-    message: '',
-    severity: 'success',
-  });
+  // `persist`: stays until dismissed.
+  const [snackbar, setSnackbar] = useState(
+    /** @type {{open: boolean, message: string, severity: string,
+     *   persist?: boolean}} */ ({
+      open: false,
+      message: '',
+      severity: 'success',
+    })
+  );
 
   const resetToSelector = useCallback(() => {
     setIsAuthenticated(false);
@@ -134,10 +144,21 @@ function App() {
         setShowConfiguration(true);
       });
 
-      // The main process locked the session (sleep / screen lock).
+      // The main process locked the session (idle, sleep, screen lock).
       if (window.electronAPI.onVaultLocked) {
-        window.electronAPI.onVaultLocked(() => {
+        window.electronAPI.onVaultLocked((info) => {
           resetToSelector();
+          if (info?.reason === 'idle') {
+            // Stays until dismissed: the user was away when it happened.
+            setSnackbar({
+              open: true,
+              message: `Vault locked after ${minutes(
+                info.minutes
+              )} without activity.`,
+              severity: 'info',
+              persist: true,
+            });
+          }
         });
       }
     }
@@ -164,6 +185,30 @@ function App() {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [lockVault, resetToSelector]);
+
+  // While a vault is unlocked, input in the window keeps it so; main locks
+  // it after the idle time otherwise (Task 13). Calls the page makes on its
+  // own never count.
+  useEffect(() => {
+    const api = /** @type {any} */ (window).electronAPI;
+    if (!isAuthenticated || !api?.vaultActivity) return undefined;
+    let last = -Infinity;
+    const report = () => {
+      const now = Date.now();
+      if (now - last < ACTIVITY_REPORT_MS) return;
+      last = now;
+      api.vaultActivity().catch(() => {});
+    };
+    const options = { capture: true, passive: true };
+    for (const type of ACTIVITY_EVENTS) {
+      window.addEventListener(type, report, options);
+    }
+    return () => {
+      for (const type of ACTIVITY_EVENTS) {
+        window.removeEventListener(type, report, options);
+      }
+    };
+  }, [isAuthenticated]);
 
   // Reload vaults when returning to selector view
   useEffect(() => {
@@ -289,7 +334,9 @@ function App() {
     }
   };
 
-  const handleSnackbarClose = () => {
+  const handleSnackbarClose = (event, reason) => {
+    // A message that stays isn't dismissed by a click elsewhere.
+    if (snackbar.persist && reason === 'clickaway') return;
     setSnackbar({ ...snackbar, open: false });
   };
 
@@ -373,7 +420,7 @@ function App() {
           open={showConfiguration}
           onClose={() => setShowConfiguration(false)}
           vaultName={isAuthenticated ? currentVault : null}
-          appSettings={features.envVaults}
+          envVaults={features.envVaults}
         />
 
         <ImportExportDialog
@@ -395,7 +442,7 @@ function App() {
         {/* Success/Error Messages */}
         <Snackbar
           open={snackbar.open}
-          autoHideDuration={6000}
+          autoHideDuration={snackbar.persist ? null : 6000}
           onClose={handleSnackbarClose}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
         >

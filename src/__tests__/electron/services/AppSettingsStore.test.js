@@ -222,7 +222,8 @@ describe('claimSingleInstance (Task 11)', () => {
 
 describe('app settings IPC (Task 23)', () => {
   const targets = () => ({
-    session: { setIdleMs: vi.fn() },
+    vaultSession: { setIdleMs: vi.fn() },
+    envSession: { setIdleMs: vi.fn() },
     registry: { clearRecents: vi.fn(async () => {}) },
   });
 
@@ -265,10 +266,11 @@ describe('app settings IPC (Task 23)', () => {
     expect(apply).not.toHaveBeenCalled();
   });
 
-  it('sets the env vault idle time in milliseconds', async () => {
+  it('sets the idle time of every vault in milliseconds', async () => {
     const t = targets();
     await applyAppSettings(t, { idleMinutes: 15, rememberRecents: true });
-    expect(t.session.setIdleMs).toHaveBeenCalledWith(15 * 60 * 1000);
+    expect(t.vaultSession.setIdleMs).toHaveBeenCalledWith(15 * 60 * 1000);
+    expect(t.envSession.setIdleMs).toHaveBeenCalledWith(15 * 60 * 1000);
     expect(t.registry.clearRecents).not.toHaveBeenCalled();
   });
 

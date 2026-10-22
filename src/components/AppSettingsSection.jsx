@@ -19,11 +19,13 @@ const minutes = (n) => (n === 1 ? '1 minute' : `${n} minutes`);
 const settingsApi = () => /** @type {any} */ (window).electronAPI?.appSettings;
 
 /**
- * App-wide settings (GUI-ENV-BREAKDOWN Task 23): the env vault idle timeout
- * (D1) and whether opened env vaults are remembered (D5). Each change is
- * saved, and takes effect, at once.
+ * App-wide settings (GUI-ENV-BREAKDOWN Tasks 13, 23): the idle timeout of
+ * every vault (D1) and, with env vaults on, whether opened env vaults are
+ * remembered (D5). Each change is saved, and takes effect, at once.
+ *
+ * @param {{envVaults?: boolean}} props
  */
-const AppSettingsSection = () => {
+const AppSettingsSection = ({ envVaults = false }) => {
   const [settings, setSettings] = useState(null);
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
@@ -91,18 +93,16 @@ const AppSettingsSection = () => {
         </Alert>
       )}
       <FormControl size="small" sx={{ minWidth: 260, mb: 1 }}>
-        <InputLabel id="idle-minutes-label">
-          Lock environment vaults after
-        </InputLabel>
+        <InputLabel id="idle-minutes-label">Lock vaults after</InputLabel>
         <Select
           labelId="idle-minutes-label"
           id="idle-minutes"
-          label="Lock environment vaults after"
+          label="Lock vaults after"
           value={settings.idleMinutes}
           onChange={(event) =>
             change(
               { idleMinutes: Number(event.target.value) },
-              `Unlocked environment vaults now lock after ${minutes(
+              `Unlocked vaults now lock after ${minutes(
                 Number(event.target.value)
               )} without activity.`
             )
@@ -115,29 +115,31 @@ const AppSettingsSection = () => {
           ))}
         </Select>
       </FormControl>
-      <Box>
-        <FormControlLabel
-          control={
-            <Switch
-              checked={settings.rememberRecents}
-              onChange={(event) =>
-                change(
-                  { rememberRecents: event.target.checked },
-                  event.target.checked
-                    ? 'Environment vaults you open will be listed after a restart.'
-                    : 'The list of opened environment vaults was cleared, and new ones won’t be remembered.'
-                )
-              }
-            />
-          }
-          label="Remember environment vaults I open"
-        />
-        <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.6)' }}>
-          Vaults opened from a file or folder are listed again after a restart.
-          Turning this off clears that list; the vault files stay where they
-          are.
-        </Typography>
-      </Box>
+      {envVaults && (
+        <Box>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={settings.rememberRecents}
+                onChange={(event) =>
+                  change(
+                    { rememberRecents: event.target.checked },
+                    event.target.checked
+                      ? 'Environment vaults you open will be listed after a restart.'
+                      : 'The list of opened environment vaults was cleared, and new ones won’t be remembered.'
+                  )
+                }
+              />
+            }
+            label="Remember environment vaults I open"
+          />
+          <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.6)' }}>
+            Vaults opened from a file or folder are listed again after a
+            restart. Turning this off clears that list; the vault files stay
+            where they are.
+          </Typography>
+        </Box>
+      )}
     </Box>
   );
 };

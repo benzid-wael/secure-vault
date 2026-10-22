@@ -1,12 +1,7 @@
-// The app settings in the Configuration dialog (GUI-ENV-BREAKDOWN Task 23).
+// The app settings in the Configuration dialog (GUI-ENV-BREAKDOWN Tasks 13,
+// 23).
 import React from 'react';
-import {
-  render,
-  screen,
-  fireEvent,
-  within,
-  waitFor,
-} from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import AppSettingsSection from '../../components/AppSettingsSection';
@@ -43,7 +38,7 @@ const pickIdle = async (label) => {
 
 describe('AppSettingsSection', () => {
   it('shows the saved settings', async () => {
-    render(<AppSettingsSection />);
+    render(<AppSettingsSection envVaults />);
     expect(await screen.findByText('App settings')).toBeInTheDocument();
     expect(screen.getByRole('combobox')).toHaveTextContent(
       '5 minutes without activity'
@@ -59,14 +54,14 @@ describe('AppSettingsSection', () => {
     expect(api.update).toHaveBeenCalledWith({ idleMinutes: 30 });
     expect(
       await screen.findByText(
-        'Unlocked environment vaults now lock after 30 minutes without activity.'
+        'Unlocked vaults now lock after 30 minutes without activity.'
       )
     ).toBeInTheDocument();
     expect(screen.getByRole('combobox')).toHaveTextContent('30 minutes');
   });
 
   it('turning remembering off says the list was cleared', async () => {
-    render(<AppSettingsSection />);
+    render(<AppSettingsSection envVaults />);
     fireEvent.click(
       await screen.findByLabelText('Remember environment vaults I open')
     );
@@ -83,6 +78,16 @@ describe('AppSettingsSection', () => {
     expect(
       await screen.findByText(/will be listed after a restart/)
     ).toBeInTheDocument();
+  });
+
+  it('shows only the idle time with env vaults off', async () => {
+    render(<AppSettingsSection />);
+    expect(await screen.findByLabelText('Lock vaults after')).toHaveTextContent(
+      '5 minutes without activity'
+    );
+    expect(
+      screen.queryByLabelText('Remember environment vaults I open')
+    ).toBeNull();
   });
 
   it('lists an idle time outside the usual choices', async () => {
@@ -144,24 +149,22 @@ describe('AppSettingsSection', () => {
 });
 
 describe('ConfigurationDialog', () => {
-  it('shows the app settings only when asked to', async () => {
+  it('always shows the app settings; env ones only with env vaults on', async () => {
     const { unmount } = render(
-      <ConfigurationDialog
-        open
-        onClose={() => {}}
-        vaultName={null}
-        appSettings
-      />
+      <ConfigurationDialog open onClose={() => {}} vaultName={null} envVaults />
     );
     expect(await screen.findByText('App settings')).toBeInTheDocument();
+    expect(
+      await screen.findByLabelText('Remember environment vaults I open')
+    ).toBeInTheDocument();
     unmount();
 
     render(<ConfigurationDialog open onClose={() => {}} vaultName={null} />);
-    await waitFor(() =>
-      expect(win.electronAPI.getVaultDirectory).toHaveBeenCalled()
-    );
-    expect(screen.queryByText('App settings')).toBeNull();
-    expect(api.get).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText('App settings')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Lock vaults after')).toBeVisible();
+    expect(
+      screen.queryByLabelText('Remember environment vaults I open')
+    ).toBeNull();
   });
 });
 

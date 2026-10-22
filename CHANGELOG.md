@@ -38,6 +38,11 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Changed
 
+- **An unlocked vault locks after 5 minutes without activity.** Keys,
+  clicks, scrolling and touch in the app window count as activity; the app
+  says why the vault locked. Change the time in Configuration (menu or
+  Ctrl/Cmd+S), "Lock vaults after", from 1 minute to 4 hours. Sleep, screen
+  lock and quit still lock the vault at once.
 - **The desktop app runs once per user.** Launching it while it's already
   running brings up the open window instead of starting a second copy with
   its own unlocked vaults.

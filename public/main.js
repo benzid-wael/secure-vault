@@ -85,7 +85,14 @@ class ElectronApp {
 
       console.log('Initializing vault services...');
       // The master password lives here, never in the renderer (see VaultSession).
-      this.session = new VaultSession();
+      // It locks itself after the idle time (Task 13); the page says why.
+      this.session = new VaultSession({
+        onIdle: (vaultName, idleMs) =>
+          this.sendToWindow('vault-locked', {
+            reason: 'idle',
+            minutes: Math.round(idleMs / 60000),
+          }),
+      });
       // Services derive keys through the session so they're reused while
       // the vault is unlocked instead of re-running PBKDF2 per call.
       const deriveKey = (password, salt, iterations) =>
@@ -120,15 +127,20 @@ class ElectronApp {
         },
       });
 
-      // The saved idle timeout, once read (Task 23).
+      // The saved idle timeout, once read (Tasks 13, 23).
+      this.applySettings = (next, previous) =>
+        applyAppSettings(
+          {
+            vaultSession: this.session,
+            envSession: this.envSession,
+            registry: this.envRegistry,
+          },
+          next,
+          previous
+        );
       this.settings
         .get()
-        .then((saved) =>
-          applyAppSettings(
-            { session: this.envSession, registry: this.envRegistry },
-            saved
-          )
-        )
+        .then((saved) => this.applySettings(saved))
         .catch((error) => console.error('Could not apply settings:', error));
 
       this.mainWindow = null;
@@ -328,21 +340,22 @@ class ElectronApp {
       for (const [channel, fn] of Object.entries(envHandlers)) {
         handle(channel, fn);
       }
-      // Both settings concern env vaults for now; password vaults join with
-      // their idle lock (Task 13), and these channels leave the gate then.
-      const settingsHandlers = createAppSettingsHandlers({
-        settings: this.settings,
-        apply: (next, previous) =>
-          applyAppSettings(
-            { session: this.envSession, registry: this.envRegistry },
-            next,
-            previous
-          ),
-      });
-      for (const [channel, fn] of Object.entries(settingsHandlers)) {
-        handle(channel, fn);
-      }
     }
+    // App settings (Tasks 13, 23): the idle timeout covers password vaults
+    // too, so these exist with the env gate off.
+    const settingsHandlers = createAppSettingsHandlers({
+      settings: this.settings,
+      apply: this.applySettings,
+    });
+    for (const [channel, fn] of Object.entries(settingsHandlers)) {
+      handle(channel, fn);
+    }
+    // Input in the window (keys, clicks, scrolling), reported by the page:
+    // the only thing that keeps the password vault unlocked (Task 13).
+    handle('vault-activity', () => {
+      this.session.touch();
+      return { success: true };
+    });
 
     // IPC Handlers using the new VaultService
     handle('get-vaults', async () => {

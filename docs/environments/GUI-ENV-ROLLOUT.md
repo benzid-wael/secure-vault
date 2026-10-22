@@ -495,10 +495,28 @@ Known hazards so far, to be completed per task:
 - **Schema or config change:** `app-settings.json` is written on the first
   change (format in New-2).
 - **Before it ships:** nothing beyond the gate's own criteria.
-- **Gated by:** the Environments UI gate, channels included; they leave it
-  with Task 13, when the timeout also locks password vaults.
+- **Gated by:** the Environments UI gate, channels included, until Task 13
+  took the section and its channels out of it.
 - **Verify after release:** set the timeout to 1 minute, unlock an env vault
   and leave it: it locks after a minute. Turn remembering off: vaults opened
   from files or folders are gone from the list after a restart.
 - **Rollback:** reinstall the previous app. It ignores `app-settings.json`,
   so env vaults lock after the default 5 minutes again.
+
+### Task 13: idle lock for password vaults
+
+- **Runtime change (every user, not gated):** an unlocked password vault
+  locks after 5 minutes without input in the window (keys, clicks,
+  scrolling, touch), and the app says so. Configuration shows "Lock vaults
+  after" to everyone; the env vault toggle stays gated.
+- **Schema or config change:** none; the same `idleMinutes` in
+  `app-settings.json` (Task 23) now applies to password vaults too.
+- **Before it ships:** the CHANGELOG "Changed" entry (written). Users who
+  leave a vault open all day will see it lock; the entry says where to
+  change the time.
+- **Gated by:** nothing. It's a security default, not a feature to try.
+- **Verify after release:** set "Lock vaults after" to 1 minute, unlock a
+  password vault and leave it: it locks after a minute and says so. Unlock
+  again and keep scrolling or typing for two minutes: it stays unlocked.
+- **Rollback:** reinstall the previous app. It ignores the setting for
+  password vaults, which then lock only on sleep, screen lock and quit.
