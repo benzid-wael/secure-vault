@@ -5,6 +5,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const created = [];
+// A rejection for the next window's first load, set before it opens.
+const nextLoad = vi.hoisted(() => ({ rejection: null }));
 vi.mock('electron', () => {
   class BrowserWindow {
     constructor(options) {
@@ -22,7 +24,11 @@ vi.mock('electron', () => {
         openDevTools: vi.fn(),
         send: vi.fn(),
       };
-      this.loadURL = vi.fn(() => Promise.resolve());
+      this.loadURL = vi.fn(() => {
+        const rejection = nextLoad.rejection;
+        nextLoad.rejection = null;
+        return rejection ? Promise.reject(rejection) : Promise.resolve();
+      });
       this.show = vi.fn();
       this.focus = vi.fn();
       this.restore = vi.fn();
@@ -99,11 +105,63 @@ describe('WindowManager', () => {
     win.webContents.handlers['did-fail-load'](
       {},
       -102,
-      'ERR_CONNECTION_REFUSED'
+      'ERR_CONNECTION_REFUSED',
+      'http://localhost:3000/',
+      true
     );
     const page = decodeURIComponent(win.loadURL.mock.calls.at(-1)[0]);
     expect(page).toMatch(/^data:text\/html/);
     expect(page).toContain('npm run dev:electron');
+  });
+
+  // New-39: a reload during startup made the packaged app loop on its own
+  // error page instead of showing the app.
+  describe('when a load fails', () => {
+    const failLoad = (win, ...args) =>
+      win.webContents.handlers['did-fail-load']({}, ...args);
+
+    it('ignores a load a newer navigation aborted', async () => {
+      const { win } = open({ dev: true });
+      await flush();
+      const calls = win.loadURL.mock.calls.length;
+      failLoad(win, -3, 'ERR_ABORTED', 'http://localhost:3000/', true);
+      expect(win.loadURL).toHaveBeenCalledTimes(calls);
+    });
+
+    it('ignores a failed subframe', async () => {
+      const { win } = open({ dev: true });
+      await flush();
+      const calls = win.loadURL.mock.calls.length;
+      failLoad(win, -2, 'ERR_FAILED', 'http://localhost:3000/x', false);
+      expect(win.loadURL).toHaveBeenCalledTimes(calls);
+    });
+
+    it('shows the error page once, not again when it fails itself', async () => {
+      const { win } = open({ dev: true });
+      await flush();
+      failLoad(win, -2, 'ERR_FAILED', 'http://localhost:3000/', true);
+      const calls = win.loadURL.mock.calls.length;
+      const errorPage = win.loadURL.mock.calls.at(-1)[0];
+      failLoad(win, -2, 'ERR_FAILED', errorPage, true);
+      expect(win.loadURL).toHaveBeenCalledTimes(calls);
+    });
+
+    it('leaves a rejected startup load to did-fail-load', async () => {
+      nextLoad.rejection = Object.assign(new Error('ERR_ABORTED (-3)'), {
+        errno: -3,
+        code: 'ERR_ABORTED',
+      });
+      const { win } = open({ dev: true });
+      await flush();
+      expect(win.loadURL).toHaveBeenCalledTimes(1);
+      expect(win.loadURL).toHaveBeenCalledWith('http://localhost:3000');
+    });
+
+    it('still shows the error page for a startup error that is not a load', async () => {
+      const { win } = open({ dev: false }); // the build is missing
+      await flush();
+      expect(win.loadURL.mock.calls.at(-1)[0]).toMatch(/^data:/);
+    });
   });
 
   it('shows an error page when the production build is missing', async () => {

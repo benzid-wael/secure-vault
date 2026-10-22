@@ -413,3 +413,17 @@ Known hazards so far, to be completed per task:
   lock" with the path; the next `set` succeeds and the lock is gone.
 - **Rollback:** reinstall the previous version; `doctor` loses the lock
   check. Nothing on disk changes.
+
+### New-39: a failed page load no longer loops
+
+- **Runtime change (desktop app, every user, not gated):** a page load that
+  a newer navigation aborted, or a failed subframe, no longer shows the
+  error page or the "Load Failed" dialog. A real failure shows the error
+  page once; if the error page itself fails, the app doesn't retry it.
+- **Schema or config change:** none.
+- **Before it ships:** nothing.
+- **Gated by:** nothing.
+- **Verify after release:** `NODE_ENV=development npx electron .` with no
+  dev server running shows the "dev server isn't running" error page once
+  and stays there; the log has one "Failed to load URL" line.
+- **Rollback:** reinstall the previous app. Nothing on disk changes.

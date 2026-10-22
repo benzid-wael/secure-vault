@@ -81,7 +81,7 @@ updated as each task finishes, not in a batch at the end.
 | New-36 | Prune saved passwords of gone vaults; "forget all"                 | M5  | P2  | ⬜     | New-24                                 |
 | New-37 | Authenticate the envelope header (GCM additional data)             | M5  | P2  | ⬜     | New-29                                 |
 | New-38 | Set Electron fuses in packaged builds                              | M0  | P1  | ⬜     | New-19                                 |
-| New-39 | Fix: a failed page load loops instead of showing the error page    | —   | P2  | ⬜     | —                                      |
+| New-39 | Fix: a failed page load loops instead of showing the error page    | —   | P2  | ✅     | —                                      |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -1438,7 +1438,7 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
   - Still to do: Windows and Linux green in the release workflow.
 - **Found while doing it:**
   - New-38: the packaged app keeps Electron's default fuses.
-  - New-39: a page load aborted at startup loops on `ERR_FAILED`.
+  - New-39: a page load aborted at startup loops on `ERR_FAILED` (fixed).
   - Chromium keeps its profile in the real `~/Library/Application Support`
     on macOS even with `HOME` changed; the check passes `--user-data-dir`.
     Whether `npm run test:e2e` writes there too is not checked.
@@ -1854,16 +1854,41 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### New-39: Fix: a failed page load loops instead of showing the error page
 
-- **Status:** ⬜ found 2026-10-22 while doing New-19.
-- **Found:** reloading the page while the packaged app's first load was
-  still running aborted it (`ERR_ABORTED`); the app then logged
-  "Failed to load URL … ERR_FAILED" without end and never showed a page.
-  Not yet traced: `WindowManager` answers `did-fail-load` with an error page
-  loaded from a `data:` URL, and that load seems to fail in turn.
-- **Goal:** a failed load shows the error page once; an aborted load
-  (`-3`, a newer navigation replaced it) is not treated as a failure.
-- **Dependencies:** none.
-- **Validation:** a test that fails the first load shows the error page and
-  stops; a reload during startup ends on the app.
+- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
+  `feat/vault-env-gui`; not merged, not released.
+- **Found:** while doing New-19: reloading the page while the packaged
+  app's first load was still running aborted it (`ERR_ABORTED`); the app
+  then logged "Failed to load URL … ERR_FAILED" without end and never
+  showed a page.
+- **Cause:** two bugs in `WindowManager.loadApp`.
+  - Any `did-fail-load` showed the error page, including a load a newer
+    navigation had aborted (`-3`) and a failed subframe. So a reload during
+    startup ended on the error page even though the reload succeeded
+    (reproduced under the dev Electron every time).
+  - The aborted `loadURL` also rejected into the `catch`, which showed the
+    error page a second time. In the packaged app, logging added to a copy
+    showed the error page's own `data:` load failing with `ERR_FAILED`
+    (`-2`) about 200 times in 3 s, and each failure showed the error page
+    again. Most likely the two error-page loads kept aborting each other;
+    not traced further, since the fix removes both triggers.
+- **Fix:**
+  - `isLoadFailure(errorCode, url, isMainFrame)`, exported from
+    `WindowManager.js`: only a main-frame failure that wasn't aborted and
+    isn't the error page itself counts. `loadApp`'s handler and `main.js`'s
+    error dialog both use it. The log now names the URL that failed.
+  - The `catch` leaves navigation errors (they carry an `errno`) to
+    `did-fail-load`; it still shows the error page for other startup
+    errors, such as a missing build.
+- **Validation:**
+  - `WindowManager.test.js`: an aborted load, a failed subframe, the error
+    page failing, and a rejected startup load don't show (or re-show) the
+    error page; a missing build still does. The first four fail on the old
+    code.
+  - Dev Electron, reload right after the first navigation commits: the old
+    code ended on the error page; now the app loads.
+  - Packaged macOS app, reload at startup over the DevTools protocol: 6
+    runs, no failure logged, each ends on `app.asar/build/index.html`.
+    Before, about half the runs looped (the reload has to land mid-startup).
+  - `npm run test:packaged` 10/10, e2e 5/5. `WindowManager.js` 88% lines.
 - **Cost of leaving it:** rare (a reload during startup, or a damaged
   install), but then the app spins on an empty window.

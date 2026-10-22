@@ -44,7 +44,10 @@ import {
 import { ImportExportService } from '../src/electron/services/ImportExportService.js';
 import { VaultSettingsService } from '../src/electron/services/VaultSettingsService.js';
 import { VaultSession } from '../src/electron/services/VaultSession.js';
-import { WindowManager } from '../src/electron/services/WindowManager.js';
+import {
+  WindowManager,
+  isLoadFailure,
+} from '../src/electron/services/WindowManager.js';
 import { MenuService } from '../src/electron/services/MenuService.js';
 import { SecurityManager } from '../src/electron/services/SecurityManager.js';
 import { getVaultsDir } from '../src/electron/utils/appPaths.js';
@@ -126,7 +129,8 @@ class ElectronApp {
 
       this.mainWindow.webContents.on(
         'did-fail-load',
-        (event, errorCode, errorDescription) => {
+        (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+          if (!isLoadFailure(errorCode, validatedURL, isMainFrame)) return;
           console.error('Window failed to load:', {
             errorCode,
             errorDescription,
