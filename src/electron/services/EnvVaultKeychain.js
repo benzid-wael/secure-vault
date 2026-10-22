@@ -1,6 +1,6 @@
 import fs from 'fs-extra';
 import path from 'path';
-import { moveWithRetry } from '../utils/moveWithRetry.js';
+import { writePrivateJson } from '../utils/privateJsonFile.js';
 
 const FORMAT = 1;
 
@@ -93,13 +93,8 @@ export class EnvVaultKeychain {
   }
 
   #save() {
-    const data = JSON.stringify({ format: FORMAT, entries: this.#entries });
-    const next = this.#writing.then(async () => {
-      await fs.ensureDir(path.dirname(this.#file));
-      const tmp = `${this.#file}.tmp`;
-      await fs.writeFile(tmp, data, { mode: 0o600 });
-      await moveWithRetry(tmp, this.#file);
-    });
+    const data = { format: FORMAT, entries: this.#entries };
+    const next = this.#writing.then(() => writePrivateJson(this.#file, data));
     this.#writing = next.catch(() => {});
     return next;
   }

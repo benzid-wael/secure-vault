@@ -38,6 +38,9 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Changed
 
+- **The desktop app runs once per user.** Launching it while it's already
+  running brings up the open window instead of starting a second copy with
+  its own unlocked vaults.
 - **Concurrent writes are safe.** Every `vault env` command that changes a
   vault now takes `<vault>.lock` while it reads, changes and saves it, so two
   commands (or a command and the desktop app) no longer overwrite each

@@ -22,7 +22,7 @@ updated as each task finishes, not in a batch at the end.
 | 8      | CLI docs, CHANGELOG, `doctor` reports stale locks                  | M1  | P1  | ✅     | 6                                      |
 | 9      | `applyVarChanges` model method                                     | M2  | P0  | 🟡     | 6                                      |
 | 10     | Changeset apply + rebase in the service                            | M2  | P0  | ✅     | 9                                      |
-| 11     | Single-instance lock for the app                                   | M3  | P1  | ⬜     | 0                                      |
+| 11     | Single-instance lock for the app                                   | M3  | P1  | ✅     | 0                                      |
 | 12     | Main-process `ClipboardService` + IPC                              | M3  | P1  | 🟡     | 0, New-3                               |
 | 13     | Idle lock for password vaults                                      | M3  | P1  | ⬜     | New-2                                  |
 | 14     | `EnvVaultRegistry` (ids, dialogs, recents)                         | M3  | P0  | 🟡     | 6, 11, New-2                           |
@@ -44,7 +44,7 @@ updated as each task finishes, not in a batch at the end.
 | 30     | CI e2e job (ubuntu + xvfb)                                         | M6  | P1  | 🟡     | 1, 29                                  |
 | 31     | User guide `docs/guide/gui/env-vaults.md`                          | M6  | P2  | ⬜     | 21                                     |
 | New-1  | Coverage can't see the code this plan changes                      | —   | P1  | ✅     | — (blocks 1, 3)                        |
-| New-2  | App-wide settings store                                            | M3  | P1  | ⬜     | 0                                      |
+| New-2  | App-wide settings store                                            | M3  | P1  | ✅     | 0                                      |
 | New-3  | Decide which secrets go through `ClipboardService`                 | —   | P1  | ⬜     | —                                      |
 | New-4  | Feature gate for the Environments UI                               | M4  | P0  | ✅     | 0                                      |
 | New-5  | Verify async PBKDF2 in the Bun-compiled CLI binary                 | M1  | P1  | ✅     | 3                                      |
@@ -618,8 +618,9 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 11: Single-instance lock for the app
 
-- **Status:** 🟡 built 2026-10-22; waits on its first CI run. Uncommitted on
-  `feat/vault-env-gui`. Done when a push shows both new jobs green.
+- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
+  `feat/vault-env-gui`; not merged, not released. Ungated: every user gets
+  it (CHANGELOG "Changed").
 - **Goal:** A second launch focuses the existing window instead of starting a
   second process.
 - **Constraints:** e2e runs must still be able to launch the app per scenario.
@@ -628,6 +629,19 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 - **Implementation guidance:** It changes behavior for password-vault users
   too; mention it in the release notes.
 - **Validation:** e2e: launching twice leaves one process and one window.
+- **Built:**
+  - `claimSingleInstance(app, showWindow)` (`src/electron/utils/singleInstance.js`):
+    without the lock the process quits before building anything; with it,
+    `second-instance` calls `ElectronApp.showWindow()`, which restores and
+    focuses the window, or recreates it (macOS, window closed). `activate`
+    uses the same method.
+  - The e2e driver gives each scenario its own Electron `userData` (on
+    macOS it ignored HOME), so the lock, the saved-password file and
+    Chromium's profile are per scenario, and never the user's.
+- **Validation done:** e2e `single-instance`: a second launch with the same
+  user data exits 0, the running app gets `second-instance` and un-minimizes
+  its window, one window remains. With the lock disabled, 3 of its 5 checks
+  fail. Unit tests for both branches.
 
 ### Task 12: Main-process `ClipboardService` + IPC
 
@@ -674,10 +688,29 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
   `createInAppData`, `resolve`). Ids are random 128-bit hex per run, one per
   path; a picked file must parse with `type: 'environment-vault'` before it
   gets an id. 100% lines.
-- **Not done (MVP cut):** persisted recents and the toggle (need New-2 and
-  Task 11), `createFromDialog` (a new vault at a chosen path, e.g. a
-  project's `.env.vault`), `forget`. Vaults opened from the dialog are
-  remembered for the run only.
+- **Built 2026-10-22 (recents):**
+  - `EnvVaultRecents`: `<appdata>/gui-env-recents.json`,
+    `[{path, lastOpened}]`, newest first, at most 50, `0600`. Untrusted
+    entries (relative paths, duplicates, bad types) are dropped on read.
+  - The registry lists remembered vaults (most recently opened first; a
+    missing file shows `exists: false`) and records each file or folder
+    opened, unless `rememberRecents` is off. App-folder vaults aren't
+    recorded (always listed). A recents read or write failure is logged and
+    never stops an open.
+  - `forget(id)`: off the list now and in later runs; the file stays.
+    Channel `env-vaults:forget`, refused while the vault is unlocked. The
+    list shows **Remove from list** on opened vaults that aren't unlocked.
+  - `clearRecents()` deletes the kept list (for the toggle, Task 23);
+    vaults opened this run stay listed until the app quits.
+- **Not done:** `createFromDialog` (a new vault at a chosen path, e.g. a
+  project's `.env.vault`); the toggle's UI (Task 23).
+- **Validation done (recents):** `EnvVaultMain.test.js`: listed in a later
+  run under a new id; newest first; missing file; remove now and later;
+  only opened vaults can be removed; app-folder vault not recorded; toggle
+  off writes nothing and lists no earlier vault; clear; a broken recents
+  store doesn't stop an open; the IPC refuses removing an unlocked vault.
+  `AppSettingsStore.test.js`: the recents file itself. UI: Remove from list.
+  `EnvVaultRegistry.js` 100% lines.
 - **Goal:** Main is the only place that maps opaque ids to vault paths, from
   the appdata scan, the native open/save dialogs and recents (RFC §6.6).
 - **Constraints:** Ids are random, per app run. The recents file is `0600`,
@@ -1014,7 +1047,8 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### New-2: App-wide settings store
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
+  `feat/vault-env-gui`; not merged, not released.
 - **Found:** Task 0, 2026-10-21 (Correction 4).
 - **Goal:** Main can read and write non-secret app settings (idle timeout,
   recents toggle) while every vault is locked.
@@ -1026,6 +1060,23 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
   vaults aren't password vaults.
 - **Validation:** Unit tests: defaults when the file is missing; survives a
   corrupt file (falls back to defaults and says so); the file mode is `0600`.
+- **Built:**
+  - `AppSettingsStore` (`src/electron/services/`):
+    `<appdata>/app-settings.json`, `{format: 1, settings}`, with
+    `idleMinutes` (default 5, whole minutes 1–240) and `rememberRecents`
+    (default on). `get()`, `update(patch)`, `warning`.
+    - A damaged file, another format, or no settings: defaults, and
+      `warning` says so; one bad value falls back alone.
+    - `update` refuses unknown keys and invalid values as a whole, writing
+      nothing; if the write fails, the old value stays in effect.
+  - `writePrivateJson` / `readJsonFile` (`src/electron/utils/privateJsonFile.js`):
+    temp file `0600` and `moveWithRetry` over the target. The keychain file
+    (New-24) now uses it too.
+  - Main creates the store and gives the env registry `rememberRecents`.
+    No IPC yet: the Settings screen is Task 23.
+- **Validation done:** `AppSettingsStore.test.js`: the cases above, plus
+  overlapping updates keep both changes (a first version lost one; the test
+  caught it) and a failed write keeps the old value. 100% lines.
 - **Cost of leaving it:** D1 and D5 can't be configured, and the idle timeout
   would be hard-coded.
 
@@ -1300,7 +1351,8 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### New-13: CI runs the unit tests on Windows and macOS too
 
-- **Status:** ⬜ not started.
+- **Status:** 🟡 built 2026-10-22; waits on its first CI run. Done when a
+  push shows both new jobs green.
 - **Found:** New-12, 2026-10-21.
 - **Goal:** Every PR runs `npm run test:coverage` (or at least
   `npx vitest run`) on `windows-latest` and `macos-latest` as well as

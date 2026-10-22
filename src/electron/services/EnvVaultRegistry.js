@@ -22,9 +22,8 @@ const NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
  * The renderer only ever holds ids, so it can't point an operation at a file
  * the user didn't pick.
  *
- * MVP: vaults opened from the dialog are remembered for this run only;
- * persisted recents wait on the app settings store (New-2) and the
- * single-instance lock (Task 11).
+ * Vaults opened from a file or a folder are listed for the run and, while
+ * `remember()` says so (the D5 setting), kept in `recents` across runs.
  */
 export class EnvVaultRegistry {
   #envsDir;
@@ -34,23 +33,50 @@ export class EnvVaultRegistry {
   #paths = new Map();
   /** @type {Map<string, string>} path → id, so a path keeps one id per run */
   #ids = new Map();
-  /** @type {Set<string>} paths opened from the dialog this run */
-  #opened = new Set();
+  /** @type {Map<string, string>} path → lastOpened (ISO), opened or recent */
+  #opened = new Map();
+  /** @type {import('./EnvVaultRecents.js').EnvVaultRecents | null} */
+  #recents;
+  #remember;
+  #recentsLoaded = null;
 
   /**
    * @param {Object} [options]
    * @param {string} [options.envsDir]
    * @param {{showOpenDialog: Function}} [options.dialog] Electron's `dialog`.
    * @param {() => string} [options.newId]
+   * @param {import('./EnvVaultRecents.js').EnvVaultRecents} [options.recents]
+   *   Where opened vaults are kept across runs; none: this run only.
+   * @param {() => Promise<boolean>} [options.remember] Whether to keep them
+   *   (the D5 setting), asked at each use.
    */
   constructor({
     envsDir = getEnvsDir(),
     dialog = null,
     newId = () => crypto.randomBytes(16).toString('hex'),
+    recents = null,
+    remember = async () => true,
   } = {}) {
     this.#envsDir = envsDir;
     this.#dialog = dialog;
     this.#newId = newId;
+    this.#recents = recents;
+    this.#remember = remember;
+  }
+
+  /** Once per run: add the remembered vaults to this run's list. */
+  #loadRecents() {
+    this.#recentsLoaded ??= (async () => {
+      if (!this.#recents || !(await this.#remember())) return;
+      for (const { path: filePath, lastOpened } of await this.#recents.list()) {
+        if (!this.#opened.has(filePath)) {
+          this.#opened.set(filePath, lastOpened);
+        }
+      }
+    })().catch((error) => {
+      console.error('Could not read the recent env vaults:', error.message);
+    });
+    return this.#recentsLoaded;
   }
 
   #idFor(filePath) {
@@ -63,8 +89,12 @@ export class EnvVaultRegistry {
     return id;
   }
 
-  /** @returns {Promise<EnvVaultEntry[]>} App-data vaults, then opened ones. */
+  /**
+   * @returns {Promise<EnvVaultEntry[]>} App-data vaults, then opened and
+   *   remembered ones, most recently opened first.
+   */
   async list() {
+    await this.#loadRecents();
     let names = [];
     try {
       names = (await fs.readdir(this.#envsDir))
@@ -84,7 +114,8 @@ export class EnvVaultRegistry {
         exists: true,
       };
     });
-    for (const filePath of this.#opened) {
+    const opened = [...this.#opened].sort(([, a], [, b]) => b.localeCompare(a));
+    for (const [filePath] of opened) {
       if (path.dirname(filePath) === this.#envsDir) continue; // listed above
       entries.push({
         id: this.#idFor(filePath),
@@ -158,8 +189,49 @@ export class EnvVaultRegistry {
         error: 'That file is not an environment vault',
       };
     }
-    this.#opened.add(filePath);
+    await this.#noteOpened(filePath);
     return { success: true, id: this.#idFor(filePath) };
+  }
+
+  async #noteOpened(filePath, now = new Date()) {
+    // App-folder vaults are always listed; nothing to remember.
+    if (path.dirname(filePath) === this.#envsDir) return;
+    await this.#loadRecents();
+    this.#opened.set(filePath, now.toISOString());
+    if (!this.#recents || !(await this.#remember())) return;
+    try {
+      await this.#recents.add(filePath, now);
+    } catch (error) {
+      // The vault is open either way; only the next run won't list it.
+      console.error('Could not remember the env vault:', error.message);
+    }
+  }
+
+  /**
+   * Take an opened or remembered vault off the list, now and in later runs.
+   * The file is untouched; app-folder vaults are always listed.
+   * @returns {Promise<{success: boolean, code?: string, error?: string}>}
+   */
+  async forget(id) {
+    const filePath = this.resolve(id);
+    if (!filePath || !this.#opened.has(filePath)) {
+      return {
+        success: false,
+        code: 'INVALID',
+        error: 'Only opened vaults can be removed from the list',
+      };
+    }
+    this.#opened.delete(filePath);
+    await this.#recents?.remove(filePath);
+    return { success: true };
+  }
+
+  /**
+   * Stop remembering across runs (the D5 setting turned off): the kept list
+   * is deleted. Vaults opened this run stay listed until the app quits.
+   */
+  async clearRecents() {
+    await this.#recents?.clear();
   }
 
   /**

@@ -72,6 +72,7 @@ function wire(handlers) {
     list: call('env-vaults:list'),
     open: call('env-vaults:open'),
     openFolder: call('env-vaults:open-folder'),
+    forget: call('env-vaults:forget'),
     create: call('env-vaults:create'),
     unlock: call('env-vault:unlock'),
     unlockSaved: call('env-vault:unlock-saved'),
@@ -718,6 +719,29 @@ describe('env vault UI on the real handlers (StrictMode)', () => {
     });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Unlock' }));
     expect(await screen.findByText('New environment')).toBeInTheDocument();
+  });
+
+  it('removes an opened vault from the list', async () => {
+    const project = path.join(dir, 'proj');
+    await fs.copy(
+      path.join(dir, 'app.env.vault'),
+      path.join(project, '.env.vault')
+    );
+    picked = project;
+    render(<EnvVaultsPanel />);
+    fireEvent.click(await screen.findByText('Open folder…'));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(
+      await screen.findByLabelText('Remove proj/.env.vault from the list')
+    );
+    await waitFor(() =>
+      expect(screen.queryByText('proj/.env.vault')).toBeNull()
+    );
+    // App-folder vaults have no such action.
+    expect(screen.getByText('app')).toBeInTheDocument();
+    expect(screen.queryByText('Remove from list')).toBeNull();
+    expect(await fs.pathExists(path.join(project, '.env.vault'))).toBe(true);
   });
 
   it('says where it looked when a folder has no vault', async () => {

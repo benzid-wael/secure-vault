@@ -463,3 +463,26 @@ Known hazards so far, to be completed per task:
   project's `.env.vault` path (the nearest one up to the git root) in the
   unlock dialog, and unlocking shows the same envs as `vault env list`.
 - **Rollback:** reinstall the previous app. Nothing on disk changes.
+
+### Task 11, New-2, Task 14 (recents): one instance, settings, remembered vaults
+
+- **Runtime change (desktop app, every user, not gated):** a second launch
+  brings up the running app's window and quits (Task 11). The app reads
+  `<appdata>/app-settings.json` if present; nothing writes it yet.
+- **Runtime change (gated by the Environments UI gate):** env vaults opened
+  from a file or folder are listed again after a restart, newest first; a
+  gone file shows as Missing; Remove from list takes one off.
+- **Schema or config change:** two new files in the app data folder, both
+  `0600`, plain JSON, paths and settings only: `app-settings.json` (written
+  once the Settings screen exists, Task 23) and `gui-env-recents.json`
+  (written when an env vault is opened from a file or folder).
+- **Before it ships:** release notes for Task 11 (CHANGELOG has it).
+- **Gated by:** recents by the Environments UI gate; Task 11 by nothing.
+- **Per environment:** desktop app only. Electron keys the instance lock on
+  its user data folder: dev runs use the package name
+  (`@benzid.wael/secure-vault`), the packaged app its product name, so a
+  dev run and an installed app don't block each other.
+- **Verify after release:** with the app open, launch it again: no second
+  window or Dock icon, and the first window comes forward. Open a project
+  folder's vault, quit, relaunch: it's listed.
+- **Rollback:** reinstall the previous app. It ignores both new files.

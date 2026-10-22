@@ -279,6 +279,15 @@ export function createEnvVaultHandlers({
 
     'env-vaults:open': () => registry.openFromDialog(getWindow()),
     'env-vaults:open-folder': () => registry.openFolderFromDialog(getWindow()),
+    // Off the list, now and in later runs (Task 14); the file is untouched.
+    'env-vaults:forget': (event, id) =>
+      session.isUnlocked(id)
+        ? {
+            success: false,
+            code: 'INVALID',
+            error: 'Lock the vault before removing it from the list',
+          }
+        : registry.forget(id),
 
     'env-vaults:create': async (event, options, password) => {
       if (options?.mode !== 'appdata') {

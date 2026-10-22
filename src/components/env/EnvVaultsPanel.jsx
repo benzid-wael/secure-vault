@@ -643,6 +643,13 @@ const EnvVaultsPanel = ({ header = null }) => {
     if (vault) select(vault);
   };
 
+  // Off the list now and after a restart; the file stays where it is.
+  const forget = async (vault) => {
+    const result = await api.forget(vault.id);
+    if (!result.success) return setError(result.error);
+    refresh();
+  };
+
   // The vault the CLI would use in a folder: its path shows in the unlock
   // dialog before the password is typed (New-22).
   const openFolder = async () => {
@@ -740,6 +747,20 @@ const EnvVaultsPanel = ({ header = null }) => {
               )}
               {!vault.exists && (
                 <Chip size="small" label="Missing" sx={{ mt: 1 }} />
+              )}
+              {vault.source === 'opened' && !vault.unlocked && (
+                <Box sx={{ mt: 1 }}>
+                  <Button
+                    size="small"
+                    aria-label={`Remove ${vault.label} from the list`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      forget(vault);
+                    }}
+                  >
+                    Remove from list
+                  </Button>
+                </Box>
               )}
             </CardContent>
           </Card>

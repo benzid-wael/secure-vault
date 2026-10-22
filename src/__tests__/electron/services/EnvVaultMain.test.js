@@ -18,6 +18,7 @@ import {
 import { createEnvVaultHandlers } from '../../../electron/services/EnvVaultIpc.js';
 import { readFeatures } from '../../../electron/utils/features.js';
 import { EnvVaultKeychain } from '../../../electron/services/EnvVaultKeychain.js';
+import { EnvVaultRecents } from '../../../electron/services/EnvVaultRecents.js';
 import { fakeSafeStorage } from '../../helpers/fakeSafeStorage.js';
 import {
   ClipboardService,
@@ -267,6 +268,136 @@ describe('EnvVaultRegistry', () => {
         success: false,
         canceled: true,
       });
+    });
+  });
+
+  // Task 14: opened vaults are remembered across runs, unless turned off.
+  describe('recents', () => {
+    let recentsFile;
+    let remember;
+    beforeEach(() => {
+      recentsFile = path.join(dir, 'gui-env-recents.json');
+      remember = true;
+    });
+    /** A registry as a new app run would make it, picking `picked`. */
+    const run = (...picked) =>
+      new EnvVaultRegistry({
+        envsDir,
+        dialog: pick(...picked),
+        recents: new EnvVaultRecents({ file: recentsFile }),
+        remember: async () => remember,
+      });
+
+    it('lists a vault opened in an earlier run, under a new id', async () => {
+      const project = await seed(path.join(dir, 'proj', '.env.vault'));
+      const first = run(project);
+      const opened = await first.openFromDialog(null);
+
+      const later = run();
+      const [entry] = await later.list();
+      expect(entry).toMatchObject({
+        label: 'proj/.env.vault',
+        location: project,
+        source: 'opened',
+        exists: true,
+      });
+      expect(entry.id).not.toBe(opened.id);
+      expect(later.resolve(entry.id)).toBe(project);
+    });
+
+    it('lists the most recently opened first', async () => {
+      const a = await seed(path.join(dir, 'a', '.env.vault'));
+      const b = await seed(path.join(dir, 'b', '.env.vault'));
+      const registry = run(a);
+      await registry.openFromDialog(null);
+      await new Promise((r) => setTimeout(r, 5));
+      const other = run(b);
+      await other.openFromDialog(null);
+      expect((await run().list()).map((e) => e.location)).toEqual([b, a]);
+    });
+
+    it('shows a remembered vault whose file is gone as missing', async () => {
+      const project = await seed(path.join(dir, 'gone', '.env.vault'));
+      await run(project).openFromDialog(null);
+      await fs.remove(project);
+      expect((await run().list())[0]).toMatchObject({
+        location: project,
+        exists: false,
+      });
+    });
+
+    it('removes a vault from the list, now and in later runs', async () => {
+      const project = await seed(path.join(dir, 'p', '.env.vault'));
+      const registry = run(project);
+      const { id } = await registry.openFromDialog(null);
+      expect(await registry.forget(id)).toEqual({ success: true });
+      expect(await registry.list()).toEqual([]);
+      expect(await run().list()).toEqual([]);
+      expect(await fs.pathExists(project)).toBe(true); // the file stays
+    });
+
+    it('removes only opened vaults', async () => {
+      await seed();
+      const registry = run();
+      const [appFolder] = await registry.list();
+      for (const id of [appFolder.id, 'nope']) {
+        expect(await registry.forget(id)).toMatchObject({
+          success: false,
+          code: 'INVALID',
+        });
+      }
+      expect(await registry.list()).toHaveLength(1);
+    });
+
+    it('does not remember an app-folder vault opened from the dialog', async () => {
+      const filePath = await seed();
+      await run(filePath).openFromDialog(null);
+      expect(await fs.pathExists(recentsFile)).toBe(false);
+    });
+
+    it('with remembering off, writes nothing and lists no earlier vaults', async () => {
+      const earlier = await seed(path.join(dir, 'e', '.env.vault'));
+      await run(earlier).openFromDialog(null);
+      const before = await fs.readFile(recentsFile, 'utf8');
+
+      remember = false;
+      const now = await seed(path.join(dir, 'n', '.env.vault'));
+      const registry = run(now);
+      await registry.openFromDialog(null);
+      // This run's vault is listed for the run; the earlier one isn't.
+      expect((await registry.list()).map((e) => e.location)).toEqual([now]);
+      expect(await fs.readFile(recentsFile, 'utf8')).toBe(before);
+    });
+
+    it('clears the kept list, keeping what this run opened', async () => {
+      const project = await seed(path.join(dir, 'c', '.env.vault'));
+      const registry = run(project);
+      await registry.openFromDialog(null);
+      await registry.clearRecents();
+      expect(await fs.pathExists(recentsFile)).toBe(false);
+      expect(await registry.list()).toHaveLength(1);
+      expect(await run().list()).toEqual([]);
+    });
+
+    it('still opens a vault when the list cannot be read or saved', async () => {
+      const project = await seed(path.join(dir, 'x', '.env.vault'));
+      const broken = {
+        list: vi.fn(async () => {
+          throw new Error('disk on fire');
+        }),
+        add: vi.fn(async () => {
+          throw new Error('disk on fire');
+        }),
+      };
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const registry = new EnvVaultRegistry({
+        envsDir,
+        dialog: pick(project),
+        recents: /** @type {any} */ (broken),
+      });
+      expect((await registry.openFromDialog(null)).success).toBe(true);
+      expect(await registry.list()).toHaveLength(1);
+      expect(errors).toHaveBeenCalled();
     });
   });
 
@@ -812,6 +943,34 @@ describe('env vault IPC handlers (contract)', () => {
       'main-window',
       expect.anything()
     );
+  });
+
+  it('removes an opened vault from the list, but not while it is unlocked', async () => {
+    const project = await seed(path.join(dir, 'proj', '.env.vault'));
+    const reg = new EnvVaultRegistry({
+      envsDir,
+      dialog: {
+        showOpenDialog: async () => ({ canceled: false, filePaths: [project] }),
+      },
+    });
+    const handlers = createEnvVaultHandlers({
+      registry: reg,
+      session,
+      getWindow: () => null,
+    });
+    const opened = await handlers['env-vaults:open']();
+    await handlers['env-vault:unlock'](ev, opened.id, PW);
+    expect(await handlers['env-vaults:forget'](ev, opened.id)).toMatchObject({
+      success: false,
+      code: 'INVALID',
+      error: 'Lock the vault before removing it from the list',
+    });
+    await handlers['env-vault:lock'](ev, opened.id);
+    expect(await handlers['env-vaults:forget'](ev, opened.id)).toEqual({
+      success: true,
+    });
+    const listed = (await handlers['env-vaults:list']()).vaults;
+    expect(listed.map((v) => v.location)).not.toContain(project);
   });
 
   it('opens a folder through the registry with the window as parent', async () => {

@@ -31,6 +31,11 @@ dialog.showErrorBox = (title, message) =>
 
 const PAGE_HELPERS = require('./pageHelpers.cjs');
 
+// Electron's own data (the single-instance lock, saved env vault passwords,
+// Chromium's profile) per scenario too: on macOS userData ignores HOME.
+const USER_DATA = path.join(path.dirname(OUT), 'user-data');
+app.setPath('userData', USER_DATA);
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -91,6 +96,7 @@ module.exports = function scenario(fn) {
       js,
       win,
       OUT,
+      USER_DATA,
       VAULTS_DIR,
       EXPORT_PATH,
       ENVS_DIR: path.join(path.dirname(VAULTS_DIR), 'envs'),

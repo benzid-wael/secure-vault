@@ -58,6 +58,9 @@ import { ClipboardService } from '../src/electron/services/ClipboardService.js';
 import { createEnvVaultHandlers } from '../src/electron/services/EnvVaultIpc.js';
 import { EnvVaultWatcher } from '../src/electron/services/EnvVaultWatcher.js';
 import { EnvVaultKeychain } from '../src/electron/services/EnvVaultKeychain.js';
+import { EnvVaultRecents } from '../src/electron/services/EnvVaultRecents.js';
+import { AppSettingsStore } from '../src/electron/services/AppSettingsStore.js';
+import { claimSingleInstance } from '../src/electron/utils/singleInstance.js';
 
 class ElectronApp {
   constructor() {
@@ -92,8 +95,15 @@ class ElectronApp {
       this.selectedImportPath = null;
 
       this.features = readFeatures();
+      // Non-secret app settings, readable while every vault is locked (New-2).
+      this.settings = new AppSettingsStore();
       // Env vaults (GUI-ENV-RFC §6.6): main maps ids to paths and holds keys.
-      this.envRegistry = new EnvVaultRegistry({ dialog });
+      // Opened ones are remembered across runs unless turned off (D5).
+      this.envRegistry = new EnvVaultRegistry({
+        dialog,
+        recents: new EnvVaultRecents(),
+        remember: async () => (await this.settings.get()).rememberRecents,
+      });
       // Tells the page about changes made outside the app (Task 16).
       this.envWatcher = new EnvVaultWatcher({
         onChange: (id, change) =>
@@ -160,6 +170,23 @@ class ElectronApp {
     }
   }
 
+  /** Bring the window up: a second launch (Task 11) or a dock click. */
+  showWindow() {
+    if (!app.isReady()) return;
+    const win = this.mainWindow;
+    if (!win || win.isDestroyed()) {
+      this.mainWindow = this.windowManager.createMainWindow();
+      // Re-point the application menu at the new window; otherwise its
+      // click handlers keep sending to the old, destroyed window and every
+      // menu item silently stops working after a reopen.
+      this.menuService.createMenu(this.mainWindow);
+      return;
+    }
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  }
+
   setupAppEventHandlers() {
     app.on('window-all-closed', () => {
       if (process.platform !== 'darwin') {
@@ -168,13 +195,7 @@ class ElectronApp {
     });
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        this.mainWindow = this.windowManager.createMainWindow();
-        // Re-point the application menu at the new window; otherwise its
-        // click handlers keep sending to the old, destroyed window and every
-        // menu item silently stops working after a reopen.
-        this.menuService.createMenu(this.mainWindow);
-      }
+      if (BrowserWindow.getAllWindows().length === 0) this.showWindow();
     });
 
     // Security: Prevent new window creation
@@ -511,23 +532,31 @@ class ElectronApp {
   }
 }
 
-// Initialize the application
-console.log('Starting application initialization...');
-const electronApp = new ElectronApp();
+// One process per user: a second launch shows this one's window (Task 11).
+let electronApp = null;
+if (claimSingleInstance(app, () => electronApp?.showWindow())) {
+  startApp();
+}
 
-app
-  .whenReady()
-  .then(() => {
-    console.log('Electron is ready, initializing app...');
-    electronApp.initialize();
-  })
-  .catch((error) => {
-    console.error('Error in app.whenReady():', error);
-    if (dialog && dialog.showErrorBox) {
-      dialog.showErrorBox(
-        'App Initialization Error',
-        `Failed to start application: ${error.message}`
-      );
-    }
-    app.quit();
-  });
+function startApp() {
+  // Initialize the application
+  console.log('Starting application initialization...');
+  electronApp = new ElectronApp();
+
+  app
+    .whenReady()
+    .then(() => {
+      console.log('Electron is ready, initializing app...');
+      electronApp.initialize();
+    })
+    .catch((error) => {
+      console.error('Error in app.whenReady():', error);
+      if (dialog && dialog.showErrorBox) {
+        dialog.showErrorBox(
+          'App Initialization Error',
+          `Failed to start application: ${error.message}`
+        );
+      }
+      app.quit();
+    });
+}
