@@ -425,15 +425,20 @@ class EnvVaultSession {
   commit(id, { revision, keyMaterial }) // after EVERY successful read/transact: the key may have been re-salted (§6.2)
   async recover(id)           // on REKEYED: re-derive from the stored password; AUTH → lock(id)
   lock(id) / lockAll()        // zero cached key Buffers, drop views, emit env-vault-locked
-  touch(id)                   // idle timer reset, called by user-initiated channels only
+  touch(id)                   // idle timer reset, called only by env-vaults:activity (input on the vault's screen)
 }
 ```
 
 Several env vaults may be unlocked at once. Each locks after **5 minutes**
 without user activity (configurable in Settings). Password vaults get the same
-idle lock, which they lack today (§12 D1). **Only user-initiated channels reset the idle timer.** Refetches
-triggered by the watcher or by window focus go through `env:refresh` (§6.7),
-which doesn't call `touch`, so a vault the CLI keeps writing still idles out.
+idle lock, which they lack today (§12 D1). **Only input resets the idle timer**
+(revised 2026-10-22, Task 13 and New-42; it was "only user-initiated
+channels"): keys, clicks, scrolling or touch in the window keep the password
+vault unlocked, and on an env vault's own screen keep that vault unlocked.
+The page reports input at most every 15 s (`vault-activity`,
+`env-vaults:activity`). No call resets it, the user's or the page's own, so a
+vault the CLI keeps writing still idles out. The old rule broke for password
+vaults, whose entries live in the page: reading and copying make no call.
 `lockAll()` hooks into the existing `setupAutoLock` (suspend, lock-screen,
 `before-quit`). After a successful `changePassword`, the session replaces the
 stored password and key.

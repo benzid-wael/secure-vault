@@ -32,6 +32,7 @@ import {
   MoreVert as MoreIcon,
 } from '@mui/icons-material';
 import EnvView from './EnvView';
+import { useInputActivity } from '../../hooks/useInputActivity';
 import EnvManageDialog from './EnvManageDialog';
 import { envApi } from './envApi';
 
@@ -260,6 +261,14 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked, onForget }) {
   // Set when the vault uses features this version doesn't know (New-29):
   // the message names them and the upgrade; nothing that writes is offered.
   const [readOnly, setReadOnly] = useState('');
+
+  // Input on this screen, dialogs included, keeps this vault unlocked; other
+  // unlocked vaults idle out on their own (New-42).
+  const reportActivity = useCallback(
+    () => api.activity?.(vault.id),
+    [api, vault.id]
+  );
+  useInputActivity(reportActivity);
 
   const load = useCallback(async () => {
     const result = await api.listEnvs(vault.id);

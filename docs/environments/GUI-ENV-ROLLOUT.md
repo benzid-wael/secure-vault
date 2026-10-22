@@ -520,3 +520,19 @@ Known hazards so far, to be completed per task:
   again and keep scrolling or typing for two minutes: it stays unlocked.
 - **Rollback:** reinstall the previous app. It ignores the setting for
   password vaults, which then lock only on sleep, screen lock and quit.
+
+### New-42: input on an env vault's screen keeps it unlocked
+
+- **Runtime change (gated by the Environments UI gate):** an unlocked env
+  vault stays unlocked while there is input on its own screen, and locks
+  after the idle time otherwise. Calls no longer count, so opening, revealing
+  or saving without further input doesn't extend the time, and a vault the
+  CLI keeps writing to still locks.
+- **Schema or config change:** none.
+- **Before it ships:** nothing beyond the gate's own criteria.
+- **Gated by:** the Environments UI gate.
+- **Verify after release:** set "Lock vaults after" to 1 minute and unlock
+  two env vaults. Work on the second one's screen for two minutes: it stays
+  unlocked and the first one locks.
+- **Rollback:** reinstall the previous app. Env vaults then stay open on
+  their own calls, as before.

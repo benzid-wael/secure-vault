@@ -288,6 +288,12 @@ export function createEnvVaultHandlers({
             error: 'Lock the vault before removing it from the list',
           }
         : registry.forget(id),
+    // Input on the vault's own screen (New-42): the only thing that keeps an
+    // env vault unlocked. Calls, the page's own or the user's, never do.
+    'env-vaults:activity': (event, id) => {
+      session.touch(id);
+      return { success: true };
+    },
 
     'env-vaults:create': async (event, options, password) => {
       if (options?.mode !== 'appdata') {
@@ -374,7 +380,6 @@ export function createEnvVaultHandlers({
     }),
 
     'env:list': withVault(async ({ id }) => {
-      session.touch(id);
       const result = await read(id);
       if (!result.success) return result;
       const { vault } = result;
@@ -403,12 +408,10 @@ export function createEnvVaultHandlers({
     }),
 
     'env:view': withVault(({ id }, env) => {
-      session.touch(id);
       return snapshot(id, env);
     }),
 
-    // Refetches the renderer makes on its own (focus, a change event) don't
-    // count as activity: a vault the CLI keeps writing still idles out.
+    // Refetches the renderer makes on its own (focus, a change event).
     'env:refresh': withVault(({ id }, viewId) => {
       const view = session.getView(id, viewId);
       if (!view) return invalid('Unknown view');
@@ -421,7 +424,6 @@ export function createEnvVaultHandlers({
      * all. Inherited keys stay out; they belong to the parent.
      */
     'env:edit-text': withVault(async ({ id }, viewId) => {
-      session.touch(id);
       const found = await rowsOfView(id, viewId);
       if (!found.success) return found;
       const own = found.rows.filter((r) => !r.inheritedFrom);
@@ -436,7 +438,6 @@ export function createEnvVaultHandlers({
     }),
 
     'env:reveal': withVault(async ({ id }, viewId, key) => {
-      session.touch(id);
       const found = await rowsOfView(id, viewId);
       if (!found.success) return found;
       const row = found.rows.find((r) => r.key === key);
@@ -446,7 +447,6 @@ export function createEnvVaultHandlers({
     // Main writes the clipboard: the value never crosses IPC. A secret is
     // cleared after 30 s unless the user copied something else since.
     'env:copy': withVault(async ({ id }, viewId, key, format = 'value') => {
-      session.touch(id);
       if (!['value', 'pair', 'key'].includes(format)) {
         return invalid('Unknown copy format');
       }
@@ -470,7 +470,6 @@ export function createEnvVaultHandlers({
     // against the revision on screen. Keys the target already has are
     // refused with CONFLICT unless `overwrite`.
     'env:transfer': withVault(async ({ id }, request) => {
-      session.touch(id);
       const {
         viewId,
         keys,
@@ -541,7 +540,6 @@ export function createEnvVaultHandlers({
     // Main picks the file in a native dialog and writes it 0600; the values
     // never cross IPC. Resolved like `vault env export` (extends, templates).
     'env:export': withVault(async ({ id }, env) => {
-      session.touch(id);
       const result = await read(id);
       if (!result.success) return result;
       if (!result.vault.environments[env]) {
@@ -568,7 +566,6 @@ export function createEnvVaultHandlers({
      * required keys marked (`vault env template`). Through a save dialog.
      */
     'env:template': withVault(async ({ id }, env) => {
-      session.touch(id);
       const result = await read(id);
       if (!result.success) return result;
       if (!result.vault.environments[env]) {
@@ -600,7 +597,6 @@ export function createEnvVaultHandlers({
      * `reveal: true`; otherwise just which keys differ.
      */
     'env:diff': withVault(async ({ id }, envA, envB, options = {}) => {
-      session.touch(id);
       const result = await read(id);
       if (!result.success) return result;
       const diff = service.diffVaultEnvs(result.vault, envA, envB);
@@ -624,7 +620,6 @@ export function createEnvVaultHandlers({
 
     /** `vault env validate` for one env (Task 26). */
     'env:validate': withVault(async ({ id }, env) => {
-      session.touch(id);
       const result = await read(id);
       if (!result.success) return result;
       const checked = service.validateVaultEnv(result.vault, env);
@@ -639,7 +634,6 @@ export function createEnvVaultHandlers({
      * warnings. Values stay in main until `env:import-apply`.
      */
     'env:import-pick': withVault(async ({ id }, viewId) => {
-      session.touch(id);
       const found = await rowsOfView(id, viewId);
       if (!found.success) return found;
       const picked = await dialog.showOpenDialog(getWindow(), {
@@ -704,7 +698,6 @@ export function createEnvVaultHandlers({
      * own keys the file doesn't have. `comments` takes the file's comments.
      */
     'env:import-apply': withVault(async ({ id }, token, options = {}) => {
-      session.touch(id);
       dropImports();
       const pending = pendingImports.get(token);
       if (!pending || pending.id !== id) return invalid('Import expired');
@@ -755,7 +748,6 @@ export function createEnvVaultHandlers({
      */
     'env-vault:change-password': withVault(
       async ({ id, vaultPath }, current, next) => {
-        session.touch(id);
         if (!session.isUnlocked(id)) {
           return { success: false, code: 'LOCKED', error: 'Vault is locked' };
         }
@@ -799,7 +791,6 @@ export function createEnvVaultHandlers({
      * `force` applies it over the current file regardless.
      */
     'env:commit': withVault(async ({ id }, changeset) => {
-      session.touch(id);
       const view = session.getView(id, changeset?.viewId);
       if (!view) return invalid('Unknown view');
       const ops = Array.isArray(changeset.ops) ? changeset.ops : [];
@@ -858,7 +849,6 @@ export function createEnvVaultHandlers({
      * `extends` or `describe`, against the env list's revision.
      */
     'env:manage': withVault(async ({ id, vaultPath }, request) => {
-      session.touch(id);
       const {
         op,
         env,
@@ -932,7 +922,6 @@ export function createEnvVaultHandlers({
 
     /** An env's versions, newest first, without values (Task 25). */
     'env:history': withVault(async ({ id }, viewId) => {
-      session.touch(id);
       const view = session.getView(id, viewId);
       if (!view) return invalid('Unknown view');
       const result = await read(id);
@@ -953,7 +942,6 @@ export function createEnvVaultHandlers({
 
     /** Make an old version active again, as a new version (Task 25). */
     'env:rollback': withVault(async ({ id }, viewId, n) => {
-      session.touch(id);
       const view = session.getView(id, viewId);
       if (!view) return invalid('Unknown view');
       if (!Number.isInteger(n)) return invalid('Choose a version');
@@ -972,7 +960,6 @@ export function createEnvVaultHandlers({
      * is copied to `<vault>.squashed.<ts>` first (Task 7).
      */
     'env:squash': withVault(async ({ id, vaultPath }, viewId, keep = 1) => {
-      session.touch(id);
       const view = session.getView(id, viewId);
       if (!view) return invalid('Unknown view');
       if (!Number.isInteger(keep) || keep < 1) {
@@ -998,7 +985,6 @@ export function createEnvVaultHandlers({
     }),
 
     'env:create': withVault(async ({ id }, name, expectedRevision) => {
-      session.touch(id);
       if (typeof name !== 'string' || !ENV_NAME_PATTERN.test(name)) {
         return invalid('Use 1–64 letters, digits, ".", "-" or "_"');
       }

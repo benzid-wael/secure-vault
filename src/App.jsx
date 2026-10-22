@@ -22,11 +22,8 @@ import ConfigurationDialog from './components/ConfigurationDialog';
 import ImportExportDialog from './components/ImportExportDialog';
 import VaultRecovery from './components/VaultRecovery';
 import EnvVaultsPanel from './components/env/EnvVaultsPanel';
+import { useInputActivity } from './hooks/useInputActivity';
 import './App.css';
-
-/** Input is reported to main at most this often (Task 13). */
-const ACTIVITY_REPORT_MS = 15 * 1000;
-const ACTIVITY_EVENTS = ['keydown', 'pointerdown', 'wheel', 'touchstart'];
 
 const minutes = (n) => (n === 1 ? '1 minute' : `${n} minutes`);
 
@@ -187,28 +184,13 @@ function App() {
   }, [lockVault, resetToSelector]);
 
   // While a vault is unlocked, input in the window keeps it so; main locks
-  // it after the idle time otherwise (Task 13). Calls the page makes on its
-  // own never count.
-  useEffect(() => {
-    const api = /** @type {any} */ (window).electronAPI;
-    if (!isAuthenticated || !api?.vaultActivity) return undefined;
-    let last = -Infinity;
-    const report = () => {
-      const now = Date.now();
-      if (now - last < ACTIVITY_REPORT_MS) return;
-      last = now;
-      api.vaultActivity().catch(() => {});
-    };
-    const options = { capture: true, passive: true };
-    for (const type of ACTIVITY_EVENTS) {
-      window.addEventListener(type, report, options);
-    }
-    return () => {
-      for (const type of ACTIVITY_EVENTS) {
-        window.removeEventListener(type, report, options);
-      }
-    };
-  }, [isAuthenticated]);
+  // it after the idle time otherwise (Task 13).
+  const reportVaultActivity = useCallback(() => {
+    Promise.resolve(
+      /** @type {any} */ (window).electronAPI?.vaultActivity?.()
+    ).catch(() => {});
+  }, []);
+  useInputActivity(isAuthenticated ? reportVaultActivity : null);
 
   // Reload vaults when returning to selector view
   useEffect(() => {

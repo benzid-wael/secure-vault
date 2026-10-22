@@ -88,6 +88,16 @@ describe('AppSettingsSection', () => {
     expect(
       screen.queryByLabelText('Remember environment vaults I open')
     ).toBeNull();
+    expect(screen.getByText(/count as activity/)).not.toHaveTextContent(
+      'environment vault'
+    );
+  });
+
+  it('says what keeps an env vault unlocked when env vaults are on', async () => {
+    render(<AppSettingsSection envVaults />);
+    expect(
+      await screen.findByText(/stays unlocked only while you work on its own/)
+    ).toBeInTheDocument();
   });
 
   it('lists an idle time outside the usual choices', async () => {

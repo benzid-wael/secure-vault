@@ -890,14 +890,20 @@ describe('env vault IPC handlers (contract)', () => {
     expect((await fs.readFile(filePath)).equals(before)).toBe(true);
   });
 
-  it('refresh does not reset the idle timer; user calls do', async () => {
+  it('only input on the screen resets the idle timer; calls never do', async () => {
     await unlock();
     const touch = vi.spyOn(session, 'touch');
     const view = await h['env:view'](ev, id, 'prod');
-    expect(touch).toHaveBeenCalledTimes(1);
+    await h['env:list'](ev, id); // what the page runs on a CLI change
     await h['env:refresh'](ev, id, view.viewId);
-    expect(touch).toHaveBeenCalledTimes(1);
+    await h['env:reveal'](ev, id, view.viewId, 'API_KEY');
+    expect(touch).not.toHaveBeenCalled();
     expect((await h['env:refresh'](ev, id, 'bogus')).code).toBe('INVALID');
+
+    expect(await h['env-vaults:activity'](ev, id)).toEqual({ success: true });
+    expect(touch).toHaveBeenCalledExactlyOnceWith(id);
+    // An unknown id: nothing to keep open, nothing to report.
+    expect((await h['env-vaults:activity'](ev, 'nope')).success).toBe(true);
   });
 
   it('closes views and locks', async () => {

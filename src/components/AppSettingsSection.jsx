@@ -115,6 +115,14 @@ const AppSettingsSection = ({ envVaults = false }) => {
           ))}
         </Select>
       </FormControl>
+      <Typography
+        variant="body2"
+        sx={{ color: 'rgba(255,255,255,0.6)', mb: 2 }}
+      >
+        Typing, clicking and scrolling in the app count as activity.
+        {envVaults &&
+          ' An environment vault stays unlocked only while you work on its own screen.'}
+      </Typography>
       {envVaults && (
         <Box>
           <FormControlLabel

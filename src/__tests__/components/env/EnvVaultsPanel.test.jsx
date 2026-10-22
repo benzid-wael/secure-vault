@@ -8,7 +8,7 @@ import {
   act,
 } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import EnvVaultsPanel from '../../../components/env/EnvVaultsPanel';
 
 /** The preload API isn't typed; tests mock it on `window`. */
@@ -61,6 +61,7 @@ beforeEach(() => {
     reveal: vi.fn(),
     closeView: vi.fn().mockResolvedValue({ success: true }),
     commit: vi.fn(),
+    activity: vi.fn().mockResolvedValue({ success: true }),
     onLocked: vi.fn((cb) => {
       lockedListener = cb;
       return () => {};
@@ -68,6 +69,8 @@ beforeEach(() => {
   };
   win.electronAPI.envVaults = api;
 });
+
+afterEach(() => vi.restoreAllMocks());
 
 const unlockApp = async () => {
   render(<EnvVaultsPanel />);
@@ -84,6 +87,29 @@ const unlockApp = async () => {
 };
 
 describe('EnvVaultsPanel', () => {
+  it('reports input on the vault screen only, with its id (New-42)', async () => {
+    render(<EnvVaultsPanel />);
+    await screen.findByText('app');
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(api.activity).not.toHaveBeenCalled(); // the list: no vault
+
+    fireEvent.click(screen.getByText('app'));
+    fireEvent.change(await screen.findByLabelText('Vault Password'), {
+      target: { value: 'pw' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    await screen.findByText('New environment');
+    fireEvent.pointerDown(window);
+    expect(api.activity).toHaveBeenCalledExactlyOnceWith('id-app');
+
+    act(() => lockedListener({ id: 'id-app' }));
+    await screen.findByText('/envs/app.env.vault');
+    api.activity.mockClear();
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_000);
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(api.activity).not.toHaveBeenCalled();
+  });
+
   it('lists vaults with their location and state', async () => {
     api.list.mockResolvedValue({
       success: true,

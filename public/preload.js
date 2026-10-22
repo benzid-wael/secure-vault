@@ -138,6 +138,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     open: () => ipcRenderer.invoke('env-vaults:open'),
     // The vault the CLI would use in a folder the user picks (New-22).
     openFolder: () => ipcRenderer.invoke('env-vaults:open-folder'),
+    // Input on this vault's screen: keeps it from locking (New-42).
+    activity: (id) => ipcRenderer.invoke('env-vaults:activity', id),
     forget: (id) => ipcRenderer.invoke('env-vaults:forget', id),
     create: (options, password) =>
       ipcRenderer.invoke('env-vaults:create', options, password),

@@ -84,7 +84,7 @@ updated as each task finishes, not in a batch at the end.
 | New-39 | Fix: a failed page load loops instead of showing the error page    | —   | P2  | ✅     | —                                      |
 | New-40 | Refuse `--remote-debugging-port` in packaged builds                | M0  | P2  | ⬜     | New-38                                 |
 | New-41 | Find the unit test that failed once in ten full runs               | —   | P2  | ⬜     | —                                      |
-| New-42 | Decide whether input in the window keeps env vaults unlocked       | —   | P2  | ⬜     | 13                                     |
+| New-42 | Decide whether input in the window keeps env vaults unlocked       | —   | P2  | ✅     | 13                                     |
 | New-43 | `npm run lint` lints the docs site's ignored build output          | —   | P3  | ⬜     | —                                      |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
@@ -680,8 +680,8 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
   every call the page makes on its own (`load-vault`, `save-vault`, …).
   User-initiated IPC alone wouldn't work here: the page holds the open
   vault's entries, so searching, reading and copying make no call, and a
-  user doing that would be locked out every 5 minutes. Env vaults keep their
-  rule (user-initiated env calls) for now; New-42 asks whether to align them.
+  user doing that would be locked out every 5 minutes. New-42 then gave env
+  vaults the same rule, per vault.
 - **Built:**
   - `VaultSession` takes `idleMs`, `onIdle` and injectable timers. `open`
     starts the timer; `touch()` restarts it; `close()` stops it;
@@ -2131,19 +2131,41 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### New-42: Decide whether input in the window keeps env vaults unlocked
 
-- **Status:** ⬜ found 2026-10-22 during Task 13.
+- **Status:** ✅ done 2026-10-22. Uncommitted on `feat/vault-env-gui`; not
+  merged, not released. Behind the env UI gate.
 - **Found:** the password vault stays unlocked while there is input in the
-  window (Task 13). Env vaults count only their own user-initiated calls
-  (RFC §6.6), so scrolling through an env's keys or editing a value without
-  saving for 5 minutes locks the vault.
-- **Goal:** one rule for both, decided with the user.
-- **Implementation guidance:** the options are: (a) input anywhere keeps
-  every unlocked env vault open; (b) input on a vault's own screen keeps
-  that vault open (the page reports the vault id; main checks it's
-  unlocked); (c) keep today's rule and say so in Settings. (b) keeps the RFC's
-  per-vault intent. An unsaved edit lost to the lock is the case to test.
-- **Validation:** whichever is chosen, a test with a fake clock for "reading
-  for longer than the timeout"; the setting's help text says what counts.
+  window (Task 13). Env vaults counted only their own calls (RFC §6.6), so
+  reading an env's keys or editing a value without saving for 5 minutes
+  locked the vault. And `env:list`, which the page also runs on its own when
+  the CLI changes the file, restarted the timer: a vault something kept
+  writing to never locked.
+- **Decided (user, 2026-10-22):** input on a vault's own screen keeps that
+  vault unlocked; other unlocked env vaults idle out on their own. RFC §6.6
+  revised.
+- **Built:**
+  - `useInputActivity(report)` (`src/hooks/`): keys, clicks, scrolling and
+    touch in the window, reported at most every 15 s; nothing while `report`
+    is null. Used by `App` (password vault, Task 13) and `EnvVaultScreen`,
+    which reports its vault's id, dialogs on that screen included.
+  - Channel `env-vaults:activity(id)` calls `session.touch(id)`; preload
+    `envVaults.activity`.
+  - No env channel calls `touch` any more (19 removed): every call a user
+    makes starts with input, and calls the page makes on its own can't keep
+    a vault open. Unlock still starts the timer.
+  - Settings says what counts: "Typing, clicking and scrolling in the app
+    count as activity", plus, with env vaults on, "An environment vault stays
+    unlocked only while you work on its own screen."
+- **Validation done:**
+  - `EnvVaultMain.test.js`: `env:view`, `env:list`, `env:refresh` and
+    `env:reveal` don't touch; `env-vaults:activity` does, once, for that id;
+    an unknown id is harmless.
+  - `EnvVaultsPanel.test.jsx`: no report from the vault list; input on the
+    vault screen reports its id; nothing after the vault locks.
+  - `AppSettingsSection.test.jsx`: the help text with and without env
+    vaults. `AppSession.test.jsx` (unchanged) covers the hook's throttle.
+  - e2e 8/8 scenarios.
+  - Coverage: `useInputActivity.js` fully covered, `EnvVaultIpc.js` 98%
+    lines, `EnvVaultsPanel.jsx` 93%, `AppSettingsSection.jsx` 97.5%.
 
 ### New-43: `npm run lint` lints the docs site's ignored build output
 
