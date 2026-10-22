@@ -317,19 +317,23 @@ Known hazards so far, to be completed per task:
 ### Vault format check (New-29)
 
 - **Runtime change:** the CLI and the app read a vault's format marker.
-  When the vault is newer than the tool, the tool warns, refuses writes
-  (CLI exit code; app read-only) and shows how to upgrade.
-- **Schema or config change:** a format marker in both vault kinds, set only
-  when a vault uses a feature older tools would lose. The exact shape is
-  decided in the task.
-- **Before it ships:** CHANGELOG and CLI docs (new message, new exit code);
-  `doctor` output. Ships in the release that brings New-25, or an earlier
-  one.
+  A feature the tool doesn't know: reads work with a warning, writes are
+  refused (CLI exit 15 `ENV_VAULT_NEWER_FORMAT`; app read-only with a
+  banner), with the upgrade command. A newer format `version`: nothing
+  opens it. `doctor` reports the format.
+- **Schema or config change:** `features: ["comments"]` in the env vault's
+  plaintext envelope, written only while some version has a comment. No
+  password-vault feature exists yet; the check is in place for the first.
+- **Before it ships:** done: CHANGELOG, README.cli.md ("Vaults written by a
+  newer version"), SPEC Appendix B (code 15). Ships in the release that
+  brings New-25, or an earlier one. Release notes: released versions don't
+  check, so upgrade every machine before using comments.
 - **Gated by:** not gated. A safety check has to reach everyone.
 - **Per environment:** CLI and desktop.
-- **Verify after release:** mark a test vault one version newer, then run
-  `env set`: refused, with the upgrade command. Open it in the app:
-  read-only, with a banner.
+- **Verify after release:** add `"features": ["future"]` to a test vault's
+  header, then run `env set`: exit 15, with the upgrade command; `env show`
+  works with a warning. Open it in the app: read-only, with a banner. Set
+  `"version": 2`: neither opens it.
 - **Rollback:** reinstall the previous version. The marker stays in files
   that have it; previous tools ignore it, which is the same exposure as
   before.

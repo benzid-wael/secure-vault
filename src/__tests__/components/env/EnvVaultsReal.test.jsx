@@ -772,4 +772,35 @@ describe('env vault UI on the real handlers (StrictMode)', () => {
     fireEvent.click(screen.getByText('app'));
     expect(await screen.findByLabelText('Vault Password')).toBeInTheDocument();
   });
+  it('opens a vault from a newer version read-only, with the reason', async () => {
+    const file = path.join(dir, 'app.env.vault');
+    // A second version, so history would offer rollback and squash.
+    await EnvironmentVaultService.setEnv(file, PW, 'ci-prod', 'EXTRA', '1');
+    await fs.writeJSON(file, {
+      ...(await fs.readJSON(file)),
+      features: ['expiry'],
+    });
+    await openEnv('ci-prod');
+    expect(await screen.findByText(/Read-only\./)).toBeInTheDocument();
+    expect(screen.getByText(/doesn't support \(expiry\)/)).toBeInTheDocument();
+    // Reading still works; nothing that writes is offered.
+    await settle();
+    fireEvent.click(screen.getByLabelText('Reveal MATCH_PASSWORD'));
+    expect(await screen.findByText('ci-prod-match')).toBeInTheDocument();
+    for (const name of [
+      'Add variable',
+      'Edit as .env',
+      'New environment',
+      'Change password',
+    ]) {
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    }
+    expect(screen.queryByLabelText('Edit MATCH_PASSWORD')).toBeNull();
+    expect(screen.queryByLabelText('Delete MATCH_PASSWORD')).toBeNull();
+    expect(screen.queryByLabelText('Manage ci-prod')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'History' }));
+    await screen.findByRole('table', { name: 'Versions' });
+    expect(screen.queryByRole('button', { name: /Roll back/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Squash…' })).toBeNull();
+  });
 });

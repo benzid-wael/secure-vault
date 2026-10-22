@@ -1524,3 +1524,51 @@ describe('env vault IPC: password kept on this computer (New-24)', () => {
     ).toBe(true);
   });
 });
+
+describe('env vault IPC: a vault from a newer SecureVault (New-29)', () => {
+  it('opens it read-only, says why, and refuses writes', async () => {
+    const filePath = await seed();
+    await fs.writeJSON(filePath, {
+      ...(await fs.readJSON(filePath)),
+      features: ['expiry'],
+    });
+    const session = new EnvVaultSession();
+    const h = createEnvVaultHandlers({
+      registry: new EnvVaultRegistry({ envsDir }),
+      session,
+    });
+    const ev = {};
+    const id = (await h['env-vaults:list']()).vaults[0].id;
+    expect((await h['env-vault:unlock'](ev, id, PW)).success).toBe(true);
+
+    const listed = await h['env:list'](ev, id);
+    expect(listed).toMatchObject({ success: true, readOnly: true });
+    expect(listed.formatMessage).toMatch(/\(expiry\)/);
+
+    const view = await h['env:view'](ev, id, 'prod');
+    const commit = await h['env:commit'](ev, id, {
+      viewId: view.viewId,
+      ops: [{ op: 'set', key: 'X', value: '1' }],
+    });
+    expect(commit).toMatchObject({ success: false, code: 'NEWER_FORMAT' });
+    session.lockAll();
+  });
+
+  it('does not unlock a newer format version', async () => {
+    const filePath = await seed();
+    await fs.writeJSON(filePath, {
+      ...(await fs.readJSON(filePath)),
+      version: 2,
+    });
+    const session = new EnvVaultSession();
+    const h = createEnvVaultHandlers({
+      registry: new EnvVaultRegistry({ envsDir }),
+      session,
+    });
+    const id = (await h['env-vaults:list']()).vaults[0].id;
+    const result = await h['env-vault:unlock']({}, id, PW);
+    expect(result).toMatchObject({ success: false, code: 'NEWER_FORMAT' });
+    expect(result.error).toMatch(/uses vault format 2/);
+    expect(session.isUnlocked(id)).toBe(false);
+  });
+});

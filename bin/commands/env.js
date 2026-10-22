@@ -43,9 +43,14 @@ import {
   checkStructure,
   checkResolution,
   checkLock,
+  checkFormat,
   hasErrors,
 } from './envDoctor.js';
 import { VaultLock } from '../../src/electron/services/VaultLock.js';
+import {
+  checkVaultFormat,
+  VAULT_FORMATS,
+} from '../../src/electron/utils/vaultFormat.js';
 import { EnvironmentResolver } from '../../src/electron/services/EnvironmentResolver.js';
 import { SessionManager } from '../../src/agent/sessionManager.js';
 import { MountRegistry } from '../../src/agent/mountRegistry.js';
@@ -114,7 +119,54 @@ const EXIT = {
   VALIDATION_ERROR: { code: 12, symbol: 'VALIDATION_ERROR' },
   FILE_WRITE_FAILED: { code: 13, symbol: 'FILE_WRITE_FAILED' },
   INJECTION_FAILED: { code: 14, symbol: 'INJECTION_FAILED' },
+  ENV_VAULT_NEWER_FORMAT: { code: 15, symbol: 'ENV_VAULT_NEWER_FORMAT' },
 };
+
+// Subcommands that write the vault: refused on a vault using features this
+// build doesn't know, since the write would drop them (New-29).
+const WRITE_COMMANDS = new Set([
+  'import',
+  'set',
+  'rm',
+  'delete',
+  'rename',
+  'extends',
+  'copy',
+  'rollback',
+  'squash',
+  'change-password',
+]);
+
+/**
+ * Before any env subcommand: check the vault's format against this build
+ * (New-29). A format it can't read stops every command; unknown features
+ * stop writes and print a warning for reads. `doctor` reports it itself.
+ * Read-only: only the plaintext envelope is parsed, no password needed.
+ */
+function checkFormatBeforeAction(actionCmd) {
+  const name = actionCmd.name();
+  if (name === 'doctor' || name === 'init') return;
+  const options = actionCmd.opts();
+  const vaultPath = EnvironmentVaultService.resolveVaultPath({
+    vault: options.vault,
+    name: options.name,
+  });
+  if (!vaultPath) return; // the command reports a missing vault itself
+  let envelope;
+  try {
+    envelope = JSON.parse(fs.readFileSync(vaultPath, 'utf8'));
+  } catch {
+    return; // missing or unreadable: the command's own error is clearer
+  }
+  if (envelope?.type !== 'environment-vault') return;
+  const format = checkVaultFormat(envelope, 'env', vaultPath);
+  if (!format.readable || (!format.writable && WRITE_COMMANDS.has(name))) {
+    fail(EXIT.ENV_VAULT_NEWER_FORMAT, format.message);
+  }
+  if (!format.writable && !isQuiet) {
+    console.error(chalk.yellow(`Warning: ${format.message}`));
+  }
+}
 
 function fail(spec, message) {
   console.error(`[${spec.symbol}] ${message}`);
@@ -319,8 +371,9 @@ export function registerEnvCommand(program) {
     .description('Manage environment vaults')
     .option('--quiet', 'Suppress non-error output');
 
-  env.hook('preAction', (thisCmd) => {
+  env.hook('preAction', (thisCmd, actionCmd) => {
     isQuiet = !!thisCmd.opts().quiet;
+    checkFormatBeforeAction(actionCmd);
   });
 
   env
@@ -1184,6 +1237,21 @@ export function registerEnvCommand(program) {
             fix: 'Create one with `vault env init` (or pass -v/--name).',
           });
         } else {
+          try {
+            const envelope = await fs.readJSON(vaultPath);
+            results.push(
+              ...checkFormat(
+                checkVaultFormat(envelope, 'env', vaultPath),
+                VAULT_FORMATS.env.features
+              )
+            );
+          } catch (err) {
+            results.push({
+              level: 'error',
+              title: 'Vault file is not valid JSON',
+              detail: err.message,
+            });
+          }
           results.push(...checkLock(await new VaultLock(vaultPath).inspect()));
         }
 

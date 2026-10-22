@@ -245,6 +245,9 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked, onForget }) {
   const [externalChange, setExternalChange] = useState(0);
   const [changingPassword, setChangingPassword] = useState(false);
   const [quietReload, setQuietReload] = useState(0);
+  // Set when the vault uses features this version doesn't know (New-29):
+  // the message names them and the upgrade; nothing that writes is offered.
+  const [readOnly, setReadOnly] = useState('');
 
   const load = useCallback(async () => {
     const result = await api.listEnvs(vault.id);
@@ -255,6 +258,7 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked, onForget }) {
     }
     setEnvs(result.envs);
     setRevision(result.revision);
+    setReadOnly(result.readOnly ? result.formatMessage : '');
     setSelected((current) => current ?? result.envs[0]?.name ?? null);
   }, [api, vault.id, onLocked]);
 
@@ -362,9 +366,11 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked, onForget }) {
         {vault.remembered && (
           <Button onClick={onForget}>Forget saved password</Button>
         )}
-        <Button variant="outlined" onClick={() => setChangingPassword(true)}>
-          Change password
-        </Button>
+        {!readOnly && (
+          <Button variant="outlined" onClick={() => setChangingPassword(true)}>
+            Change password
+          </Button>
+        )}
         <Button startIcon={<LockIcon />} variant="outlined" onClick={onLock}>
           Lock
         </Button>
@@ -379,6 +385,11 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked, onForget }) {
           {notice}
         </Alert>
       )}
+      {readOnly && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          <strong>Read-only.</strong> {readOnly}
+        </Alert>
+      )}
       <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
         <Paper sx={{ width: 240, flexShrink: 0 }}>
           <List dense aria-label="Environments">
@@ -387,16 +398,18 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked, onForget }) {
                 key={env.name}
                 disablePadding
                 secondaryAction={
-                  <IconButton
-                    edge="end"
-                    size="small"
-                    aria-label={`Manage ${env.name}`}
-                    onClick={(e) =>
-                      setMenu({ anchor: e.currentTarget, env: env.name })
-                    }
-                  >
-                    <MoreIcon fontSize="small" />
-                  </IconButton>
+                  !readOnly && (
+                    <IconButton
+                      edge="end"
+                      size="small"
+                      aria-label={`Manage ${env.name}`}
+                      onClick={(e) =>
+                        setMenu({ anchor: e.currentTarget, env: env.name })
+                      }
+                    >
+                      <MoreIcon fontSize="small" />
+                    </IconButton>
+                  )
                 }
               >
                 <ListItemButton
@@ -420,15 +433,17 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked, onForget }) {
               </ListItem>
             ))}
           </List>
-          <Box sx={{ p: 1 }}>
-            <Button
-              fullWidth
-              startIcon={<AddIcon />}
-              onClick={() => setCreating(true)}
-            >
-              New environment
-            </Button>
-          </Box>
+          {!readOnly && (
+            <Box sx={{ p: 1 }}>
+              <Button
+                fullWidth
+                startIcon={<AddIcon />}
+                onClick={() => setCreating(true)}
+              >
+                New environment
+              </Button>
+            </Box>
+          )}
         </Paper>
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
           {envs && envs.length === 0 && (
@@ -448,6 +463,7 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked, onForget }) {
               onChanged={load}
               externalChange={externalChange}
               quietReload={quietReload}
+              readOnly={Boolean(readOnly)}
             />
           )}
         </Box>

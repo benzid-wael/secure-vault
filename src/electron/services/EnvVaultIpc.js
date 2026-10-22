@@ -368,9 +368,15 @@ export function createEnvVaultHandlers({
       const result = await read(id);
       if (!result.success) return result;
       const { vault } = result;
+      // A vault from a newer SecureVault (New-29): writes are refused in
+      // the service; the page shows why and offers none.
+      const format = result.format;
       return {
         success: true,
         revision: result.revision,
+        ...(format && !format.writable
+          ? { readOnly: true, formatMessage: format.message }
+          : {}),
         envs: vault.listEnvironmentNames().map((name) => {
           const env = vault.environments[name];
           const active = vault.getActiveVersion(name);

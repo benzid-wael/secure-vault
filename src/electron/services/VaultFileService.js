@@ -5,6 +5,7 @@ import crypto from 'crypto';
 
 import { CryptographyService } from './CryptographyService.js';
 import { moveWithRetry } from '../utils/moveWithRetry.js';
+import { checkVaultFormat, newerFormatError } from '../utils/vaultFormat.js';
 
 /** Copies kept per vault name from deleting it; older ones are removed. */
 export const DELETED_COPIES_KEPT = 5;
@@ -92,6 +93,7 @@ export class VaultFileService {
 
   async atomicWriteVaultFile(vaultName, data) {
     const vaultPath = this.getVaultPath(vaultName);
+    await this.#refuseNewerFormat(vaultPath, vaultName);
     // A temp file per write: two writes in flight for the same vault must not
     // share one, or the first rename pulls it out from under the second.
     const tempPath = `${this.getTempPath(vaultName)}.${process.pid}.${crypto
@@ -111,6 +113,23 @@ export class VaultFileService {
       await fs.remove(tempPath).catch(() => {});
       throw error;
     }
+  }
+
+  /**
+   * Every write replaces the whole file, so overwriting a vault written by
+   * a newer SecureVault would drop what this build doesn't understand
+   * (New-29). Refused with `code: 'NEWER_FORMAT'`. A file that can't be
+   * parsed isn't ours to judge: the write goes ahead as before.
+   */
+  async #refuseNewerFormat(vaultPath, vaultName) {
+    let current;
+    try {
+      current = await fs.readJSON(vaultPath);
+    } catch {
+      return;
+    }
+    const check = checkVaultFormat(current, 'password', vaultName);
+    if (!check.writable) throw newerFormatError(check);
   }
 
   async createBackup(vaultName) {

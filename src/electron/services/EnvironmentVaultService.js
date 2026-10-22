@@ -15,6 +15,7 @@ const SUSPICIOUS_VALUE_RE =
   /-----BEGIN |sk_live_|AKIA[0-9A-Z]{16}|[0-9a-f]{64,}/;
 import { validatePasswordStrength } from '../../utils/passwordValidation.js';
 import { getAppDataPath, getEnvsDir } from '../utils/appPaths.js';
+import { checkVaultFormat, envVaultFeatures } from '../utils/vaultFormat.js';
 import { moveWithRetry } from '../utils/moveWithRetry.js';
 import { parseDotenv, toDotenv } from '../../utils/dotenv.js';
 
@@ -27,11 +28,15 @@ function resolvePath(...segments) {
 /**
  * @typedef {Object} VaultReadResult
  * @property {boolean} success
- * @property {string} [code] - on failure: NOT_FOUND, INVALID, AUTH, REKEYED, ERROR
+ * @property {string} [code] - on failure: NOT_FOUND, INVALID, AUTH, REKEYED,
+ *   NEWER_FORMAT (a format this build can't read), ERROR
  * @property {string} [error]
  * @property {EnvironmentVault} [vault]
  * @property {string} [revision]
  * @property {{key: Buffer, header: Object}} [keyMaterial]
+ * @property {import('../utils/vaultFormat.js').FormatCheck} [format] - what
+ *   this build understands of the file; `writable: false` means features
+ *   it doesn't know, and every write is refused with NEWER_FORMAT (New-29)
  */
 
 /**
@@ -55,6 +60,15 @@ function fail(code, error) {
 /** `auth` as `{ password?, keyMaterial? }`; a bare string is a password. */
 function normalizeAuth(auth) {
   return typeof auth === 'string' ? { password: auth } : auth || {};
+}
+
+/**
+ * The envelope's `features` (New-29), present only when the payload uses
+ * one, so a vault without them keeps the shape every tool can write.
+ */
+function featuresField(payload) {
+  const features = envVaultFeatures(payload);
+  return features.length ? { features } : {};
 }
 
 /** True when a key derived for header `a` decrypts a file with header `b`. */
@@ -195,6 +209,7 @@ export class EnvironmentVaultService {
       const vaultFile = {
         type: 'environment-vault',
         version: 1,
+        ...featuresField(payload),
         salt: salt.toString('hex'),
         kdf: CryptographyService.kdfHeader(),
         iv: encrypted.iv,
@@ -225,6 +240,10 @@ export class EnvironmentVaultService {
       if (vaultFile.type !== 'environment-vault') {
         return { success: false, error: 'Invalid environment vault file' };
       }
+      const format = checkVaultFormat(vaultFile, 'env', vaultPath);
+      if (!format.readable) {
+        return { success: false, code: 'NEWER_FORMAT', error: format.message };
+      }
 
       const key = await CryptographyService.deriveKeyForAsync(
         password,
@@ -245,7 +264,7 @@ export class EnvironmentVaultService {
         key,
         header: CryptographyService.keyHeaderOf(vaultFile),
       };
-      return { success: true, data: vault, keyMaterial };
+      return { success: true, data: vault, keyMaterial, format };
     } catch (error) {
       return {
         success: false,
@@ -308,6 +327,7 @@ export class EnvironmentVaultService {
     const vaultFile = {
       type: 'environment-vault',
       version: 1,
+      ...featuresField(payload),
       ...header,
       iv: encrypted.iv,
       authTag: encrypted.authTag,
@@ -372,13 +392,14 @@ export class EnvironmentVaultService {
         ? fail('NOT_FOUND', `Environment vault not found at ${vaultPath}`)
         : fail('ERROR', error.message);
     }
-    const opened = await this.#open(bytes, normalizeAuth(auth));
+    const opened = await this.#open(bytes, normalizeAuth(auth), vaultPath);
     if (!opened.success) return opened;
     return {
       success: true,
       vault: opened.vault,
       revision: this.revisionOf(bytes),
       keyMaterial: opened.keyMaterial,
+      format: opened.format,
     };
   }
 
@@ -462,11 +483,16 @@ export class EnvironmentVaultService {
       let vault = new EnvironmentVault();
       let keyMaterial = null;
       if (bytes) {
-        const opened = await this.#open(bytes, {
-          password,
-          keyMaterial: givenKey,
-        });
+        const opened = await this.#open(
+          bytes,
+          { password, keyMaterial: givenKey },
+          vaultPath
+        );
         if (!opened.success) return opened;
+        // A newer tool's vault: writing would drop what we don't know.
+        if (!opened.format.writable) {
+          return fail('NEWER_FORMAT', opened.format.message);
+        }
         ({ vault, keyMaterial } = opened);
       }
 
@@ -541,7 +567,7 @@ export class EnvironmentVaultService {
   }
 
   /** Parse and decrypt one read's `bytes` → `{ vault, keyMaterial }`. */
-  static async #open(bytes, { password, keyMaterial }) {
+  static async #open(bytes, { password, keyMaterial }, name = undefined) {
     let file;
     try {
       file = JSON.parse(bytes.toString('utf8'));
@@ -551,6 +577,8 @@ export class EnvironmentVaultService {
     if (file?.type !== 'environment-vault') {
       return fail('INVALID', 'Invalid environment vault file');
     }
+    const format = checkVaultFormat(file, 'env', name);
+    if (!format.readable) return fail('NEWER_FORMAT', format.message);
     const header = CryptographyService.keyHeaderOf(file);
 
     let key = null;
@@ -582,6 +610,7 @@ export class EnvironmentVaultService {
         success: true,
         vault: EnvironmentVault.fromJSON(payload),
         keyMaterial: { key, header },
+        format,
       };
     } catch {
       return fail(

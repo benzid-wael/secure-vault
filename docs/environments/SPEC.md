@@ -2181,10 +2181,11 @@ test). The write now aborts on an existing target unless `--force` is given.
 | 12   | `VALIDATION_ERROR`         | `Validation failed: <details>`                                          |
 | 13   | `MAX_DEPTH_EXCEEDED`       | `Template reference resolution exceeded max depth of 5`                 |
 | 14   | `INJECTION_FAILED`         | `Failed to spawn child process: <details>`                              |
+| 15   | `ENV_VAULT_NEWER_FORMAT`   | `<vault> uses features this version … doesn't support (<names>). …`     |
 | -    | `FILE_WRITE_FAILED`        | `Failed to write env file at <path>: <details>`                         |
 | -    | `VAULT_LOCKED`             | `Environment vault is locked. Run 'vault env unlock' first.`            |
 
-> **Status:** exit codes 2–14 are wired and emit the symbolic code on stderr
+> **Status:** exit codes 2–15 are wired and emit the symbolic code on stderr
 > (e.g. `[ENV_VAULT_NOT_FOUND] No vault found...`). `FILE_WRITE_FAILED` and
 > `VAULT_LOCKED` are documented for future use (agent mode, v2.0+) but not yet
 > wired.

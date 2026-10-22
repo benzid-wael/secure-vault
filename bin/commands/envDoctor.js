@@ -182,3 +182,41 @@ export function checkLock({ state, path: lockPath, holder, asides }) {
   }
   return results;
 }
+
+/**
+ * The vault's format against this build (New-29), from `checkVaultFormat`.
+ * A format it can't read is an error; features it doesn't know are a
+ * warning (reads work, writes are refused).
+ *
+ * @param {import('../../src/electron/utils/vaultFormat.js').FormatCheck} format
+ * @param {Record<string, string>} known Feature descriptions this build has.
+ */
+export function checkFormat(format, known) {
+  if (!format.readable) {
+    return [
+      {
+        level: 'error',
+        title: `Vault format ${format.version} is newer than this version reads`,
+        detail: format.message,
+      },
+    ];
+  }
+  if (!format.writable) {
+    return [
+      {
+        level: 'warn',
+        title: `Vault uses features this version doesn't support: ${format.unknown.join(', ')}`,
+        detail: format.message,
+      },
+    ];
+  }
+  const used = format.features.map((f) => known[f] ?? f);
+  return [
+    {
+      level: 'ok',
+      title:
+        `Vault format ${format.version}` +
+        (used.length ? ` (uses ${used.join(', ')})` : ''),
+    },
+  ];
+}

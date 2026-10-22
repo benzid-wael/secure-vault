@@ -359,6 +359,24 @@ the lock's state and names the file to remove; it never removes anything.
 Older versions of the CLI don't know about the lock and can still overwrite a
 concurrent change: upgrade every machine that writes the vault.
 
+#### Vaults written by a newer version
+
+A vault records the optional format features it uses (today: key comments)
+in its unencrypted header, and only when it uses them. When this version of
+the CLI meets a feature it doesn't know, written by a newer SecureVault:
+
+- reading commands (`show`, `get`, `run`, `export`, …) work and print a
+  warning on stderr (not with `--quiet`);
+- commands that change the vault exit with code **15**
+  (`[ENV_VAULT_NEWER_FORMAT]`) and change nothing, because saving would drop
+  the data this version doesn't understand. The message names the feature and
+  how to upgrade.
+
+A vault in a newer format version stops every command with code 15.
+`vault env doctor` shows the vault's format and the features it uses. The
+desktop app applies the same rule: it opens such a vault read-only, with a
+banner.
+
 ## Where data is stored
 
 Vaults live in a single location shared with the desktop app:

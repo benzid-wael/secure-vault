@@ -40,6 +40,8 @@ const PasswordManager = ({
   const [validationErrors, setValidationErrors] = useState({});
   const [showSettings, setShowSettings] = useState(false);
   const [selectedEntryType, setSelectedEntryType] = useState('password');
+  // A vault from a newer SecureVault (New-29): saves are refused in main.
+  const [readOnlyMessage, setReadOnlyMessage] = useState('');
   const [showImportExport, setShowImportExport] = useState(false);
   const [availableVaults, setAvailableVaults] = useState([]);
 
@@ -94,6 +96,7 @@ const PasswordManager = ({
           }
 
           setEntries(entriesArray);
+          setReadOnlyMessage(result.readOnly ? result.formatMessage : '');
         } else {
           console.error('Failed to load vault data:', result.error);
           showSnackbar(`Failed to load vault data: ${result.error}`, 'error');
@@ -126,7 +129,12 @@ const PasswordManager = ({
           setEntries(updatedEntries);
           return true;
         } else {
-          showSnackbar('Failed to save vault', 'error');
+          showSnackbar(
+            result.code === 'NEWER_FORMAT'
+              ? result.error
+              : 'Failed to save vault',
+            'error'
+          );
           return false;
         }
       } catch (error) {
@@ -361,6 +369,12 @@ const PasswordManager = ({
         >
           This vault still uses the built-in password from an earlier version,
           which anyone can look up. Change it now.
+        </Alert>
+      )}
+
+      {readOnlyMessage && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          <strong>Read-only.</strong> {readOnlyMessage}
         </Alert>
       )}
 

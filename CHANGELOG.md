@@ -21,6 +21,15 @@ Design detail for the environment-vault (`vault env`) features lives in
   each key, and **`vault env import --comments`** reads the `#` lines
   directly above a key back as its comment.
 - **`vault env set --secret`** marks a key sensitive again.
+- **Vaults record the format features they use**, and every tool from this
+  version on checks them. A vault with key comments says so in its header.
+  A CLI or app that meets a feature it doesn't know reads the vault but
+  refuses to change it (the CLI exits with the new code 15,
+  `ENV_VAULT_NEWER_FORMAT`; the app opens it read-only) and says how to
+  upgrade, instead of silently dropping the data on save. Password vaults
+  follow the same rule. `vault env doctor` reports the vault's format.
+  Versions released before this one don't check: upgrade every machine that
+  writes a vault before using key comments.
 - **`npm run test:e2e`** — end-to-end checks that build the desktop app and
   drive its real window: first launch, unlocking and upgrading an older vault,
   export / import, manual lock and auto-lock (sleep and screen lock),

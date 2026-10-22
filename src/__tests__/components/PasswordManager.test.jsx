@@ -664,6 +664,28 @@ describe('PasswordManager', () => {
     });
   });
 
+  describe('A vault from a newer version (New-29)', () => {
+    it('says it is read-only and why', async () => {
+      mockElectronAPI.loadVault.mockResolvedValue({
+        success: true,
+        data: { entries: [] },
+        readOnly: true,
+        formatMessage: 'test-vault uses features this version does not know.',
+      });
+      render(React.createElement(PasswordManager, defaultProps));
+      expect(await screen.findByText(/Read-only\./)).toBeInTheDocument();
+      expect(
+        screen.getByText(/uses features this version does not know/)
+      ).toBeInTheDocument();
+    });
+
+    it('shows no banner for a current vault', async () => {
+      render(React.createElement(PasswordManager, defaultProps));
+      await screen.findByText('test-vault');
+      expect(screen.queryByText(/Read-only\./)).toBeNull();
+    });
+  });
+
   describe('Add Entry Dialog', () => {
     it('opens add dialog when FAB clicked', async () => {
       render(React.createElement(PasswordManager, defaultProps));

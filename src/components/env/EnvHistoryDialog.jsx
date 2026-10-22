@@ -22,7 +22,14 @@ import {
  * never values. `run(action)` performs an IPC call and resolves to its
  * result; on success the dialog closes through `onDone(message)`.
  */
-export default function EnvHistoryDialog({ env, load, run, onDone, onClose }) {
+export default function EnvHistoryDialog({
+  env,
+  load,
+  run,
+  onDone,
+  onClose,
+  readOnly = false,
+}) {
   const [versions, setVersions] = useState(null);
   const [error, setError] = useState('');
   const [confirm, setConfirm] = useState(null); // { kind: 'rollback', n } | { kind: 'squash' }
@@ -147,7 +154,7 @@ export default function EnvHistoryDialog({ env, load, run, onDone, onClose }) {
                     {v.keyCount} {keyDiff(v)}
                   </TableCell>
                   <TableCell align="right">
-                    {!v.isActive && (
+                    {!v.isActive && !readOnly && (
                       <Button
                         size="small"
                         aria-label={`Roll back to v${v.n}`}
@@ -164,7 +171,7 @@ export default function EnvHistoryDialog({ env, load, run, onDone, onClose }) {
         )}
       </DialogContent>
       <DialogActions>
-        {versions && versions.length > 1 && (
+        {versions && versions.length > 1 && !readOnly && (
           <>
             <TextField
               id="env-squash-keep"

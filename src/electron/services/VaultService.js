@@ -5,6 +5,7 @@ import { validatePasswordStrength } from '../../utils/passwordValidation.js';
 import { KeyRecoveryService } from './recovery/KeyRecoveryService.js';
 import { PasswordRecoveryService } from './recovery/PasswordRecoveryService.js';
 import { RecoveryData } from './recovery/IRecoveryMethod.js';
+import { checkVaultFormat } from '../utils/vaultFormat.js';
 
 /**
  * The password earlier versions gave the `default` vault they created on
@@ -114,6 +115,11 @@ export class VaultService {
     }
     try {
       const vaultFile = await this.fileService.readVaultPath(vaultPath);
+      // Before the password: a wrong-password message would mislead (New-29).
+      const format = checkVaultFormat(vaultFile, 'password', vaultName);
+      if (!format.readable) {
+        return { success: false, code: 'NEWER_FORMAT', error: format.message };
+      }
       const key = this.#keyFor(password, vaultFile);
 
       const encryptedData = {
@@ -123,7 +129,9 @@ export class VaultService {
       };
 
       CryptographyService.decrypt(encryptedData, key);
-      return { success: true };
+      return format.writable
+        ? { success: true }
+        : { success: true, readOnly: true, formatMessage: format.message };
     } catch (error) {
       return { success: false, error: 'Invalid master password' };
     }
@@ -132,6 +140,10 @@ export class VaultService {
   async loadVault(vaultName, password) {
     try {
       const vaultFile = await this.fileService.readVaultFile(vaultName);
+      const format = checkVaultFormat(vaultFile, 'password', vaultName);
+      if (!format.readable) {
+        return { success: false, code: 'NEWER_FORMAT', error: format.message };
+      }
       const key = this.#keyFor(password, vaultFile);
 
       const encryptedData = {
@@ -144,7 +156,15 @@ export class VaultService {
 
       const vault = Vault.fromJSON(vaultData, vaultName);
       const vaultJson = vault.toJSON();
-      return { success: true, data: vaultJson };
+      // Saves are refused by the file service; the page says why up front.
+      return format.writable
+        ? { success: true, data: vaultJson }
+        : {
+            success: true,
+            data: vaultJson,
+            readOnly: true,
+            formatMessage: format.message,
+          };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -187,7 +207,7 @@ export class VaultService {
       await this.fileService.writeVaultFile(vaultName, vaultFile);
       return { success: true };
     } catch (error) {
-      return { success: false, error: error.message };
+      return { success: false, code: error.code, error: error.message };
     }
   }
 
@@ -293,6 +313,9 @@ export class VaultService {
       }
     } catch (error) {
       console.error('Error changing password:', error);
+      if (error.code === 'NEWER_FORMAT') {
+        return { success: false, code: error.code, error: error.message };
+      }
       return { success: false, error: 'Failed to change master password' };
     }
   }
@@ -449,6 +472,9 @@ export class VaultService {
       };
     } catch (error) {
       console.error('Failed to generate recovery key: ', error);
+      if (error.code === 'NEWER_FORMAT') {
+        return { success: false, code: error.code, error: error.message };
+      }
       return { success: false, error: 'Failed to generate recovery key' };
     }
   }

@@ -154,6 +154,9 @@ const EnvView = ({
   onChanged = () => {},
   externalChange = 0,
   quietReload = 0,
+  // A vault from a newer SecureVault (New-29): every write is refused, so
+  // the controls that write aren't offered.
+  readOnly = false,
 }) => {
   const api = envApi();
   const [view, setView] = useState(null); // { viewId, revision, vars }
@@ -546,9 +549,11 @@ const EnvView = ({
         <Typography variant="h6" sx={{ flexGrow: 1 }}>
           {env}
         </Typography>
-        <Button variant="outlined" onClick={() => setBulkOpen(true)}>
-          Edit as .env
-        </Button>
+        {!readOnly && (
+          <Button variant="outlined" onClick={() => setBulkOpen(true)}>
+            Edit as .env
+          </Button>
+        )}
         <Button variant="outlined" onClick={() => setHistoryOpen(true)}>
           History
         </Button>
@@ -562,23 +567,25 @@ const EnvView = ({
         >
           <MoreIcon fontSize="small" />
         </Button>
-        <Button
-          variant="outlined"
-          onClick={() =>
-            setEditing({
-              key: '',
-              value: '',
-              sensitive: true,
-              comment: '',
-              isNew: true,
-            })
-          }
-        >
-          Add variable
-        </Button>
+        {!readOnly && (
+          <Button
+            variant="outlined"
+            onClick={() =>
+              setEditing({
+                key: '',
+                value: '',
+                sensitive: true,
+                comment: '',
+                isNew: true,
+              })
+            }
+          >
+            Add variable
+          </Button>
+        )}
       </Box>
 
-      {selected.length > 0 && (
+      {selected.length > 0 && !readOnly && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
           <Typography sx={{ flexGrow: 1 }}>
             {selected.length} selected
@@ -619,6 +626,7 @@ const EnvView = ({
                 <Checkbox
                   size="small"
                   checked={allSelected}
+                  disabled={readOnly}
                   indeterminate={selected.length > 0 && !allSelected}
                   onChange={() =>
                     setSelected(allSelected ? [] : view.vars.map((r) => r.key))
@@ -650,6 +658,7 @@ const EnvView = ({
                     <Checkbox
                       size="small"
                       checked={selected.includes(row.key)}
+                      disabled={readOnly}
                       onChange={() => toggleSelected(row.key)}
                       inputProps={{ 'aria-label': `Select ${row.key}` }}
                     />
@@ -722,16 +731,18 @@ const EnvView = ({
                         <CopyIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
-                    <Tooltip title={row.inheritedFrom ? 'Override' : 'Edit'}>
-                      <IconButton
-                        size="small"
-                        aria-label={`Edit ${row.key}`}
-                        onClick={() => startEdit(row)}
-                      >
-                        <EditIcon />
-                      </IconButton>
-                    </Tooltip>
-                    {!row.inheritedFrom && (
+                    {!readOnly && (
+                      <Tooltip title={row.inheritedFrom ? 'Override' : 'Edit'}>
+                        <IconButton
+                          size="small"
+                          aria-label={`Edit ${row.key}`}
+                          onClick={() => startEdit(row)}
+                        >
+                          <EditIcon />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                    {!readOnly && !row.inheritedFrom && (
                       <Tooltip title="Delete">
                         <IconButton
                           size="small"
@@ -768,10 +779,12 @@ const EnvView = ({
         <MenuItem onClick={() => copy(menu.row.key, 'pair')}>
           Copy KEY=value
         </MenuItem>
-        <MenuItem onClick={() => openTransfer([menu.row.key], 'copy')}>
-          Copy to environment…
-        </MenuItem>
-        {menu && !menu.row.inheritedFrom && (
+        {!readOnly && (
+          <MenuItem onClick={() => openTransfer([menu.row.key], 'copy')}>
+            Copy to environment…
+          </MenuItem>
+        )}
+        {menu && !readOnly && !menu.row.inheritedFrom && (
           <MenuItem onClick={() => openTransfer([menu.row.key], 'move')}>
             Move to environment…
           </MenuItem>
@@ -783,7 +796,7 @@ const EnvView = ({
         open={envMenu !== null}
         onClose={() => setEnvMenu(null)}
       >
-        <MenuItem onClick={startImport}>Import .env…</MenuItem>
+        {!readOnly && <MenuItem onClick={startImport}>Import .env…</MenuItem>}
         <MenuItem onClick={exportTemplate}>
           Save template (.env.example)…
         </MenuItem>
@@ -848,6 +861,7 @@ const EnvView = ({
           env={env}
           load={loadHistory}
           run={runHistory}
+          readOnly={readOnly}
           onDone={historyDone}
           onClose={() => setHistoryOpen(false)}
         />

@@ -71,7 +71,7 @@ updated as each task finishes, not in a batch at the end.
 | New-26 | Export and import key comments as `#` lines in a .env              | M4  | P2  | ✅     | 27, New-25                             |
 | New-27 | Fix: `env set` without `--public` makes a public key secret again  | M1  | P2  | ✅     | —                                      |
 | New-28 | Search password entries by their notes                             | —   | P2  | ✅     | —                                      |
-| New-29 | Recognise a newer vault format: warn, protect writes, show upgrade | M1  | P1  | ⬜     | 8, New-25                              |
+| New-29 | Recognise a newer vault format: warn, protect writes, show upgrade | M1  | P1  | ✅     | 8, New-25                              |
 | New-30 | Rename an env: update `{{env:NAME/KEY}}` references to it          | M5  | P2  | ⬜     | 24                                     |
 | New-31 | Merge, not STALE, for reveal, copy, transfer and import            | M4  | P2  | ⬜     | 10                                     |
 | New-32 | `env import` keeps the flags of the keys it replaces               | M1  | P2  | ⬜     | 9                                      |
@@ -79,6 +79,7 @@ updated as each task finishes, not in a batch at the end.
 | New-34 | Drop a pending import as soon as the vault locks                   | M5  | P2  | ⬜     | 27                                     |
 | New-35 | JSON export from the app                                           | M5  | P2  | ⬜     | 27                                     |
 | New-36 | Prune saved passwords of gone vaults; "forget all"                 | M5  | P2  | ⬜     | New-24                                 |
+| New-37 | Authenticate the envelope header (GCM additional data)             | M5  | P2  | ⬜     | New-29                                 |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -1573,7 +1574,41 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### New-29: Recognise a newer vault format: warn, protect writes, show upgrade
 
-- **Status:** ⬜ not started. **Blocks the release that ships New-25.**
+- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
+  `feat/vault-env-gui`; not merged, not released. Must still ship in the
+  release that brings New-25, or an earlier one.
+- **Decided (author, 2026-10-22, all as recommended):**
+  - Marker: a `features` list in the plaintext envelope, so a tool names
+    what it doesn't know and `doctor` needs no password; the existing
+    `version` stays for a change that breaks reading.
+  - Written only when used: `["comments"]` while any version has a comment.
+  - Released tools are not made to fail: release notes instead. Their loss
+    is limited (comments on keys they change; all of them on a squash).
+  - No override flag.
+- **Built:**
+  - `src/electron/utils/vaultFormat.js`: `VAULT_FORMATS` (env: comments;
+    password: none yet), `checkVaultFormat`, `envVaultFeatures`,
+    `UPGRADE_HINT` (npm command and the releases page).
+  - Env vaults: the service writes `features`; `read`/`loadVault` return
+    `format`; a newer `version` is `NEWER_FORMAT`; `transact` refuses
+    every write to a vault with unknown features, file untouched.
+  - Password vaults: `VaultFileService` refuses to overwrite a vault with
+    unknown features (every write goes through it); `verifyPassword` and
+    `loadVault` refuse a newer version and report `readOnly`;
+    `saveVault`, `changePassword`, `generateRecoveryKey` pass the code on.
+  - CLI: the `env` preAction hook reads the envelope (no password): unknown
+    features stop write commands with exit 15 and warn on reads (stderr,
+    not with `--quiet`); a newer version stops every command. `doctor`
+    reports the format (error when unreadable, warning when read-only).
+  - App: `env:list` returns `readOnly` and the message; the vault screen
+    shows a banner and hides every write control (add, edit, delete, bulk
+    edit, import, copy/move, env management, rollback, squash, change
+    password). Password vaults show the banner; a refused save says why.
+- **Validated:** unit tests for the check; service tests for both kinds
+  (marker written and removed, reads, refused writes leave the file
+  byte-identical, newer version); CLI tests (exit 15, warning, `--quiet`,
+  doctor); IPC and UI tests (banner, no write controls, refused commit,
+  no unlock of a newer version); e2e green.
 - **Found:** author review of New-25, 2026-10-22: a tool that predates a
   feature loses that feature's data when it writes, without a word. No tool
   reads the format version today: env vaults carry `vaultVersion: 1` and
@@ -1709,3 +1744,18 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
   at the next list; "Forget all saved passwords" empties the file.
 - **Cost of leaving it:** ciphertexts of old vault passwords stay on disk,
   readable only through the OS keychain.
+
+### New-37: Authenticate the envelope header (GCM additional data)
+
+- **Status:** ⬜ found 2026-10-22 while building New-29.
+- **Goal:** a change to a vault's plaintext header (`type`, `version`,
+  `features`, `kdf`) is detected on decrypt, not just trusted.
+- **Constraints:** files written before it must still open (a header flag
+  says the header is bound); older tools ignore the flag, so this is a
+  format change New-29 must mark.
+- **Dependencies:** New-29.
+- **Validation:** editing `features` or `version` of a bound vault makes it
+  fail to open with a clear "header was changed" message.
+- **Cost of leaving it:** anyone able to edit the file can mark it newer and
+  make tools refuse writes; they could equally corrupt it, so the exposure
+  is no worse than today.
