@@ -15,6 +15,12 @@ const MAX_KEY_LENGTH = 1024;
 const MAX_VALUE_LENGTH = 65536;
 const MAX_COMMENT_LENGTH = 1000;
 
+/**
+ * A `{{env:SRC/KEY}}` reference, split so SRC can be rewritten in place
+ * (same grammar as EnvironmentResolver's REF_RE).
+ */
+const ENV_REF_RE = /(\{\{\s*env:)([A-Za-z0-9._-]+)(\/[A-Za-z0-9._-]+\s*\}\})/g;
+
 /** A key that survives a dotenv export and re-import (see `parseEnvFile`). */
 export const ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -125,6 +131,59 @@ export class EnvironmentVault {
     this.environments[newName] = this.environments[oldName];
     delete this.environments[oldName];
     this.updated = new Date().toISOString();
+  }
+
+  /**
+   * Where `{{env:target/KEY}}` is used: per env, how many references its
+   * active version holds. Older versions aren't counted.
+   *
+   * @param {string} target
+   * @returns {{env: string, count: number}[]}
+   */
+  referencesTo(target) {
+    const found = [];
+    for (const name of this.listEnvironmentNames()) {
+      const vars = this.getActiveVersion(name)?.vars ?? {};
+      let count = 0;
+      for (const value of Object.values(vars)) {
+        for (const match of String(value).matchAll(ENV_REF_RE)) {
+          if (match[2] === target) count++;
+        }
+      }
+      if (count > 0) found.push({ env: name, count });
+    }
+    return found;
+  }
+
+  /**
+   * Point every `{{env:oldName/KEY}}` reference at `newName` (New-30, after
+   * a rename). Each env whose active version has one gets one new version;
+   * flags and comments are kept. Older versions keep what they said.
+   *
+   * @returns {{env: string, count: number}[]} What was rewritten.
+   */
+  renameReferences(oldName, newName, { message = null } = {}) {
+    const found = this.referencesTo(oldName);
+    for (const { env } of found) {
+      const active = this.getActiveVersion(env);
+      const vars = Object.fromEntries(
+        Object.entries(active.vars).map(([key, value]) => [
+          key,
+          typeof value === 'string'
+            ? value.replace(ENV_REF_RE, (whole, open, src, rest) =>
+                src === oldName ? `${open}${newName}${rest}` : whole
+              )
+            : value,
+        ])
+      );
+      this.addVersion(env, vars, {
+        required: active.required,
+        nonSensitive: active.nonSensitive,
+        comments: active.comments ?? {},
+        message,
+      });
+    }
+    return found;
   }
 
   setExtends(name, parent) {

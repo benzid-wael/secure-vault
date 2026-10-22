@@ -325,9 +325,16 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked, onForget }) {
     if (op === 'rename' && selected === env) setSelected(name);
     if (op === 'duplicate') setSelected(name);
     if (op === 'delete' && selected === env) setSelected(null);
+    const updated = (result.updated ?? []).reduce((n, r) => n + r.count, 0);
     setNotice(
       {
-        rename: `Renamed ${env} to ${name}.`,
+        rename:
+          `Renamed ${env} to ${name}.` +
+          (updated > 0
+            ? ` Updated ${updated} ${updated === 1 ? 'reference' : 'references'} in ${result.updated
+                .map((r) => r.env)
+                .join(', ')}.`
+            : ''),
         duplicate: `Copied ${env} to ${name}.`,
         delete: `Deleted ${env}. A copy of the vault was kept.`,
         extends: `Updated the parent of ${env}.`,
@@ -344,6 +351,13 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked, onForget }) {
     }
     return result;
   };
+
+  // For the rename dialog: who refers to the env being renamed (New-30).
+  const manageEnv = manage?.env;
+  const loadReferences = useCallback(
+    () => api.references(vault.id, manageEnv),
+    [api, vault.id, manageEnv]
+  );
 
   const openManage = (op) => {
     const env = envs.find((e) => e.name === menu.env);
@@ -535,6 +549,7 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked, onForget }) {
           envNames={(envs || []).map((e) => e.name)}
           onSubmit={runManage}
           onClose={() => setManage(null)}
+          loadReferences={api.references ? loadReferences : null}
         />
       )}
 

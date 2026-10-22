@@ -856,6 +856,7 @@ export function createEnvVaultHandlers({
         parent = null,
         description = '',
         expectedRevision = null,
+        updateReferences = false,
       } = request ?? {};
       if (!MANAGE_OPS.includes(op)) return invalid('Unknown change');
       if (typeof env !== 'string') return invalid('Choose an environment');
@@ -868,6 +869,7 @@ export function createEnvVaultHandlers({
       if (op === 'describe' && String(description).length > 500) {
         return invalid('Keep the description under 500 characters');
       }
+      let updated = [];
       const result = await write(
         id,
         async (vault) => {
@@ -882,6 +884,12 @@ export function createEnvVaultHandlers({
           if (op === 'rename') {
             vault.renameEnvironment(env, name);
             for (const child of children) vault.setExtends(child, name);
+            // In the same write, so no reader sees one without the other.
+            if (updateReferences === true) {
+              updated = vault.renameReferences(env, name, {
+                message: `References to ${env} renamed to ${name} in the desktop app`,
+              });
+            }
           } else if (op === 'duplicate') {
             const active = vault.getActiveVersion(env);
             vault.addEnvironment(name, {
@@ -915,9 +923,24 @@ export function createEnvVaultHandlers({
         },
         expectedRevision
       );
-      return result.success
-        ? { success: true, revision: result.revision }
-        : result;
+      if (!result.success) return result;
+      return op === 'rename'
+        ? { success: true, revision: result.revision, updated }
+        : { success: true, revision: result.revision };
+    }),
+
+    /**
+     * Which envs refer to `env` with `{{env:env/KEY}}`, and how often
+     * (New-30): names and counts only, no values. For the rename dialog.
+     */
+    'env:references': withVault(async ({ id }, env) => {
+      if (typeof env !== 'string') return invalid('Choose an environment');
+      const result = await read(id);
+      if (!result.success) return result;
+      if (!result.vault.environments[env]) {
+        return { success: false, code: 'NOT_FOUND', error: 'Environment gone' };
+      }
+      return { success: true, references: result.vault.referencesTo(env) };
     }),
 
     /** An env's versions, newest first, without values (Task 25). */

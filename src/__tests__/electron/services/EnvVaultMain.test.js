@@ -9,6 +9,7 @@ import path from 'path';
 
 import { EnvironmentVaultService } from '../../../electron/services/EnvironmentVaultService.js';
 import { EnvironmentVault } from '../../../electron/models/EnvironmentVault.js';
+import { EnvironmentResolver } from '../../../electron/services/EnvironmentResolver.js';
 import { EnvVaultRegistry } from '../../../electron/services/EnvVaultRegistry.js';
 import {
   EnvVaultSession,
@@ -1340,6 +1341,85 @@ describe('env vault IPC: env management, history, watcher (Tasks 16, 24, 25)', (
     const vault = await loaded();
     expect(vault.listEnvironmentNames()).toEqual(['common', 'prod']);
     expect(vault.environments.prod.extends).toBe('common');
+  });
+
+  it('counts references to an env, names and counts only (New-30)', async () => {
+    await EnvironmentVaultService.setEnv(
+      filePath,
+      PW,
+      'prod',
+      'DSN',
+      '{{env:base/LOG_LEVEL}}-{{env:base/LOG_LEVEL}}'
+    );
+    expect(await h['env:references'](ev, id, 'base')).toEqual({
+      success: true,
+      references: [{ env: 'prod', count: 2 }],
+    });
+    expect(await h['env:references'](ev, id, 'prod')).toEqual({
+      success: true,
+      references: [],
+    });
+    expect((await h['env:references'](ev, id, 'ghost')).code).toBe('NOT_FOUND');
+    expect((await h['env:references'](ev, id, 42)).code).toBe('INVALID');
+    session.lock(id);
+    expect((await h['env:references'](ev, id, 'base')).code).toBe('LOCKED');
+  });
+
+  it('renames with the references, in one write, when asked (New-30)', async () => {
+    await EnvironmentVaultService.setEnv(
+      filePath,
+      PW,
+      'prod',
+      'DSN',
+      'log={{env:base/LOG_LEVEL}}'
+    );
+    const before = (await loaded()).getHistory('prod').length;
+    const result = await manage({
+      op: 'rename',
+      env: 'base',
+      name: 'common',
+      updateReferences: true,
+    });
+    expect(result).toMatchObject({
+      success: true,
+      updated: [{ env: 'prod', count: 1 }],
+    });
+    const vault = await loaded();
+    expect(vault.getActiveVersion('prod').vars.DSN).toBe(
+      'log={{env:common/LOG_LEVEL}}'
+    );
+    expect(vault.getHistory('prod')).toHaveLength(before + 1);
+    expect(
+      new EnvironmentResolver(vault).resolveEnvironment('prod').DSN
+    ).toMatch(/^log=/);
+  });
+
+  it('leaves the references alone unless asked', async () => {
+    await EnvironmentVaultService.setEnv(
+      filePath,
+      PW,
+      'prod',
+      'DSN',
+      'log={{env:base/LOG_LEVEL}}'
+    );
+    let env = 'base';
+    for (const [name, updateReferences] of [
+      ['c1', undefined],
+      ['c2', false],
+      ['c3', 'yes'], // only `true` counts
+    ]) {
+      const result = await manage({
+        op: 'rename',
+        env,
+        name,
+        updateReferences,
+      });
+      expect(result).toMatchObject({ success: true, updated: [] });
+      env = name;
+    }
+    expect((await loaded()).getActiveVersion('prod').vars.DSN).toBe(
+      'log={{env:base/LOG_LEVEL}}'
+    );
   });
 
   it('duplicates an env with its flags, comments and parent', async () => {

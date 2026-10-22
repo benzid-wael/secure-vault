@@ -1,4 +1,5 @@
 import { EnvironmentVault } from '../../../electron/models/EnvironmentVault.js';
+import { EnvironmentResolver } from '../../../electron/services/EnvironmentResolver.js';
 
 function createSampleVault() {
   const vault = new EnvironmentVault();
@@ -610,5 +611,93 @@ describe('comments across envs and imports', () => {
       A: 'new',
       B: 'kept',
     });
+  });
+});
+
+describe('references after a rename (New-30)', () => {
+  // `base` is referenced from shop, from itself and from `base-old` (whose
+  // name only starts the same); self refs and other names stay as they are.
+  const build = () => {
+    const vault = new EnvironmentVault();
+    vault.addEnvironment('base');
+    vault.addVersion('base', {
+      HOST: 'db.internal',
+      PORT: '5432',
+      URL: 'postgres://{{env:base/HOST}}:{{env:self/PORT}}',
+    });
+    vault.addEnvironment('base-old');
+    vault.addVersion('base-old', { HOST: 'old.internal' });
+    vault.addEnvironment('shop');
+    vault.addVersion(
+      'shop',
+      {
+        DB: '{{env:base/URL}}/shop',
+        BOTH: '{{ env:base/HOST }} and {{env:base-old/HOST}}',
+        PLAIN: 'no refs',
+      },
+      {
+        nonSensitive: ['PLAIN'],
+        required: ['DB'],
+        comments: { DB: 'from base' },
+      }
+    );
+    return vault;
+  };
+
+  it('counts references in active versions only', () => {
+    const vault = build();
+    expect(vault.referencesTo('base')).toEqual([
+      { env: 'base', count: 1 },
+      { env: 'shop', count: 2 },
+    ]);
+    expect(vault.referencesTo('base-old')).toEqual([{ env: 'shop', count: 1 }]);
+    expect(vault.referencesTo('nobody')).toEqual([]);
+    vault.addVersion('shop', { PLAIN: 'no refs' }); // the refs are history now
+    expect(vault.referencesTo('base')).toEqual([{ env: 'base', count: 1 }]);
+  });
+
+  it('after a rename every reference resolves to the same values', () => {
+    const vault = build();
+    const before = Object.fromEntries(
+      vault
+        .listEnvironmentNames()
+        .map((n) => [n, new EnvironmentResolver(vault).resolveEnvironment(n)])
+    );
+    vault.renameEnvironment('base', 'core');
+    const updated = vault.renameReferences('base', 'core', { message: 'm' });
+    expect(updated).toEqual([
+      { env: 'core', count: 1 },
+      { env: 'shop', count: 2 },
+    ]);
+    const resolver = new EnvironmentResolver(vault);
+    expect(resolver.resolveEnvironment('core')).toEqual(before.base);
+    expect(resolver.resolveEnvironment('shop')).toEqual(before.shop);
+    expect(resolver.resolveEnvironment('base-old')).toEqual(before['base-old']);
+    expect(vault.referencesTo('base')).toEqual([]);
+
+    const shop = vault.getActiveVersion('shop');
+    expect(shop.vars).toEqual({
+      DB: '{{env:core/URL}}/shop',
+      BOTH: '{{ env:core/HOST }} and {{env:base-old/HOST}}',
+      PLAIN: 'no refs',
+    });
+    expect(shop).toMatchObject({
+      n: 2,
+      message: 'm',
+      nonSensitive: ['PLAIN'],
+      required: ['DB'],
+      comments: { DB: 'from base' },
+    });
+    // History keeps what it said; base-old had nothing to change.
+    expect(vault.getVersion('shop', 1).vars.DB).toBe('{{env:base/URL}}/shop');
+    expect(vault.getHistory('base-old')).toHaveLength(1);
+  });
+
+  it('without the rename, references to the old name fail to resolve', () => {
+    const vault = build();
+    vault.renameEnvironment('base', 'core');
+    expect(() =>
+      new EnvironmentResolver(vault).resolveEnvironment('shop')
+    ).toThrow();
   });
 });
