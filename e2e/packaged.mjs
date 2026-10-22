@@ -1,8 +1,9 @@
-// Smoke check of the packaged desktop app (GUI-ENV-BREAKDOWN New-19): the
-// installed binary, loading its renderer from inside app.asar, starts with
-// the Content-Security-Policy and a sandboxed renderer, and unlocks a vault
-// with no CSP violation. `npm run test:e2e` runs the built app from the repo,
-// where `file://` and 'self' behave differently from inside an asar.
+// Smoke check of the packaged desktop app. New-19: the installed binary,
+// loading its renderer from inside app.asar, starts with the
+// Content-Security-Policy and a sandboxed renderer, and unlocks a vault with
+// no CSP violation. New-38: its Electron fuses are set and hold.
+// `npm run test:e2e` runs the built app from the repo, where `file://` and
+// 'self' behave differently from inside an asar.
 //
 //   npm run package:<os> (or electron-builder --dir), then:
 //   node e2e/packaged.mjs [path to the app's executable]
@@ -283,6 +284,72 @@ async function run() {
   cdp.close();
 }
 
+/**
+ * Start the app with extra arguments and environment, and return what it
+ * printed by the time its main script ran (or it exited, or 20 s passed).
+ */
+function launchBriefly(name, args, extraEnv = {}) {
+  return new Promise((resolve) => {
+    const proc = spawn(
+      executable,
+      [...args, `--user-data-dir=${path.join(tmp, `user-data-${name}`)}`],
+      { env: { ...env, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] }
+    );
+    let out = '';
+    const done = () => {
+      clearTimeout(timer);
+      proc.kill();
+      resolve(out);
+    };
+    const timer = setTimeout(done, 20_000);
+    const onData = (chunk) => {
+      out += chunk;
+      if (out.includes('Creating main browser window')) done();
+    };
+    proc.stdout.on('data', onData);
+    proc.stderr.on('data', onData);
+    proc.on('close', done); // after stdout and stderr end, unlike 'exit'
+  });
+}
+
+// New-38: nothing that launches the app can run it as plain Node.js or get
+// a debugger into main, and it loads code only from its checked app.asar.
+async function checkFuses() {
+  const { getCurrentFuseWire, FuseV1Options } = await import('@electron/fuses');
+  const wire = await getCurrentFuseWire(executable);
+  const ON = 49; // FuseState.ENABLE
+  const OFF = 48; // FuseState.DISABLE
+  const want = {
+    RunAsNode: OFF,
+    EnableNodeOptionsEnvironmentVariable: OFF,
+    EnableNodeCliInspectArguments: OFF,
+    OnlyLoadAppFromAsar: ON,
+    // Needed while the renderer loads from file://.
+    GrantFileProtocolExtraPrivileges: ON,
+  };
+  if (process.platform !== 'linux') {
+    want.EnableEmbeddedAsarIntegrityValidation = ON; // macOS and Windows only
+  }
+  const wrong = Object.entries(want)
+    .filter(([fuse, state]) => wire[FuseV1Options[fuse]] !== state)
+    .map(([fuse]) => fuse);
+  check('the fuses are set', wrong.length === 0, wrong.join(', '));
+
+  // A script file, not -e: Node takes the arguments after it as the
+  // script's own, where it would reject the Chromium flags as bad options.
+  // (NODE_OPTIONS has no behavioral check: Electron already ignores most of
+  // it in a packaged app's main process, fuse or not.)
+  const script = path.join(tmp, 'run-as-node.cjs');
+  fs.writeFileSync(script, "process.stdout.write('RAN-AS-NODE')");
+  const asNode = await launchBriefly('run-as-node', [script], {
+    ELECTRON_RUN_AS_NODE: '1',
+  });
+  check('ELECTRON_RUN_AS_NODE is ignored', !asNode.includes('RAN-AS-NODE'));
+
+  const inspected = await launchBriefly('inspect', ['--inspect=0']);
+  check('--inspect is ignored', !/Debugger listening/.test(inspected));
+}
+
 const killTimer = setTimeout(() => {
   console.log(`TIMEOUT after ${TIMEOUT_MS / 1000}s`);
   child.kill('SIGKILL');
@@ -300,6 +367,14 @@ try {
   await new Promise((r) =>
     child.exitCode !== null ? r() : child.once('exit', r)
   );
+}
+if (exitCode === 0) {
+  try {
+    await checkFuses();
+  } catch (error) {
+    console.log('FUSE CHECK ERROR', error.stack);
+    exitCode = 2;
+  }
 }
 const logged = log
   .split('\n')

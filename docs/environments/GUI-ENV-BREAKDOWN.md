@@ -80,8 +80,9 @@ updated as each task finishes, not in a batch at the end.
 | New-35 | JSON export from the app                                           | M5  | P2  | ⬜     | 27                                     |
 | New-36 | Prune saved passwords of gone vaults; "forget all"                 | M5  | P2  | ⬜     | New-24                                 |
 | New-37 | Authenticate the envelope header (GCM additional data)             | M5  | P2  | ⬜     | New-29                                 |
-| New-38 | Set Electron fuses in packaged builds                              | M0  | P1  | ⬜     | New-19                                 |
+| New-38 | Set Electron fuses in packaged builds                              | M0  | P1  | 🟡     | New-19                                 |
 | New-39 | Fix: a failed page load loops instead of showing the error page    | —   | P2  | ✅     | —                                      |
+| New-40 | Refuse `--remote-debugging-port` in packaged builds                | M0  | P2  | ⬜     | New-38                                 |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -1823,34 +1824,50 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### New-38: Set Electron fuses in packaged builds
 
-- **Status:** ⬜ found 2026-10-22 while doing New-19.
+- **Status:** 🟡 built 2026-10-22; passed on macOS. Windows and Linux are
+  checked by the release workflow's smoke step (New-19); done when that run
+  is green. Uncommitted on `feat/vault-env-gui`.
 - **Goal:** the packaged app can't be turned into a debuggable or plain
   Node.js process by whoever launches it.
 - **Found:** `npx @electron/fuses read` on the packaged macOS app: every
-  fuse is at Electron's default, so `RunAsNode`,
+  fuse was at Electron's default, so `RunAsNode`,
   `EnableNodeOptionsEnvironmentVariable` and `EnableNodeCliInspectArguments`
-  are on and `OnlyLoadAppFromAsar` and asar integrity are off. A process
-  running as the user can start the app with `--inspect` and get a
+  were on and `OnlyLoadAppFromAsar` and asar integrity were off. A process
+  running as the user could start the app with `--inspect` and get a
   debugger in main, which holds unlocked vaults and, since New-24, the
   app's keychain access.
-- **Constraints:**
-  - `GrantFileProtocolExtraPrivileges` must stay on while the renderer loads
-    from `file://`.
-  - New-19's check drives the app with `--remote-debugging-port`, a Chromium
-    switch no fuse controls. Refusing it in packaged builds (main quits when
-    it sees the switch) would need another way to run that check. Decide
-    which.
-- **Dependencies:** New-19 (its check proves the fused app still starts).
-- **Implementation guidance:** electron-builder's `electronFuses` option (or
-  an `afterPack` hook with `@electron/fuses`). Asar integrity needs
-  electron-builder to write the header hash; on macOS it ties in with code
-  signing.
-- **Validation:** `@electron/fuses read` shows the three Node fuses off and
-  `OnlyLoadAppFromAsar` on; `ELECTRON_RUN_AS_NODE=1 <app> -e 1` and
-  `<app> --inspect` do nothing; New-19's check still passes.
-- **Cost of leaving it:** a same-user process can read unlocked vaults and
-  saved env vault passwords through the app. Proposed: before the env UI
-  gate flips (author to confirm).
+- **Decision (author, 2026-10-22):** set the fuses now; refusing
+  `--remote-debugging-port` is its own item (New-40), because New-19's
+  check drives the shipped build through it.
+- **Built:**
+  - `package.json` `build.electronFuses`:
+    - off: `runAsNode`, `enableNodeOptionsEnvironmentVariable`,
+      `enableNodeCliInspectArguments`;
+    - on: `onlyLoadAppFromAsar`, `enableEmbeddedAsarIntegrityValidation`
+      (macOS and Windows; Electron has none on Linux);
+    - kept on: `grantFileProtocolExtraPrivileges`, needed while the renderer
+      loads from `file://`;
+    - kept off: `enableCookieEncryption` (the app stores no cookies, and on
+      macOS it would read the keychain at every start, which New-24 avoids)
+      and `loadBrowserProcessSpecificV8Snapshot`.
+  - Nothing in main uses `process.fork` or `ELECTRON_RUN_AS_NODE`, so
+    `runAsNode` off breaks nothing.
+  - `e2e/packaged.mjs` checks the fuses read from the binary, and that
+    `ELECTRON_RUN_AS_NODE=1` doesn't run a script and `--inspect` opens no
+    debugger. `NODE_OPTIONS` has no behavioral check: Electron already
+    ignores most of it in a packaged main process ("Most NODE_OPTIONs are
+    not supported in packaged apps"), fuse or not.
+- **Validation:**
+  - macOS: `@electron/fuses read` shows the settings above;
+    `npm run test:packaged` 13/13.
+  - The checks can fail: on the build without fuses, the fuse, run-as-node
+    and `--inspect` checks all fail (10/13).
+  - Asar integrity holds: a copy whose `app.asar` was repacked with one
+    changed file stops at start with "Integrity check failed for asar
+    archive entry '<header>'".
+  - Still to do: Windows and Linux in the release workflow.
+- **Cost of leaving it:** a same-user process could read unlocked vaults and
+  saved env vault passwords through the app.
 
 ### New-39: Fix: a failed page load loops instead of showing the error page
 
@@ -1892,3 +1909,22 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
   - `npm run test:packaged` 10/10, e2e 5/5. `WindowManager.js` 88% lines.
 - **Cost of leaving it:** rare (a reload during startup, or a damaged
   install), but then the app spins on an empty window.
+
+### New-40: Refuse `--remote-debugging-port` in packaged builds
+
+- **Status:** ⬜ found 2026-10-22 with New-38 (author: later).
+- **Goal:** a packaged build started with `--remote-debugging-port` (or
+  `--remote-debugging-pipe`) quits instead of exposing its pages.
+- **Why it's separate:** it's a Chromium switch no fuse controls. Through
+  it, a process running as the user can read and drive the page of an
+  unlocked vault, including calling its IPC API.
+- **Constraints:** New-19's `npm run test:packaged` drives the shipped build
+  through that port. Refusing it needs another way to run that check
+  against the same artifact; a separate test build would no longer test
+  what users install.
+- **Dependencies:** New-38.
+- **Validation:** the packaged app started with the switch exits at once;
+  New-19's check still runs against the shipped build.
+- **Cost of leaving it:** same-user access to unlocked vault pages. A
+  same-user attacker has other ways in (reading memory, keystrokes), so
+  this narrows the attack surface rather than closing a boundary.

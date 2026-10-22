@@ -142,6 +142,16 @@
       "output": "dist"
     },
     "publish": null,
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "onlyLoadAppFromAsar": true,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "grantFileProtocolExtraPrivileges": true,
+      "enableCookieEncryption": false,
+      "loadBrowserProcessSpecificV8Snapshot": false
+    },
     "mac": {
       "category": "public.app-category.utilities",
       "target": [

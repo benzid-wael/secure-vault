@@ -263,8 +263,8 @@ Known hazards so far, to be completed per task:
      and stops the release if it fails. Run the workflow by hand once to
      see Windows and Linux green before tagging.
   2. "Must not ship early" 1–3 and 6 still hold for flipping the gate.
-  3. Proposed (author to confirm): New-38, Electron fuses, before the gate
-     flips, since the app then holds env vault secrets and saved passwords.
+  3. New-38, Electron fuses, before the gate flips (built; Windows and
+     Linux wait on the release workflow's smoke step).
 - **Gated by:** the Environments UI gate (table above). How to try it:
   `npm run dev:electron`, or `SECURE_VAULT_ENV_UI=1 npm run start:prod`
   after `npm run build:all`.
@@ -426,4 +426,24 @@ Known hazards so far, to be completed per task:
 - **Verify after release:** `NODE_ENV=development npx electron .` with no
   dev server running shows the "dev server isn't running" error page once
   and stays there; the log has one "Failed to load URL" line.
+- **Rollback:** reinstall the previous app. Nothing on disk changes.
+
+### New-38: Electron fuses in packaged builds
+
+- **Runtime change (desktop app, every user, not gated):** the installed app
+  ignores `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` and `--inspect`, loads code
+  only from its `app.asar`, and on macOS and Windows refuses to start if
+  `app.asar` was changed after packaging.
+- **Schema or config change:** `build.electronFuses` in `package.json`.
+  Nothing on disk changes for users.
+- **Before it ships:** the release workflow's smoke step green on all three
+  OSes (it checks the fuses and starts the app). A packaging problem shows
+  up there as an app that doesn't start.
+- **Gated by:** nothing.
+- **Per environment:** desktop app only. Linux has no asar integrity check
+  in Electron; the other fuses apply. The npm CLI and binaries are
+  unaffected.
+- **Verify after release:** `npx @electron/fuses read --app <installed app>`
+  shows RunAsNode, NodeOptions and NodeCliInspect disabled;
+  `<app> --inspect` starts with no "Debugger listening" line.
 - **Rollback:** reinstall the previous app. Nothing on disk changes.
