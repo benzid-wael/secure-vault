@@ -220,6 +220,23 @@ describe('env vault UI on the real handlers (StrictMode)', () => {
     );
   });
 
+  it('adds a comment to a key and shows it under the key', async () => {
+    await openEnv('ci-prod');
+    fireEvent.click(screen.getByLabelText('Edit MATCH_PASSWORD'));
+    fireEvent.change(await screen.findByLabelText('Comment (optional)'), {
+      target: { value: 'fastlane match repo' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(
+      await screen.findByTestId('comment-MATCH_PASSWORD')
+    ).toHaveTextContent('fastlane match repo');
+    expect(
+      (
+        await EnvironmentVaultService.read(path.join(dir, 'app.env.vault'), PW)
+      ).vault.getActiveVersion('ci-prod').comments
+    ).toEqual({ MATCH_PASSWORD: 'fastlane match repo' });
+  });
+
   it('moves a key to another env, asking before it overwrites', async () => {
     await openEnv('ci-prod');
     fireEvent.click(screen.getByLabelText('More actions for MATCH_PASSWORD'));

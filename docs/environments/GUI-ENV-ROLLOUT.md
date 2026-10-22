@@ -291,3 +291,22 @@ Known hazards so far, to be completed per task:
   then copy something else, wait: the other text is still there.
 - **Rollback:** reinstall the previous app. Exported files remain where the
   user saved them.
+
+### Key comments (New-25)
+
+- **Runtime change:** the CLI and the app can store an optional comment per
+  env key (`env set --comment`, the GUI edit dialog); `env show` prints it.
+  Password entry cards now show the entry's existing Notes.
+- **Schema or config change:** a version may gain an optional `comments`
+  object. Additive: written only when a comment exists, so vaults without
+  comments are unchanged. Readers that don't know about it ignore it.
+- **Before it ships:** CHANGELOG (CLI `--comment`). Release notes: an older
+  CLI or app writing to a vault drops comments in the version it writes;
+  upgrade every machine that writes the vault.
+- **Gated by:** the CLI flag isn't gated; the GUI part is behind the
+  Environments UI gate. The entry-card notes aren't gated.
+- **Per environment:** CLI and desktop.
+- **Verify after release:** `env set K v --comment note`, then `env set K w`:
+  `env show` still prints `# note`.
+- **Rollback:** reinstall the previous version. Comments stay in the file;
+  the previous version ignores them, and drops them from versions it writes.

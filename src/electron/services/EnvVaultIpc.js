@@ -12,6 +12,7 @@ const ENV_NAME_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
  * Rows of `env` for the renderer: own keys plus keys inherited through
  * `extends` (marked `inheritedFrom`). Values are included only when `reveal`
  * or for non-sensitive keys: a sensitive value never leaves main unasked.
+ * A key's comment is always shown: it is a note about the key, not a value.
  */
 function describeEnv(vault, env) {
   const chain = [];
@@ -31,6 +32,7 @@ function describeEnv(vault, env) {
         value,
         sensitive: !version.nonSensitive.includes(key),
         required: version.required.includes(key),
+        comment: version.comments?.[key] ?? '',
         inheritedFrom: i === 0 ? null : chain[i],
       });
     }
@@ -299,6 +301,7 @@ export function createEnvVaultHandlers({
               key: r.key,
               value: r.value,
               sensitive: r.sensitive,
+              comment: r.comment,
             })),
             { message: `${verb} from ${view.env} in the desktop app` }
           );

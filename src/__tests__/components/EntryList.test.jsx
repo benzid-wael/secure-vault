@@ -278,3 +278,21 @@ describe('primarySecretField', () => {
     expect(primarySecretField(def.schema, def.copyableFields)).toBe(expected);
   });
 });
+
+describe('EntryList — notes', () => {
+  it("shows an entry's notes, and nothing when it has none", () => {
+    renderList([
+      {
+        id: '1',
+        title: 'With notes',
+        username: 'u',
+        password: 'p',
+        notes: 'Shared with the on-call rota',
+      },
+      { id: '2', title: 'Without', username: 'u', password: 'p' },
+    ]);
+    const notes = screen.getAllByTestId('entry-notes');
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toHaveTextContent('Shared with the on-call rota');
+  });
+});

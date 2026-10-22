@@ -248,6 +248,25 @@ const EntryCard = ({ entry, onEdit, onDelete, onCopy }) => {
                 </Box>
               )}
             </Box>
+
+            {entry.notes && (
+              <Typography
+                variant="body2"
+                data-testid="entry-notes"
+                sx={{
+                  mt: 1.5,
+                  color: 'rgba(255, 255, 255, 0.6)',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 3,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }}
+              >
+                {entry.notes}
+              </Typography>
+            )}
           </Box>
 
           <IconButton

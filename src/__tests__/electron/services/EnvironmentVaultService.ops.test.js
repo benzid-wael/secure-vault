@@ -90,6 +90,45 @@ describe('EnvironmentVaultService write operations', () => {
   });
 
   describe('setEnv', () => {
+    it('sets, keeps and clears a comment; show reports it; rm drops it', async () => {
+      await seed(populated(ENV, { EXISTING: 'val' }));
+      await EnvironmentVaultService.setEnv(vaultPath, PW, ENV, 'K', 'v', {
+        comment: 'Owned by the payments team',
+      });
+      await EnvironmentVaultService.setEnv(vaultPath, PW, ENV, 'K', 'v2');
+      const shown = /** @type {any} */ (
+        await EnvironmentVaultService.showEnv(vaultPath, PW, ENV)
+      );
+      expect(shown.data.keys).toContainEqual(
+        expect.objectContaining({
+          key: 'K',
+          comment: 'Owned by the payments team',
+        })
+      );
+      expect(
+        shown.data.keys.find((k) => k.key === 'EXISTING')
+      ).not.toHaveProperty('comment');
+
+      await EnvironmentVaultService.copyEnv(vaultPath, PW, ENV, 'copy');
+      expect((await reload()).getActiveVersion('copy').comments).toEqual({
+        K: 'Owned by the payments team',
+      });
+
+      await EnvironmentVaultService.setEnv(vaultPath, PW, ENV, 'K', 'v3', {
+        comment: '',
+      });
+      expect((await reload()).getActiveVersion(ENV)).not.toHaveProperty(
+        'comments'
+      );
+      await EnvironmentVaultService.setEnv(vaultPath, PW, ENV, 'K', 'v4', {
+        comment: 'back',
+      });
+      await EnvironmentVaultService.removeKey(vaultPath, PW, ENV, 'K');
+      expect((await reload()).getActiveVersion(ENV)).not.toHaveProperty(
+        'comments'
+      );
+    });
+
     it('sets a variable, keeping the existing ones', async () => {
       await seed(populated(ENV, { EXISTING: 'val' }));
 

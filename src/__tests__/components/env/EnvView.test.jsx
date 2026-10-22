@@ -114,7 +114,13 @@ describe('EnvView', () => {
       expect(api.commit).toHaveBeenCalledWith('vault-1', {
         viewId: 'view-1',
         ops: [
-          { op: 'set', key: 'API_KEY', value: 'new-secret', sensitive: true },
+          {
+            op: 'set',
+            key: 'API_KEY',
+            value: 'new-secret',
+            sensitive: true,
+            comment: '',
+          },
         ],
       })
     );
@@ -146,7 +152,15 @@ describe('EnvView', () => {
     await waitFor(() =>
       expect(api.commit).toHaveBeenCalledWith('vault-1', {
         viewId: 'view-1',
-        ops: [{ op: 'set', key: 'NEW_KEY', value: 'v', sensitive: true }],
+        ops: [
+          {
+            op: 'set',
+            key: 'NEW_KEY',
+            value: 'v',
+            sensitive: true,
+            comment: '',
+          },
+        ],
       })
     );
   });

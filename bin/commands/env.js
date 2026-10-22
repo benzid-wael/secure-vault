@@ -524,6 +524,10 @@ export function registerEnvCommand(program) {
     .option('--required', 'Mark variable as required (checked by validate)')
     .option('--extends <parent>', 'Set this environment to extend <parent>')
     .option('-m, --message <text>', 'Version message')
+    .option(
+      '--comment <text>',
+      'Note about the key, shown by show and the desktop app ("" removes it)'
+    )
     .option('--description <text>', 'Set environment description')
     .action(async (key, value, options) => {
       try {
@@ -639,6 +643,7 @@ export function registerEnvCommand(program) {
             isPublic: !!options.public,
             isRequired: !!options.required,
             message: options.message,
+            comment: options.comment,
           }
         );
 
@@ -785,6 +790,11 @@ export function registerEnvCommand(program) {
               : '****'
             : k.value;
           console.log(`  ${chalk.cyan(k.key)} = ${display}`);
+          if (k.comment) {
+            for (const line of k.comment.split('\n')) {
+              console.log(chalk.gray(`      # ${line}`));
+            }
+          }
         }
 
         console.log();

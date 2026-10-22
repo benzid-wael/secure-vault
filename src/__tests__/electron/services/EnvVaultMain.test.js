@@ -473,12 +473,19 @@ describe('env vault IPC handlers (contract)', () => {
     expect(JSON.stringify(view)).not.toContain(SECRET);
     expect(JSON.stringify(view)).not.toContain('from-base');
     expect(view.vars).toEqual([
-      { key: 'API_KEY', sensitive: true, required: true, inheritedFrom: null },
+      {
+        key: 'API_KEY',
+        sensitive: true,
+        required: true,
+        comment: '',
+        inheritedFrom: null,
+      },
       {
         key: 'HOST',
         value: 'prod.example',
         sensitive: false,
         required: false,
+        comment: '',
         inheritedFrom: null,
       },
       {
@@ -486,10 +493,17 @@ describe('env vault IPC handlers (contract)', () => {
         value: 'debug',
         sensitive: false,
         required: false,
+        comment: '',
         inheritedFrom: 'base',
       },
       // The child's own value wins over the parent's.
-      { key: 'SHARED', sensitive: true, required: false, inheritedFrom: null },
+      {
+        key: 'SHARED',
+        sensitive: true,
+        required: false,
+        comment: '',
+        inheritedFrom: null,
+      },
     ]);
     expect((await h['env:view'](ev, id, 'nope')).code).toBe('NOT_FOUND');
   });
@@ -802,5 +816,64 @@ describe('env vault IPC handlers (contract)', () => {
     await EnvironmentVaultService.changePassword(filePath, PW, 'Other-Pass-9!');
     expect((await h['env:list'](ev, id)).code).toBe('LOCKED');
     expect(session.isUnlocked(id)).toBe(false);
+  });
+});
+
+describe('env vault IPC: key comments', () => {
+  const ev = {};
+  let h;
+  let id;
+  let session;
+  let filePath;
+
+  beforeEach(async () => {
+    filePath = await seed();
+    session = new EnvVaultSession();
+    h = createEnvVaultHandlers({
+      registry: new EnvVaultRegistry({ envsDir }),
+      session,
+    });
+    id = (await h['env-vaults:list']()).vaults[0].id;
+    await h['env-vault:unlock'](ev, id, PW);
+  });
+  afterEach(() => session.lockAll());
+
+  const rows = async (env) => (await h['env:view'](ev, id, env)).vars;
+
+  it('shows comments, unmasked, and edits them through env:commit', async () => {
+    const view = await h['env:view'](ev, id, 'prod');
+    expect(view.vars.every((r) => r.comment === '')).toBe(true);
+    const result = await h['env:commit'](ev, id, {
+      viewId: view.viewId,
+      ops: [
+        {
+          op: 'set',
+          key: 'API_KEY',
+          value: SECRET,
+          comment: 'Rotate after offboarding',
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+    const apiKey = (await rows('prod')).find((r) => r.key === 'API_KEY');
+    expect(apiKey).toMatchObject({ comment: 'Rotate after offboarding' });
+    expect(apiKey).not.toHaveProperty('value');
+  });
+
+  it('carries a comment when a key is copied to another env', async () => {
+    await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'HOST', 'h', {
+      isPublic: true,
+      comment: 'Behind the VPN',
+    });
+    const view = await h['env:view'](ev, id, 'prod');
+    const result = await h['env:transfer'](ev, id, {
+      viewId: view.viewId,
+      keys: ['HOST'],
+      target: 'base',
+    });
+    expect(result.success).toBe(true);
+    expect((await rows('base')).find((r) => r.key === 'HOST').comment).toBe(
+      'Behind the VPN'
+    );
   });
 });

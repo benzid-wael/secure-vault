@@ -151,7 +151,7 @@ const EnvView = ({
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [stale, setStale] = useState(false);
-  const [editing, setEditing] = useState(null); // { key, value, sensitive, isNew }
+  const [editing, setEditing] = useState(null); // { key, value, sensitive, comment, isNew }
   const [toDelete, setToDelete] = useState(null);
   const [selected, setSelected] = useState([]);
   const [transfer, setTransfer] = useState(null); // { keys, mode }
@@ -278,8 +278,9 @@ const EnvView = ({
   };
 
   const saveEdit = async () => {
-    const { key, value, sensitive } = editing;
-    if (await commit([{ op: 'set', key: key.trim(), value, sensitive }])) {
+    const { key, value, sensitive, comment } = editing;
+    const op = { op: 'set', key: key.trim(), value, sensitive, comment };
+    if (await commit([op])) {
       setEditing(null);
     }
   };
@@ -297,7 +298,13 @@ const EnvView = ({
       if (!result.success) return handleFailure(result);
       value = result.value;
     }
-    setEditing({ key: row.key, value, sensitive: row.sensitive, isNew: false });
+    setEditing({
+      key: row.key,
+      value,
+      sensitive: row.sensitive,
+      comment: row.comment ?? '',
+      isNew: false,
+    });
   };
 
   const toggleSelected = (key) =>
@@ -359,7 +366,13 @@ const EnvView = ({
         <Button
           variant="outlined"
           onClick={() =>
-            setEditing({ key: '', value: '', sensitive: true, isNew: true })
+            setEditing({
+              key: '',
+              value: '',
+              sensitive: true,
+              comment: '',
+              isNew: true,
+            })
           }
         >
           Add variable
@@ -452,6 +465,21 @@ const EnvView = ({
                         label={`from ${row.inheritedFrom}`}
                         sx={{ ml: 1 }}
                       />
+                    )}
+                    {row.comment && (
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        data-testid={`comment-${row.key}`}
+                        sx={{
+                          display: 'block',
+                          fontFamily: 'inherit',
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                        }}
+                      >
+                        {row.comment}
+                      </Typography>
                     )}
                   </TableCell>
                   <TableCell
@@ -642,6 +670,20 @@ const EnvView = ({
               />
             }
             label="Secret (masked)"
+          />
+          <TextField
+            id="env-var-comment"
+            label="Comment (optional)"
+            helperText="Shown next to the key, never masked: don't put secrets here."
+            value={editing?.comment ?? ''}
+            onChange={(e) =>
+              setEditing({ ...editing, comment: e.target.value })
+            }
+            fullWidth
+            margin="dense"
+            multiline
+            maxRows={4}
+            inputProps={{ maxLength: 1000 }}
           />
         </DialogContent>
         <DialogActions>

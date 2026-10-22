@@ -11,9 +11,22 @@ const MAX_VERSIONS = 1000;
 const MAX_VARS = 500;
 const MAX_KEY_LENGTH = 1024;
 const MAX_VALUE_LENGTH = 65536;
+const MAX_COMMENT_LENGTH = 1000;
 
 /** A key that survives a dotenv export and re-import (see `parseEnvFile`). */
 export const ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * A version's comments, keeping only non-empty ones for keys in `vars`.
+ * Returns undefined when none are left, so files without comments keep
+ * their old shape.
+ */
+function commentsFor(vars, comments) {
+  const kept = Object.entries(comments || {}).filter(
+    ([key, text]) => key in vars && typeof text === 'string' && text !== ''
+  );
+  return kept.length ? Object.fromEntries(kept) : undefined;
+}
 
 function assertNameAllowed(name) {
   if (RESERVED_ENV_NAMES.has(String(name).toLowerCase())) {
@@ -148,10 +161,21 @@ export class EnvironmentVault {
     return version;
   }
 
+  /**
+   * @param {string} name
+   * @param {Object} vars
+   * @param {Object} [options]
+   * @param {string[]} [options.required]
+   * @param {string[]} [options.nonSensitive]
+   * @param {string|null} [options.message]
+   * @param {Record<string, string>} [options.comments] Optional note per key.
+   *   Left out, the active version's comments carry over for the keys still
+   *   in `vars`, so a write that knows nothing of comments keeps them.
+   */
   addVersion(
     name,
     vars,
-    { required = [], nonSensitive = [], message = null } = {}
+    { required = [], nonSensitive = [], message = null, comments } = {}
   ) {
     const env = this.#getEnv(name);
 
@@ -183,6 +207,18 @@ export class EnvironmentVault {
       }
     }
 
+    const kept = commentsFor(
+      vars,
+      comments ?? this.getActiveVersion(name)?.comments
+    );
+    for (const [key, text] of Object.entries(kept || {})) {
+      if (text.length > MAX_COMMENT_LENGTH) {
+        throw new Error(
+          `Comment for '${key}' exceeds maximum length of ${MAX_COMMENT_LENGTH} characters`
+        );
+      }
+    }
+
     const nextN =
       env.versions.length > 0 ? env.versions[env.versions.length - 1].n + 1 : 1;
 
@@ -193,6 +229,7 @@ export class EnvironmentVault {
       vars: { ...vars },
       required: [...required],
       nonSensitive: [...nonSensitive],
+      ...(kept && { comments: kept }),
     };
 
     env.versions.push(version);
@@ -206,10 +243,11 @@ export class EnvironmentVault {
    *
    * @param {string} name
    * @param {Array<{op: string, key: string, value?: string,
-   *   sensitive?: boolean}>} ops `{op: 'set', key, value, sensitive?}` or
-   *   `{op: 'rm', key}`.
+   *   sensitive?: boolean, comment?: string}>} ops
+   *   `{op: 'set', key, value, sensitive?, comment?}` or `{op: 'rm', key}`.
    *   `set` without `sensitive` keeps the key's current flag; a new key is
-   *   sensitive. `rm` of a key that isn't there throws.
+   *   sensitive. `set` without `comment` keeps the key's comment; `''`
+   *   removes it. `rm` of a key that isn't there throws.
    * @param {Object} [options]
    * @param {string|null} [options.message]
    * @param {boolean} [options.createEnv] Create a missing env instead of
@@ -228,6 +266,8 @@ export class EnvironmentVault {
     const vars = active ? { ...active.vars } : {};
     const nonSensitive = new Set(active ? active.nonSensitive : []);
     const required = new Set(active ? active.required : []);
+    /** @type {Record<string, string>} */
+    const comments = { ...(active?.comments || {}) };
 
     for (const change of ops) {
       const { op, key } = change ?? {};
@@ -241,6 +281,12 @@ export class EnvironmentVault {
         vars[key] = change.value;
         if (change.sensitive === false) nonSensitive.add(key);
         if (change.sensitive === true) nonSensitive.delete(key);
+        if (change.comment !== undefined) {
+          if (typeof change.comment !== 'string') {
+            throw new Error(`The comment for '${key}' must be a string`);
+          }
+          comments[key] = change.comment.trim();
+        }
       } else if (op === 'rm') {
         if (!(key in vars)) {
           throw new Error(`Key '${key}' not found in environment '${name}'`);
@@ -248,6 +294,7 @@ export class EnvironmentVault {
         delete vars[key];
         nonSensitive.delete(key);
         required.delete(key);
+        delete comments[key];
       } else {
         throw new Error(`Unknown change '${op}'`);
       }
@@ -256,6 +303,7 @@ export class EnvironmentVault {
     return this.addVersion(name, vars, {
       nonSensitive: [...nonSensitive],
       required: [...required],
+      comments,
       message,
     });
   }
@@ -301,6 +349,7 @@ export class EnvironmentVault {
       {
         required: [...source.required],
         nonSensitive: [...source.nonSensitive],
+        comments: { ...(source.comments || {}) },
         message: `Rollback to version ${versionN}`,
       }
     );
@@ -332,6 +381,9 @@ export class EnvironmentVault {
         vars: squashedVars,
         required: squashedRequired,
         nonSensitive: squashedNonSensitive,
+        ...(lastSquashed.comments && {
+          comments: { ...lastSquashed.comments },
+        }),
       },
       ...versionsToKeep.map((v, i) => ({
         ...v,

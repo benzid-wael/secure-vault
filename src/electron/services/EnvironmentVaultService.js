@@ -706,7 +706,12 @@ export class EnvironmentVaultService {
     envName,
     key,
     value,
-    { isPublic = false, isRequired = false, message = null } = {}
+    {
+      isPublic = false,
+      isRequired = false,
+      message = null,
+      comment = undefined,
+    } = {}
   ) {
     return this.#mutate(vaultPath, password, (vault) => {
       if (!vault.listEnvironmentNames().includes(envName)) {
@@ -734,9 +739,14 @@ export class EnvironmentVaultService {
       const currentVars = activeVersion ? { ...activeVersion.vars } : {};
       currentVars[key] = value;
 
+      // No `comment` keeps the key's comment; '' removes it.
+      const comments = { ...(activeVersion?.comments || {}) };
+      if (comment !== undefined) comments[key] = String(comment).trim();
+
       vault.addVersion(envName, currentVars, {
         nonSensitive,
         required,
+        comments,
         message,
       });
     });
@@ -780,6 +790,9 @@ export class EnvironmentVaultService {
             key,
             value,
             sensitive: !activeVersion.nonSensitive.includes(key),
+            ...(activeVersion.comments?.[key] && {
+              comment: activeVersion.comments[key],
+            }),
           }))
         : [];
 
@@ -897,6 +910,7 @@ export class EnvironmentVaultService {
           {
             required: [...activeVersion.required],
             nonSensitive: [...activeVersion.nonSensitive],
+            comments: { ...(activeVersion.comments || {}) },
             message: `Copied from '${sourceName}'`,
           }
         );

@@ -494,3 +494,85 @@ describe('applyVarChanges', () => {
     expect(error.code).toBe('LIMIT');
   });
 });
+
+describe('key comments', () => {
+  const withComment = () => {
+    const vault = new EnvironmentVault();
+    vault.addEnvironment('dev');
+    vault.applyVarChanges(
+      'dev',
+      [
+        { op: 'set', key: 'TOKEN', value: 't', comment: '  Rotated monthly ' },
+        { op: 'set', key: 'HOST', value: 'h' },
+      ],
+      { createEnv: true }
+    );
+    return vault;
+  };
+
+  it('sets, keeps, and removes a comment through applyVarChanges', () => {
+    const vault = withComment();
+    expect(vault.getActiveVersion('dev').comments).toEqual({
+      TOKEN: 'Rotated monthly',
+    });
+    vault.applyVarChanges('dev', [{ op: 'set', key: 'TOKEN', value: 't2' }]);
+    expect(vault.getActiveVersion('dev').comments).toEqual({
+      TOKEN: 'Rotated monthly',
+    });
+    vault.applyVarChanges('dev', [
+      { op: 'set', key: 'TOKEN', value: 't2', comment: '' },
+    ]);
+    expect(vault.getActiveVersion('dev')).not.toHaveProperty('comments');
+  });
+
+  it('drops the comment of a removed key', () => {
+    const vault = withComment();
+    vault.applyVarChanges('dev', [{ op: 'rm', key: 'TOKEN' }]);
+    expect(vault.getActiveVersion('dev')).not.toHaveProperty('comments');
+  });
+
+  it('carries comments over writes that know nothing of them', () => {
+    const vault = withComment();
+    vault.addVersion('dev', { TOKEN: 'x', HOST: 'y' });
+    expect(vault.getActiveVersion('dev').comments).toEqual({
+      TOKEN: 'Rotated monthly',
+    });
+    vault.importFromEnvFile('dev', 'HOST=z');
+    expect(vault.getActiveVersion('dev')).not.toHaveProperty('comments');
+  });
+
+  it('keeps comments through rollback, squash and a JSON round trip', () => {
+    const vault = withComment();
+    vault.applyVarChanges('dev', [
+      { op: 'set', key: 'TOKEN', value: 't', comment: 'newer' },
+    ]);
+    vault.rollback('dev', 1);
+    expect(vault.getActiveVersion('dev').comments.TOKEN).toBe(
+      'Rotated monthly'
+    );
+    vault.squash('dev');
+    const reloaded = EnvironmentVault.fromJSON(
+      JSON.parse(JSON.stringify(vault.toJSON()))
+    );
+    expect(reloaded.getActiveVersion('dev').comments.TOKEN).toBe(
+      'Rotated monthly'
+    );
+    expect(reloaded.getVersion('dev', 1).comments.TOKEN).toBe(
+      'Rotated monthly'
+    );
+  });
+
+  it('refuses a comment that is not a string or is too long', () => {
+    const vault = withComment();
+    expect(() =>
+      vault.applyVarChanges('dev', [
+        { op: 'set', key: 'HOST', value: 'h', comment: /** @type {any} */ (5) },
+      ])
+    ).toThrow("The comment for 'HOST' must be a string");
+    expect(() =>
+      vault.applyVarChanges('dev', [
+        { op: 'set', key: 'HOST', value: 'h', comment: 'x'.repeat(1001) },
+      ])
+    ).toThrow("Comment for 'HOST' exceeds maximum length");
+  });
+});
