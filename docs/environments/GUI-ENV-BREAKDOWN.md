@@ -9,68 +9,69 @@ updated as each task finishes, not in a batch at the end.
 
 ## Rollup
 
-| #      | Task                                                              | RFC | Pri | Status | Depends on                             |
-| ------ | ----------------------------------------------------------------- | --- | --- | ------ | -------------------------------------- |
-| 0      | Write this breakdown and the rollout plan                         | —   | P0  | ✅     | —                                      |
-| 1      | Make the renderer sandbox explicit and verified                   | M0  | P1  | ✅     | 0, New-1                               |
-| 2      | Content-Security-Policy for the renderer                          | M0  | P1  | 🟡     | 1                                      |
-| 3      | Async key derivation (`deriveKeyAsync`)                           | M1  | P0  | ✅     | 0, New-1                               |
-| 4      | `VaultLock` module                                                | M1  | P0  | ✅     | 3                                      |
-| 5      | `read()` / `transact()` with revisions and `REKEYED`              | M1  | P0  | ✅     | 3, 4                                   |
-| 6      | Port every env op onto `transact`; `saveVault` private            | M1  | P0  | ✅     | 5                                      |
-| 7      | `squash` snapshot, re-keyed by change-password                    | M1  | P1  | ⬜     | 6                                      |
-| 8      | CLI docs, CHANGELOG, `doctor` reports stale locks                 | M1  | P1  | ⬜     | 6                                      |
-| 9      | `applyVarChanges` model method                                    | M2  | P0  | 🟡     | 6                                      |
-| 10     | Changeset apply + rebase in the service                           | M2  | P0  | ⏸     | 9                                      |
-| 11     | Single-instance lock for the app                                  | M3  | P1  | ⬜     | 0                                      |
-| 12     | Main-process `ClipboardService` + IPC                             | M3  | P1  | 🟡     | 0, New-3                               |
-| 13     | Idle lock for password vaults                                     | M3  | P1  | ⬜     | New-2                                  |
-| 14     | `EnvVaultRegistry` (ids, dialogs, recents)                        | M3  | P0  | 🟡     | 6, 11, New-2                           |
-| 15     | `EnvVaultSession` (keys, commit/recover, idle)                    | M3  | P0  | 🟡     | 5, 14, New-2                           |
-| 16     | `EnvVaultWatcher`                                                 | M3  | P1  | ⬜     | 15                                     |
-| 17     | IPC gate + core channels + preload                                | M3  | P0  | 🟡     | 10, 12, 14, 15                         |
-| 18     | IPC: structure, history, diff, import/export channels             | M3  | P2  | ⬜     | 17                                     |
-| 19     | Renderer: Environments switch, vault list, open/new/unlock        | M4  | P0  | ✅     | 2, 17, New-4                           |
-| 20     | Renderer: env view (masked, reveal, copy, inline edit)            | M4  | P0  | 🟡     | 19                                     |
-| 21     | Renderer: bulk edit (table + dotenv text), conflicts              | M4  | P0  | ⏸     | 20                                     |
-| 22     | Renderer: move secret copy to `ClipboardService`                  | M4  | P1  | ⬜     | 12, New-3                              |
-| 23     | Renderer: Settings for idle timeout and recents                   | M4  | P1  | ⬜     | 13, 14, New-2                          |
-| 24     | Renderer: env structure ops                                       | M5  | P2  | ⬜     | 18, 20                                 |
-| 25     | Renderer: history, rollback, squash                               | M5  | P2  | ⬜     | 7, 18, 20                              |
-| 26     | Renderer: diff and validate                                       | M5  | P2  | ⬜     | 18, 20                                 |
-| 27     | Renderer: import, export, template                                | M5  | P2  | 🟡     | 18, 20                                 |
-| 28     | Renderer: env vault change-password                               | M5  | P2  | ⬜     | 7, 18, 19                              |
-| 29     | e2e scenario `env-vault-concurrent`                               | M6  | P1  | 🟡     | 21                                     |
-| 30     | CI e2e job (ubuntu + xvfb)                                        | M6  | P1  | ⬜     | 1, 29                                  |
-| 31     | User guide `docs/guide/gui/env-vaults.md`                         | M6  | P2  | ⬜     | 21                                     |
-| New-1  | Coverage can't see the code this plan changes                     | —   | P1  | ✅     | — (blocks 1, 3)                        |
-| New-2  | App-wide settings store                                           | M3  | P1  | ⬜     | 0                                      |
-| New-3  | Decide which secrets go through `ClipboardService`                | —   | P1  | ⬜     | —                                      |
-| New-4  | Feature gate for the Environments UI                              | M4  | P0  | ✅     | 0                                      |
-| New-5  | Verify async PBKDF2 in the Bun-compiled CLI binary                | M1  | P1  | 🔶     | 3                                      |
-| New-6  | Decide whether project coverage should include `src/electron/**`  | —   | P2  | ⬜     | New-1                                  |
-| New-7  | Commit a way to measure coverage of excluded files                | —   | P1  | ⬜     | New-1                                  |
-| New-8  | `npm run lint` fails locally on gitignored build output           | —   | P2  | ⬜     | —                                      |
-| New-9  | Type-check gate: confirm "no new errors" as this plan's rule      | —   | P1  | ✅     | —                                      |
-| New-10 | Lock: a container sharing the kernel can look like this machine   | —   | P1  | 🟡     | 4 (blocks the release of 6)            |
-| New-11 | Bring RFC §6.5 in line with Corrections 6 and 7                   | —   | P2  | ⬜     | 4                                      |
-| New-12 | Windows: retry the final rename on `EPERM`                        | M1  | P1  | ✅     | 5 (blocks the release of 6 on Windows) |
-| New-13 | CI runs the unit tests on Windows and macOS too                   | —   | P1  | ⬜     | — (verifies 4, New-12)                 |
-| New-14 | Remove the env `saveVault` and its mocked tests                   | —   | P2  | ⬜     | 6                                      |
-| New-15 | Type `window.electronAPI` once for the type check                 | —   | P2  | ⬜     | —                                      |
-| New-16 | ESLint flags MUI components used only in JSX as unused            | —   | P2  | ⬜     | —                                      |
-| New-17 | Shared test mock lacks `removeAllListeners` / `onVaultLocked`     | —   | P2  | ⬜     | —                                      |
-| New-18 | Dev-mode Content-Security-Policy                                  | M0  | P2  | ⬜     | 2                                      |
-| New-19 | Verify the CSP and sandbox in packaged builds (asar)              | M0  | P1  | ⬜     | 2 (blocks the next tag)                |
-| New-20 | Fix: reveal/edit fail with "Unknown view" in dev                  | M4  | P0  | ✅     | 15, 20                                 |
-| New-21 | Move or duplicate keys between environments                       | M4  | P0  | ✅     | 9, 17, 20                              |
-| New-22 | Open a folder and find the vault the CLI would use                | M3  | P1  | ⬜     | 14                                     |
-| New-23 | Unlock error says which file, without "corrupted" first           | M4  | P2  | ⬜     | 19                                     |
-| New-24 | Unlock an env vault with the password a profile injects           | M4  | P2  | ⬜     | 15                                     |
-| New-25 | Optional comment per key (env vaults) and notes on entry cards    | M4  | P1  | ✅     | 9, 20                                  |
-| New-26 | Export and import key comments as `#` lines in a .env             | M4  | P2  | ⬜     | 27, New-25                             |
-| New-27 | Fix: `env set` without `--public` makes a public key secret again | M1  | P2  | ⬜     | —                                      |
-| New-28 | Search password entries by their notes                            | —   | P2  | ⬜     | —                                      |
+| #      | Task                                                               | RFC | Pri | Status | Depends on                             |
+| ------ | ------------------------------------------------------------------ | --- | --- | ------ | -------------------------------------- |
+| 0      | Write this breakdown and the rollout plan                          | —   | P0  | ✅     | —                                      |
+| 1      | Make the renderer sandbox explicit and verified                    | M0  | P1  | ✅     | 0, New-1                               |
+| 2      | Content-Security-Policy for the renderer                           | M0  | P1  | 🟡     | 1                                      |
+| 3      | Async key derivation (`deriveKeyAsync`)                            | M1  | P0  | ✅     | 0, New-1                               |
+| 4      | `VaultLock` module                                                 | M1  | P0  | ✅     | 3                                      |
+| 5      | `read()` / `transact()` with revisions and `REKEYED`               | M1  | P0  | ✅     | 3, 4                                   |
+| 6      | Port every env op onto `transact`; `saveVault` private             | M1  | P0  | ✅     | 5                                      |
+| 7      | `squash` snapshot, re-keyed by change-password                     | M1  | P1  | ⬜     | 6                                      |
+| 8      | CLI docs, CHANGELOG, `doctor` reports stale locks                  | M1  | P1  | ⬜     | 6                                      |
+| 9      | `applyVarChanges` model method                                     | M2  | P0  | 🟡     | 6                                      |
+| 10     | Changeset apply + rebase in the service                            | M2  | P0  | ⏸     | 9                                      |
+| 11     | Single-instance lock for the app                                   | M3  | P1  | ⬜     | 0                                      |
+| 12     | Main-process `ClipboardService` + IPC                              | M3  | P1  | 🟡     | 0, New-3                               |
+| 13     | Idle lock for password vaults                                      | M3  | P1  | ⬜     | New-2                                  |
+| 14     | `EnvVaultRegistry` (ids, dialogs, recents)                         | M3  | P0  | 🟡     | 6, 11, New-2                           |
+| 15     | `EnvVaultSession` (keys, commit/recover, idle)                     | M3  | P0  | 🟡     | 5, 14, New-2                           |
+| 16     | `EnvVaultWatcher`                                                  | M3  | P1  | ⬜     | 15                                     |
+| 17     | IPC gate + core channels + preload                                 | M3  | P0  | 🟡     | 10, 12, 14, 15                         |
+| 18     | IPC: structure, history, diff, import/export channels              | M3  | P2  | ⬜     | 17                                     |
+| 19     | Renderer: Environments switch, vault list, open/new/unlock         | M4  | P0  | ✅     | 2, 17, New-4                           |
+| 20     | Renderer: env view (masked, reveal, copy, inline edit)             | M4  | P0  | 🟡     | 19                                     |
+| 21     | Renderer: bulk edit (table + dotenv text), conflicts               | M4  | P0  | ⏸     | 20                                     |
+| 22     | Renderer: move secret copy to `ClipboardService`                   | M4  | P1  | ⬜     | 12, New-3                              |
+| 23     | Renderer: Settings for idle timeout and recents                    | M4  | P1  | ⬜     | 13, 14, New-2                          |
+| 24     | Renderer: env structure ops                                        | M5  | P2  | ⬜     | 18, 20                                 |
+| 25     | Renderer: history, rollback, squash                                | M5  | P2  | ⬜     | 7, 18, 20                              |
+| 26     | Renderer: diff and validate                                        | M5  | P2  | ⬜     | 18, 20                                 |
+| 27     | Renderer: import, export, template                                 | M5  | P2  | 🟡     | 18, 20                                 |
+| 28     | Renderer: env vault change-password                                | M5  | P2  | ⬜     | 7, 18, 19                              |
+| 29     | e2e scenario `env-vault-concurrent`                                | M6  | P1  | 🟡     | 21                                     |
+| 30     | CI e2e job (ubuntu + xvfb)                                         | M6  | P1  | ⬜     | 1, 29                                  |
+| 31     | User guide `docs/guide/gui/env-vaults.md`                          | M6  | P2  | ⬜     | 21                                     |
+| New-1  | Coverage can't see the code this plan changes                      | —   | P1  | ✅     | — (blocks 1, 3)                        |
+| New-2  | App-wide settings store                                            | M3  | P1  | ⬜     | 0                                      |
+| New-3  | Decide which secrets go through `ClipboardService`                 | —   | P1  | ⬜     | —                                      |
+| New-4  | Feature gate for the Environments UI                               | M4  | P0  | ✅     | 0                                      |
+| New-5  | Verify async PBKDF2 in the Bun-compiled CLI binary                 | M1  | P1  | 🔶     | 3                                      |
+| New-6  | Decide whether project coverage should include `src/electron/**`   | —   | P2  | ⬜     | New-1                                  |
+| New-7  | Commit a way to measure coverage of excluded files                 | —   | P1  | ⬜     | New-1                                  |
+| New-8  | `npm run lint` fails locally on gitignored build output            | —   | P2  | ⬜     | —                                      |
+| New-9  | Type-check gate: confirm "no new errors" as this plan's rule       | —   | P1  | ✅     | —                                      |
+| New-10 | Lock: a container sharing the kernel can look like this machine    | —   | P1  | 🟡     | 4 (blocks the release of 6)            |
+| New-11 | Bring RFC §6.5 in line with Corrections 6 and 7                    | —   | P2  | ⬜     | 4                                      |
+| New-12 | Windows: retry the final rename on `EPERM`                         | M1  | P1  | ✅     | 5 (blocks the release of 6 on Windows) |
+| New-13 | CI runs the unit tests on Windows and macOS too                    | —   | P1  | ⬜     | — (verifies 4, New-12)                 |
+| New-14 | Remove the env `saveVault` and its mocked tests                    | —   | P2  | ⬜     | 6                                      |
+| New-15 | Type `window.electronAPI` once for the type check                  | —   | P2  | ⬜     | —                                      |
+| New-16 | ESLint flags MUI components used only in JSX as unused             | —   | P2  | ⬜     | —                                      |
+| New-17 | Shared test mock lacks `removeAllListeners` / `onVaultLocked`      | —   | P2  | ⬜     | —                                      |
+| New-18 | Dev-mode Content-Security-Policy                                   | M0  | P2  | ⬜     | 2                                      |
+| New-19 | Verify the CSP and sandbox in packaged builds (asar)               | M0  | P1  | ⬜     | 2 (blocks the next tag)                |
+| New-20 | Fix: reveal/edit fail with "Unknown view" in dev                   | M4  | P0  | ✅     | 15, 20                                 |
+| New-21 | Move or duplicate keys between environments                        | M4  | P0  | ✅     | 9, 17, 20                              |
+| New-22 | Open a folder and find the vault the CLI would use                 | M3  | P1  | ⬜     | 14                                     |
+| New-23 | Unlock error says which file, without "corrupted" first            | M4  | P2  | ⬜     | 19                                     |
+| New-24 | Unlock an env vault with the password a profile injects            | M4  | P2  | ⬜     | 15                                     |
+| New-25 | Optional comment per key (env vaults) and notes on entry cards     | M4  | P1  | ✅     | 9, 20                                  |
+| New-26 | Export and import key comments as `#` lines in a .env              | M4  | P2  | ⬜     | 27, New-25                             |
+| New-27 | Fix: `env set` without `--public` makes a public key secret again  | M1  | P2  | ⬜     | —                                      |
+| New-28 | Search password entries by their notes                             | —   | P2  | ⬜     | —                                      |
+| New-29 | Recognise a newer vault format: warn, protect writes, show upgrade | M1  | P1  | ⬜     | 8, New-25                              |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -1407,7 +1408,8 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
   clearing); IPC contract tests (rows, `env:commit`, `env:transfer`); a UI
   test on the real handlers; an `EntryList` test. e2e 5/5.
 - **Known limit:** an older CLI or app writing to the vault drops the
-  comments in the version it writes; earlier versions keep them.
+  comments in the version it writes; earlier versions keep them. New-29
+  makes later tools detect this; New-25 doesn't ship without it.
 
 ### New-26: Export and import key comments as `#` lines in a .env
 
@@ -1444,3 +1446,50 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 - **Validation:** a `SearchAndFilter` test that finds an entry by a word in
   its notes.
 - **Cost of leaving it:** notes can't be searched.
+
+### New-29: Recognise a newer vault format: warn, protect writes, show upgrade
+
+- **Status:** ⬜ not started. **Blocks the release that ships New-25.**
+- **Found:** author review of New-25, 2026-10-22: a tool that predates a
+  feature loses that feature's data when it writes, without a word. No tool
+  reads the format version today: env vaults carry `vaultVersion: 1` and
+  password vaults `version: '1.0'`, but nothing checks either.
+- **Goal:** any CLI or app opening a vault (either kind) that uses a format
+  or feature it doesn't know:
+  - says so, naming what it doesn't support and the risk ("saving here would
+    drop key comments");
+  - doesn't write it silently: writes are refused, or need an explicit
+    override;
+  - shows the upgrade path: the CLI's install command, the app's download or
+    update.
+  - Reading stays allowed where it is safe. `doctor` reports the format
+    version and anything the tool doesn't support.
+- **Constraints:**
+  - Tools already released can't learn this. The check protects only from
+    the first release that has it, so it must ship in that release or
+    earlier, never after the format change.
+  - The format marker changes only when older tools would lose data. A
+    vault without comments stays readable and writable by every tool.
+  - The same check in the CLI and the app (shared in the service layer).
+  - CLI: a clear message on stderr and a distinct exit code. App: a banner
+    and read-only screens, with no data loss.
+- **Decide in the task (last responsible moment):**
+  - The marker: a format number, a list of features used, or a "minimum
+    tool version" in the file.
+  - Whether to write the marker only when a newer feature is present (for
+    example `vaultVersion: 2` when a version has `comments`) or always.
+  - Whether to make files with new features fail loudly in tools that are
+    already released (for example a header change). That trades their
+    silent data loss for losing read access; weigh it against the release
+    notes alone.
+  - Whether an override flag is worth having.
+- **Dependencies:** 8 (`doctor`, CLI docs), New-25 (the first feature to
+  mark).
+- **Validation:**
+  - A vault marked newer than the tool: the CLI refuses `set` with the
+    message and exit code; `show` still works and warns.
+  - The app opens it read-only, with the banner and the upgrade path.
+  - A vault without new features is unchanged and writable everywhere.
+  - Tests for both vault kinds.
+- **Cost of leaving it:** every format change silently loses data written
+  by a newer tool, on any machine left behind.

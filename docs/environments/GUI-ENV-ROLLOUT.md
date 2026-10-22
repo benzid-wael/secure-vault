@@ -300,9 +300,12 @@ Known hazards so far, to be completed per task:
 - **Schema or config change:** a version may gain an optional `comments`
   object. Additive: written only when a comment exists, so vaults without
   comments are unchanged. Readers that don't know about it ignore it.
-- **Before it ships:** CHANGELOG (CLI `--comment`). Release notes: an older
-  CLI or app writing to a vault drops comments in the version it writes;
-  upgrade every machine that writes the vault.
+- **Before it ships:** New-29 in the same release or an earlier one; it
+  must never come after. CHANGELOG (CLI `--comment`). Release notes: an
+  older CLI or app writing to a vault drops comments in the version it
+  writes. Tools from this release on warn about it and show how to upgrade;
+  tools released earlier don't, so upgrade every machine that writes the
+  vault.
 - **Gated by:** the CLI flag isn't gated; the GUI part is behind the
   Environments UI gate. The entry-card notes aren't gated.
 - **Per environment:** CLI and desktop.
@@ -310,3 +313,23 @@ Known hazards so far, to be completed per task:
   `env show` still prints `# note`.
 - **Rollback:** reinstall the previous version. Comments stay in the file;
   the previous version ignores them, and drops them from versions it writes.
+
+### Vault format check (New-29)
+
+- **Runtime change:** the CLI and the app read a vault's format marker.
+  When the vault is newer than the tool, the tool warns, refuses writes
+  (CLI exit code; app read-only) and shows how to upgrade.
+- **Schema or config change:** a format marker in both vault kinds, set only
+  when a vault uses a feature older tools would lose. The exact shape is
+  decided in the task.
+- **Before it ships:** CHANGELOG and CLI docs (new message, new exit code);
+  `doctor` output. Ships in the release that brings New-25, or an earlier
+  one.
+- **Gated by:** not gated. A safety check has to reach everyone.
+- **Per environment:** CLI and desktop.
+- **Verify after release:** mark a test vault one version newer, then run
+  `env set`: refused, with the upgrade command. Open it in the app:
+  read-only, with a banner.
+- **Rollback:** reinstall the previous version. The marker stays in files
+  that have it; previous tools ignore it, which is the same exposure as
+  before.
