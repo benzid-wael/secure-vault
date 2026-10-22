@@ -51,6 +51,7 @@ import { EnvVaultRegistry } from '../src/electron/services/EnvVaultRegistry.js';
 import { EnvVaultSession } from '../src/electron/services/EnvVaultSession.js';
 import { ClipboardService } from '../src/electron/services/ClipboardService.js';
 import { createEnvVaultHandlers } from '../src/electron/services/EnvVaultIpc.js';
+import { EnvVaultWatcher } from '../src/electron/services/EnvVaultWatcher.js';
 
 class ElectronApp {
   constructor() {
@@ -87,8 +88,16 @@ class ElectronApp {
       this.features = readFeatures();
       // Env vaults (GUI-ENV-RFC §6.6): main maps ids to paths and holds keys.
       this.envRegistry = new EnvVaultRegistry({ dialog });
+      // Tells the page about changes made outside the app (Task 16).
+      this.envWatcher = new EnvVaultWatcher({
+        onChange: (id, change) =>
+          this.sendToWindow('env-vault-changed', { id, ...change }),
+      });
       this.envSession = new EnvVaultSession({
-        onLocked: (id) => this.sendToWindow('env-vault-locked', { id }),
+        onLocked: (id) => {
+          this.envWatcher.stop(id);
+          this.sendToWindow('env-vault-locked', { id });
+        },
       });
 
       this.mainWindow = null;
@@ -219,6 +228,7 @@ class ElectronApp {
     app.on('before-quit', () => {
       this.session.close();
       this.envSession.lockAll();
+      this.envWatcher.stopAll();
     });
   }
 
@@ -250,6 +260,7 @@ class ElectronApp {
         getWindow: () => this.mainWindow,
         dialog,
         clipboard: new ClipboardService({ clipboard }),
+        watcher: this.envWatcher,
       });
       for (const [channel, fn] of Object.entries(envHandlers)) {
         handle(channel, fn);

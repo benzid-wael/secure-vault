@@ -539,24 +539,89 @@ describe('env vault IPC handlers (contract)', () => {
     // The view follows its own write, so a second edit isn't stale.
     expect((await h['env:commit'](ev, id, set('v2'))).success).toBe(true);
 
+    // Another key changed elsewhere: the edit merges in (Task 10).
     await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'CLI', 'c');
-    const stale = await h['env:commit'](ev, id, set('v3'));
-    expect(stale.code).toBe('STALE');
+    const merged = await h['env:commit'](ev, id, set('v3'));
+    expect(merged).toMatchObject({ success: true, rebased: true });
     let read = await EnvironmentVaultService.read(filePath, PW);
-    expect(read.vault.getActiveVersion('prod').vars).toMatchObject({
-      API_KEY: 'v2',
-      CLI: 'c',
-    });
-
-    // Refresh moves the base; then the same edit goes through.
-    const refreshed = await h['env:refresh'](ev, id, view.viewId);
-    expect(refreshed.viewId).toBe(view.viewId);
-    expect((await h['env:commit'](ev, id, set('v3'))).success).toBe(true);
-    read = await EnvironmentVaultService.read(filePath, PW);
     expect(read.vault.getActiveVersion('prod').vars).toMatchObject({
       API_KEY: 'v3',
       CLI: 'c',
     });
+
+    // The same key changed elsewhere: a conflict, nothing written.
+    await EnvironmentVaultService.setEnv(
+      filePath,
+      PW,
+      'prod',
+      'API_KEY',
+      'cli'
+    );
+    const before = await fs.readFile(filePath);
+    const conflict = await h['env:commit'](ev, id, set('v4'));
+    expect(conflict).toMatchObject({
+      success: false,
+      code: 'CONFLICT',
+      conflicts: [{ key: 'API_KEY', kind: 'changed' }],
+    });
+    expect(conflict.error).toBe('Changed elsewhere meanwhile: API_KEY');
+    expect((await fs.readFile(filePath)).equals(before)).toBe(true);
+
+    // force keeps the user's version.
+    const forced = await h['env:commit'](ev, id, { ...set('v4'), force: true });
+    expect(forced.success).toBe(true);
+    read = await EnvironmentVaultService.read(filePath, PW);
+    expect(read.vault.getActiveVersion('prod').vars.API_KEY).toBe('v4');
+  });
+
+  it('names each kind of conflict, and a deleted env', async () => {
+    await unlock();
+    const view = await h['env:view'](ev, id, 'prod');
+    await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'NEW', 'cli');
+    await EnvironmentVaultService.removeKey(filePath, PW, 'prod', 'HOST');
+    const result = await h['env:commit'](ev, id, {
+      viewId: view.viewId,
+      ops: [
+        { op: 'set', key: 'NEW', value: 'mine' },
+        { op: 'set', key: 'HOST', value: 'mine' },
+        { op: 'set', key: 'SHARED', value: 'untouched elsewhere' },
+      ],
+    });
+    expect(result.conflicts).toEqual([
+      { key: 'NEW', kind: 'added' },
+      { key: 'HOST', kind: 'removed' },
+    ]);
+
+    await EnvironmentVaultService.deleteEnv(filePath, PW, 'prod');
+    const gone = await h['env:commit'](ev, id, {
+      viewId: view.viewId,
+      ops: [{ op: 'set', key: 'SHARED', value: 'x' }],
+    });
+    expect(gone).toMatchObject({
+      code: 'CONFLICT',
+      conflicts: [{ key: null, kind: 'env-gone' }],
+      error: 'prod was deleted elsewhere',
+    });
+  });
+
+  it('gives the own variables as .env text for bulk edit', async () => {
+    await unlock();
+    await EnvironmentVaultService.setEnv(
+      filePath,
+      PW,
+      'prod',
+      'HOST',
+      'prod.example',
+      {
+        comment: 'Public host',
+      }
+    );
+    const view = await h['env:view'](ev, id, 'prod');
+    const result = await h['env:edit-text'](ev, id, view.viewId);
+    expect(result.text).toBe(
+      `API_KEY=${SECRET}\n# Public host\nHOST=prod.example\nSHARED=own\n`
+    );
+    expect((await h['env:edit-text'](ev, id, 'nope')).code).toBe('INVALID');
   });
 
   it('reports a bad changeset without writing', async () => {
@@ -875,5 +940,436 @@ describe('env vault IPC: key comments', () => {
     expect((await rows('base')).find((r) => r.key === 'HOST').comment).toBe(
       'Behind the VPN'
     );
+  });
+});
+
+describe('env vault IPC: unlock message and export comments', () => {
+  const ev = {};
+
+  it('says which file a wrong password was for, typo first (New-23)', async () => {
+    await seed();
+    const session = new EnvVaultSession();
+    const h = createEnvVaultHandlers({
+      registry: new EnvVaultRegistry({ envsDir }),
+      session,
+    });
+    const id = (await h['env-vaults:list']()).vaults[0].id;
+    const result = await h['env-vault:unlock'](ev, id, 'not-the-password');
+    expect(result).toMatchObject({ success: false, code: 'AUTH' });
+    expect(result.error).toBe(
+      "Wrong password for app.env.vault. If you're sure it's right, the file may be damaged."
+    );
+  });
+
+  it('writes key comments into an exported .env', async () => {
+    const filePath = await seed();
+    await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'HOST', 'h', {
+      comment: 'Behind the VPN',
+    });
+    const session = new EnvVaultSession();
+    const out = path.join(dir, 'prod.env');
+    const h = createEnvVaultHandlers({
+      registry: new EnvVaultRegistry({ envsDir }),
+      session,
+      dialog: {
+        showSaveDialog: async () => ({ canceled: false, filePath: out }),
+      },
+    });
+    const id = (await h['env-vaults:list']()).vaults[0].id;
+    await h['env-vault:unlock'](ev, id, PW);
+    expect((await h['env:export'](ev, id, 'prod')).success).toBe(true);
+    expect(await fs.readFile(out, 'utf8')).toContain(
+      '# Behind the VPN\nHOST=h\n'
+    );
+    session.lockAll();
+  });
+});
+
+describe('env vault IPC: env management, history, watcher (Tasks 16, 24, 25)', () => {
+  const ev = {};
+  let h;
+  let id;
+  let session;
+  let filePath;
+  let watcher;
+
+  beforeEach(async () => {
+    filePath = await seed();
+    session = new EnvVaultSession();
+    watcher = /** @type {any} */ ({
+      start: vi.fn(),
+      note: vi.fn(),
+      stop: vi.fn(),
+    });
+    h = createEnvVaultHandlers({
+      registry: new EnvVaultRegistry({ envsDir }),
+      session,
+      watcher,
+    });
+    id = (await h['env-vaults:list']()).vaults[0].id;
+    await h['env-vault:unlock'](ev, id, PW);
+  });
+  afterEach(() => session.lockAll());
+
+  const rev = async () => (await h['env:list'](ev, id)).revision;
+  const manage = async (request) =>
+    h['env:manage'](ev, id, { expectedRevision: await rev(), ...request });
+  const loaded = async () =>
+    (await EnvironmentVaultService.read(filePath, PW)).vault;
+
+  it('starts the watcher on unlock and notes every revision the app sees', async () => {
+    expect(watcher.start).toHaveBeenCalledWith(
+      id,
+      filePath,
+      expect.stringMatching(/^sha256:/)
+    );
+    const r = await rev();
+    expect(watcher.note).toHaveBeenCalledWith(id, r);
+    const result = await manage({
+      op: 'describe',
+      env: 'prod',
+      description: 'Live',
+    });
+    expect(watcher.note).toHaveBeenLastCalledWith(id, result.revision);
+  });
+
+  it('renames an env, and the envs extending it follow', async () => {
+    const result = await manage({ op: 'rename', env: 'base', name: 'common' });
+    expect(result.success).toBe(true);
+    const vault = await loaded();
+    expect(vault.listEnvironmentNames()).toEqual(['common', 'prod']);
+    expect(vault.environments.prod.extends).toBe('common');
+  });
+
+  it('duplicates an env with its flags, comments and parent', async () => {
+    await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'HOST', 'h', {
+      comment: 'note',
+    });
+    expect(
+      (await manage({ op: 'duplicate', env: 'prod', name: 'prod-2' })).success
+    ).toBe(true);
+    const vault = await loaded();
+    const copy = vault.getActiveVersion('prod-2');
+    expect(copy.vars).toEqual(vault.getActiveVersion('prod').vars);
+    expect(copy.nonSensitive).toEqual(['HOST']);
+    expect(copy.comments).toEqual({ HOST: 'note' });
+    expect(vault.environments['prod-2'].extends).toBe('base');
+  });
+
+  it('refuses to delete an env others extend; deletes it with a snapshot otherwise', async () => {
+    const refused = await manage({ op: 'delete', env: 'base' });
+    expect(refused.success).toBe(false);
+    expect(refused.error).toContain('prod extends base; change that first');
+    expect((await manage({ op: 'delete', env: 'prod' })).success).toBe(true);
+    expect((await loaded()).listEnvironmentNames()).toEqual(['base']);
+    expect(
+      (await fs.readdir(envsDir)).some((n) => n.includes('.deleted.'))
+    ).toBe(true);
+  });
+
+  it('sets and clears a parent, refusing a loop', async () => {
+    const loop = await manage({ op: 'extends', env: 'base', parent: 'prod' });
+    expect(loop.success).toBe(false);
+    expect(loop.error).toContain('prod already extends base');
+    expect(
+      (await manage({ op: 'extends', env: 'prod', parent: null })).success
+    ).toBe(true);
+    expect((await loaded()).environments.prod.extends).toBeNull();
+  });
+
+  it('validates input and refuses a stale list', async () => {
+    expect((await manage({ op: 'explode', env: 'prod' })).code).toBe('INVALID');
+    expect(
+      (await manage({ op: 'rename', env: 'prod', name: 'bad name' })).code
+    ).toBe('INVALID');
+    expect(
+      (
+        await manage({
+          op: 'describe',
+          env: 'prod',
+          description: 'x'.repeat(501),
+        })
+      ).code
+    ).toBe('INVALID');
+    expect((await manage({ op: 'describe', env: 42 })).code).toBe('INVALID');
+    const old = await rev();
+    await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'X', '1');
+    const stale = await h['env:manage'](ev, id, {
+      op: 'describe',
+      env: 'prod',
+      description: 'late',
+      expectedRevision: old,
+    });
+    expect(stale.code).toBe('STALE');
+    expect(
+      (await manage({ op: 'rename', env: 'ghost', name: 'g2' })).success
+    ).toBe(false);
+  });
+
+  it('lists history without values, rolls back and squashes against the view', async () => {
+    await EnvironmentVaultService.setEnv(
+      filePath,
+      PW,
+      'prod',
+      'API_KEY',
+      'v2-secret'
+    );
+    const view = await h['env:view'](ev, id, 'prod');
+    const history = await h['env:history'](ev, id, view.viewId);
+    expect(history.versions.map((v) => v.n)).toEqual([2, 1]);
+    expect(history.versions[0]).toMatchObject({
+      isActive: true,
+      keys: ['API_KEY', 'HOST', 'SHARED'],
+    });
+    expect(JSON.stringify(history)).not.toMatch(/secret/);
+
+    const rolled = await h['env:rollback'](ev, id, view.viewId, 1);
+    expect(rolled.success).toBe(true);
+    expect((await loaded()).getActiveVersion('prod').vars.API_KEY).toBe(SECRET);
+
+    const squashed = await h['env:squash'](ev, id, view.viewId, 1);
+    expect(squashed.success).toBe(true);
+    expect(squashed.snapshot).toMatch(/^app\.env\.vault\.squashed\./);
+    expect((await loaded()).getHistory('prod')).toHaveLength(1);
+  });
+
+  it('refuses history ops on an unknown view, bad input or a stale view', async () => {
+    const view = await h['env:view'](ev, id, 'prod');
+    expect((await h['env:history'](ev, id, 'nope')).code).toBe('INVALID');
+    expect((await h['env:rollback'](ev, id, 'nope', 1)).code).toBe('INVALID');
+    expect((await h['env:squash'](ev, id, 'nope', 1)).code).toBe('INVALID');
+    expect((await h['env:rollback'](ev, id, view.viewId, '1')).code).toBe(
+      'INVALID'
+    );
+    expect((await h['env:squash'](ev, id, view.viewId, 0)).code).toBe(
+      'INVALID'
+    );
+    await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'X', '1');
+    expect((await h['env:rollback'](ev, id, view.viewId, 1)).code).toBe(
+      'STALE'
+    );
+    expect((await h['env:squash'](ev, id, view.viewId, 1)).code).toBe('STALE');
+    expect(
+      (await fs.readdir(envsDir)).some((n) => n.includes('.squashed.'))
+    ).toBe(false);
+  });
+});
+
+describe('env vault IPC: compare, validate, import, template, password (Tasks 26–28)', () => {
+  const ev = {};
+  let h;
+  let id;
+  let session;
+  let filePath;
+  let picked;
+  let saved;
+
+  beforeEach(async () => {
+    filePath = await seed();
+    session = new EnvVaultSession();
+    picked = null;
+    saved = path.join(dir, 'out.env');
+    h = createEnvVaultHandlers({
+      registry: new EnvVaultRegistry({ envsDir }),
+      session,
+      dialog: {
+        showOpenDialog: async () =>
+          picked
+            ? { canceled: false, filePaths: [picked] }
+            : { canceled: true, filePaths: [] },
+        showSaveDialog: async () => ({ canceled: false, filePath: saved }),
+      },
+    });
+    id = (await h['env-vaults:list']()).vaults[0].id;
+    await h['env-vault:unlock'](ev, id, PW);
+  });
+  afterEach(() => session.lockAll());
+
+  const active = async (env) =>
+    (await EnvironmentVaultService.read(filePath, PW)).vault.getActiveVersion(
+      env
+    );
+
+  it('compares two envs, masked unless asked', async () => {
+    const masked = await h['env:diff'](ev, id, 'base', 'prod');
+    expect(masked).toMatchObject({
+      success: true,
+      added: ['API_KEY', 'HOST'],
+      removed: [],
+      changed: [{ key: 'SHARED' }],
+      unchanged: 1,
+    });
+    expect(JSON.stringify(masked)).not.toContain('from-base');
+    const shown = await h['env:diff'](ev, id, 'base', 'prod', { reveal: true });
+    expect(shown.changed).toEqual([
+      { key: 'SHARED', valueA: 'from-base', valueB: 'own' },
+    ]);
+    expect((await h['env:diff'](ev, id, 'base', 'ghost')).success).toBe(false);
+  });
+
+  it('validates an env', async () => {
+    const ok = await h['env:validate'](ev, id, 'prod');
+    expect(ok).toMatchObject({ success: true, errors: [], requiredCount: 1 });
+    await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'API_KEY', '');
+    const bad = await h['env:validate'](ev, id, 'prod');
+    expect(bad.errors).toContain('Required key is empty: API_KEY');
+    expect((await h['env:validate'](ev, id, 'ghost')).success).toBe(false);
+  });
+
+  it('previews an import by key name only, then merges the chosen keys', async () => {
+    picked = path.join(dir, 'in.env');
+    await fs.writeFile(
+      picked,
+      `# rotated\nAPI_KEY=new-secret\nHOST=prod.example\nADDED="multi\nline"\nbad line\n`
+    );
+    const view = await h['env:view'](ev, id, 'prod');
+    const preview = await h['env:import-pick'](ev, id, view.viewId);
+    expect(preview).toMatchObject({
+      success: true,
+      fileName: 'in.env',
+      keys: [
+        { key: 'ADDED', status: 'new', comment: '' },
+        { key: 'API_KEY', status: 'changed', comment: 'rotated' },
+        { key: 'HOST', status: 'same', comment: '' },
+      ],
+      absent: ['SHARED'],
+      warnings: [{ line: 6, message: 'Not KEY=value; skipped' }],
+    });
+    expect(JSON.stringify(preview)).not.toMatch(/new-secret|multi/);
+
+    const applied = await h['env:import-apply'](ev, id, preview.token, {
+      keys: ['ADDED', 'API_KEY'],
+      comments: true,
+    });
+    expect(applied).toMatchObject({ success: true, count: 2 });
+    const now = await active('prod');
+    expect(now.vars).toMatchObject({
+      API_KEY: 'new-secret',
+      ADDED: 'multi\nline',
+      SHARED: 'own',
+    });
+    expect(now.comments).toEqual({ API_KEY: 'rotated' });
+    expect(now.nonSensitive).toEqual(['HOST']); // flags kept
+    // A token works once.
+    expect((await h['env:import-apply'](ev, id, preview.token)).code).toBe(
+      'INVALID'
+    );
+  });
+
+  it('replace removes the own keys the file lacks', async () => {
+    picked = path.join(dir, 'in.env');
+    await fs.writeFile(picked, 'HOST=h2\n');
+    const view = await h['env:view'](ev, id, 'prod');
+    const preview = await h['env:import-pick'](ev, id, view.viewId);
+    await h['env:import-apply'](ev, id, preview.token, { mode: 'replace' });
+    expect((await active('prod')).vars).toEqual({ HOST: 'h2' });
+  });
+
+  it('import: canceled pick, cancel, stale view, bad mode', async () => {
+    const view = await h['env:view'](ev, id, 'prod');
+    expect(await h['env:import-pick'](ev, id, view.viewId)).toEqual({
+      success: false,
+      canceled: true,
+    });
+    picked = path.join(dir, 'in.env');
+    await fs.writeFile(picked, 'HOST=h2\n');
+    let preview = await h['env:import-pick'](ev, id, view.viewId);
+    await h['env:import-cancel'](ev, id, preview.token);
+    expect((await h['env:import-apply'](ev, id, preview.token)).code).toBe(
+      'INVALID'
+    );
+
+    preview = await h['env:import-pick'](ev, id, view.viewId);
+    expect(
+      (await h['env:import-apply'](ev, id, preview.token, { mode: 'x' })).code
+    ).toBe('INVALID');
+    preview = await h['env:import-pick'](ev, id, view.viewId);
+    await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'X', '1');
+    expect((await h['env:import-apply'](ev, id, preview.token)).code).toBe(
+      'STALE'
+    );
+  });
+
+  it('saves a template with required keys marked, 0600', async () => {
+    await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'HOST', 'h', {
+      comment: 'Public host',
+    });
+    const result = await h['env:template'](ev, id, 'prod');
+    expect(result).toEqual({ success: true, path: saved });
+    expect(await fs.readFile(saved, 'utf8')).toBe(
+      'API_KEY=<required>\n# Public host\nHOST=\nLOG_LEVEL=\nSHARED=\n'
+    );
+    if (process.platform !== 'win32') {
+      expect((await fs.stat(saved)).mode & 0o777).toBe(0o600);
+    }
+    expect((await h['env:template'](ev, id, 'ghost')).code).toBe('NOT_FOUND');
+  });
+
+  it('changes the password and keeps the session working', async () => {
+    const NEW = 'Brand-New-Pass-42!';
+    expect(
+      (await h['env-vault:change-password'](ev, id, 'wrong', NEW)).error
+    ).toBe('The current password is wrong');
+    expect((await h['env-vault:change-password'](ev, id, PW, PW)).code).toBe(
+      'INVALID'
+    );
+    expect(
+      (await h['env-vault:change-password'](ev, id, PW, 'short')).success
+    ).toBe(false);
+    const changed = await h['env-vault:change-password'](ev, id, PW, NEW);
+    expect(changed).toMatchObject({ success: true, skippedSnapshots: [] });
+    expect((await EnvironmentVaultService.read(filePath, PW)).success).toBe(
+      false
+    );
+    expect((await EnvironmentVaultService.read(filePath, NEW)).success).toBe(
+      true
+    );
+    // Still unlocked, reading and writing with the new password.
+    const view = await h['env:view'](ev, id, 'prod');
+    expect(view.success).toBe(true);
+    const commit = await h['env:commit'](ev, id, {
+      viewId: view.viewId,
+      ops: [{ op: 'set', key: 'AFTER', value: '1' }],
+    });
+    expect(commit.success).toBe(true);
+    session.lock(id);
+    expect((await h['env-vault:change-password'](ev, id, NEW, PW)).code).toBe(
+      'LOCKED'
+    );
+  });
+});
+
+describe('env vault IPC: pending imports end with the session', () => {
+  it('drops a previewed import when the vault locks', async () => {
+    await seed();
+    const session = new EnvVaultSession();
+    const file = path.join(dir, 'in.env');
+    await fs.writeFile(file, 'HOST=h2\n');
+    const h = createEnvVaultHandlers({
+      registry: new EnvVaultRegistry({ envsDir }),
+      session,
+      dialog: {
+        showOpenDialog: async () => ({ canceled: false, filePaths: [file] }),
+      },
+    });
+    const ev = {};
+    const id = (await h['env-vaults:list']()).vaults[0].id;
+    await h['env-vault:unlock'](ev, id, PW);
+    let view = await h['env:view'](ev, id, 'prod');
+    const first = await h['env:import-pick'](ev, id, view.viewId);
+    await h['env-vault:lock'](ev, id);
+    await h['env-vault:unlock'](ev, id, PW);
+    expect((await h['env:import-apply'](ev, id, first.token)).code).toBe(
+      'INVALID'
+    );
+
+    view = await h['env:view'](ev, id, 'prod');
+    const second = await h['env:import-pick'](ev, id, view.viewId);
+    session.lock(id); // idle lock: main's own path, not the channel
+    await h['env-vault:unlock'](ev, id, PW);
+    expect((await h['env:import-apply'](ev, id, second.token)).code).toBe(
+      'INVALID'
+    );
+    session.lockAll();
   });
 });

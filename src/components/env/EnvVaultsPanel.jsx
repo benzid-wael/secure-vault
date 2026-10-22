@@ -10,9 +10,13 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  IconButton,
   List,
+  ListItem,
   ListItemButton,
   ListItemText,
+  Menu,
+  MenuItem,
   Paper,
   TextField,
   Typography,
@@ -22,9 +26,83 @@ import {
   FolderOpen as OpenIcon,
   Lock as LockIcon,
   ArrowBack as BackIcon,
+  MoreVert as MoreIcon,
 } from '@mui/icons-material';
 import EnvView from './EnvView';
+import EnvManageDialog from './EnvManageDialog';
 import { envApi } from './envApi';
+
+/** Change an env vault's password (Task 28); main checks the current one. */
+function ChangePasswordDialog({ change, onClose }) {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (next !== confirm) return setError('The new passwords do not match');
+    setBusy(true);
+    const result = await change(current, next);
+    setBusy(false);
+    if (!result.success) setError(result.error || 'Something went wrong');
+  };
+
+  return (
+    <Dialog open onClose={onClose} fullWidth maxWidth="xs">
+      <form onSubmit={submit}>
+        <DialogTitle>Change password</DialogTitle>
+        <DialogContent>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
+          <TextField
+            id="env-pw-current"
+            label="Current password"
+            type="password"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+            fullWidth
+            margin="dense"
+            autoFocus
+          />
+          <TextField
+            id="env-pw-new"
+            label="New password"
+            type="password"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            fullWidth
+            margin="dense"
+          />
+          <TextField
+            id="env-pw-confirm"
+            label="Confirm new password"
+            type="password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            fullWidth
+            margin="dense"
+            helperText="Every tool and script that opens this vault needs the new password."
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={busy || !current || !next || !confirm}
+          >
+            Change
+          </Button>
+        </DialogActions>
+      </form>
+    </Dialog>
+  );
+}
 
 /** Unlock or create: the password goes to main once and isn't kept here. */
 function PasswordDialog({ title, withName = false, onSubmit, onClose }) {
@@ -109,6 +187,13 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked }) {
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
   const [newEnv, setNewEnv] = useState('');
+  const [menu, setMenu] = useState(null); // { anchor, env }
+  const [manage, setManage] = useState(null); // { op, env, description, extends }
+  const [notice, setNotice] = useState('');
+  // Bumped when the file changes outside the app; EnvView reloads on it.
+  const [externalChange, setExternalChange] = useState(0);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [quietReload, setQuietReload] = useState(0);
 
   const load = useCallback(async () => {
     const result = await api.listEnvs(vault.id);
@@ -125,6 +210,75 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // The CLI or a sync tool changed the file (Task 16).
+  useEffect(
+    () =>
+      api.onChanged?.(({ id, missing }) => {
+        if (id !== vault.id) return;
+        if (missing) {
+          setError('The vault file was moved or deleted outside the app.');
+          return;
+        }
+        load();
+        setExternalChange((n) => n + 1);
+      }),
+    [api, vault.id, load]
+  );
+
+  const runManage = async (fields) => {
+    const result = await api.manageEnv(vault.id, {
+      ...fields,
+      expectedRevision: revision,
+    });
+    if (!result.success) {
+      if (result.code === 'LOCKED') onLocked();
+      if (result.code === 'STALE') {
+        load();
+        return {
+          ...result,
+          error:
+            'This vault was changed elsewhere; the list is reloaded, try again',
+        };
+      }
+      return result;
+    }
+    setManage(null);
+    setQuietReload((n) => n + 1); // the file changed under the env on screen
+    const { op, env, name } = fields;
+    if (op === 'rename' && selected === env) setSelected(name);
+    if (op === 'duplicate') setSelected(name);
+    if (op === 'delete' && selected === env) setSelected(null);
+    setNotice(
+      {
+        rename: `Renamed ${env} to ${name}.`,
+        duplicate: `Copied ${env} to ${name}.`,
+        delete: `Deleted ${env}. A copy of the vault was kept.`,
+        extends: `Updated the parent of ${env}.`,
+        describe: `Updated the description of ${env}.`,
+      }[op]
+    );
+    const listed = await api.listEnvs(vault.id);
+    if (listed.success) {
+      setEnvs(listed.envs);
+      setRevision(listed.revision);
+      if (op === 'delete' && selected === env) {
+        setSelected(listed.envs[0]?.name ?? null);
+      }
+    }
+    return result;
+  };
+
+  const openManage = (op) => {
+    const env = envs.find((e) => e.name === menu.env);
+    setMenu(null);
+    setManage({
+      op,
+      env: env.name,
+      description: env.description,
+      extends: env.extends,
+    });
+  };
 
   const createEnv = async (event) => {
     event.preventDefault();
@@ -154,6 +308,9 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked }) {
         <Typography variant="h5" sx={{ flexGrow: 1 }}>
           {vault.label}
         </Typography>
+        <Button variant="outlined" onClick={() => setChangingPassword(true)}>
+          Change password
+        </Button>
         <Button startIcon={<LockIcon />} variant="outlined" onClick={onLock}>
           Lock
         </Button>
@@ -163,20 +320,50 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked }) {
           {error}
         </Alert>
       )}
+      {notice && (
+        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setNotice('')}>
+          {notice}
+        </Alert>
+      )}
       <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
         <Paper sx={{ width: 240, flexShrink: 0 }}>
           <List dense aria-label="Environments">
             {(envs || []).map((env) => (
-              <ListItemButton
+              <ListItem
                 key={env.name}
-                selected={env.name === selected}
-                onClick={() => setSelected(env.name)}
+                disablePadding
+                secondaryAction={
+                  <IconButton
+                    edge="end"
+                    size="small"
+                    aria-label={`Manage ${env.name}`}
+                    onClick={(e) =>
+                      setMenu({ anchor: e.currentTarget, env: env.name })
+                    }
+                  >
+                    <MoreIcon fontSize="small" />
+                  </IconButton>
+                }
               >
-                <ListItemText
-                  primary={env.name}
-                  secondary={`${env.varCount} variables`}
-                />
-              </ListItemButton>
+                <ListItemButton
+                  selected={env.name === selected}
+                  onClick={() => setSelected(env.name)}
+                >
+                  <ListItemText
+                    primary={env.name}
+                    secondary={[
+                      `${env.varCount} variables`,
+                      env.extends && `extends ${env.extends}`,
+                      env.description,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                    secondaryTypographyProps={{
+                      sx: { wordBreak: 'break-word' },
+                    }}
+                  />
+                </ListItemButton>
+              </ListItem>
             ))}
           </List>
           <Box sx={{ p: 1 }}>
@@ -205,10 +392,60 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked }) {
                 .map((e) => e.name)
                 .filter((name) => name !== selected)}
               onChanged={load}
+              externalChange={externalChange}
+              quietReload={quietReload}
             />
           )}
         </Box>
       </Box>
+
+      {changingPassword && (
+        <ChangePasswordDialog
+          change={async (current, next) => {
+            const result = await api.changePassword(vault.id, current, next);
+            if (result.code === 'LOCKED') onLocked();
+            if (!result.success) return result;
+            setChangingPassword(false);
+            setQuietReload((n) => n + 1);
+            load();
+            setNotice(
+              result.skippedSnapshots.length
+                ? `Password changed. ${result.skippedSnapshots.length} older snapshot(s) didn't open with the old password and were left as they are.`
+                : 'Password changed. Snapshots were re-encrypted with it.'
+            );
+            return result;
+          }}
+          onClose={() => setChangingPassword(false)}
+        />
+      )}
+
+      <Menu
+        anchorEl={menu?.anchor ?? null}
+        open={menu !== null}
+        onClose={() => setMenu(null)}
+      >
+        <MenuItem onClick={() => openManage('rename')}>Rename…</MenuItem>
+        <MenuItem onClick={() => openManage('duplicate')}>Duplicate…</MenuItem>
+        <MenuItem onClick={() => openManage('describe')}>Description…</MenuItem>
+        <MenuItem onClick={() => openManage('extends')}>
+          Parent environment…
+        </MenuItem>
+        <MenuItem
+          onClick={() => openManage('delete')}
+          sx={{ color: 'error.main' }}
+        >
+          Delete…
+        </MenuItem>
+      </Menu>
+
+      {manage && (
+        <EnvManageDialog
+          request={manage}
+          envNames={(envs || []).map((e) => e.name)}
+          onSubmit={runManage}
+          onClose={() => setManage(null)}
+        />
+      )}
 
       <Dialog open={creating} onClose={() => setCreating(false)}>
         <form onSubmit={createEnv}>

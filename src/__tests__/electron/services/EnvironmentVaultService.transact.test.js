@@ -399,15 +399,15 @@ describe('EnvironmentVaultService read / transact', () => {
 
     /** Make the first `n` renames fail as if a scanner held the target. */
     const blockRenames = (n) => {
-      const realMove = fs.move.bind(fs);
+      const realRename = fs.rename.bind(fs);
       let left = n;
-      return vi.spyOn(fs, 'move').mockImplementation(async (...args) => {
+      return vi.spyOn(fs, 'rename').mockImplementation(async (...args) => {
         if (left-- > 0) {
           throw Object.assign(new Error('EPERM: operation not permitted'), {
             code: 'EPERM',
           });
         }
-        return realMove(...args);
+        return realRename(...args);
       });
     };
 

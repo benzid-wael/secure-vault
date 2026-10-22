@@ -9,6 +9,8 @@ import {
   fireEvent,
   waitFor,
   cleanup,
+  act,
+  within,
 } from '@testing-library/react';
 import fs from 'fs-extra';
 import os from 'os';
@@ -37,6 +39,12 @@ let dir;
 let session;
 let saved;
 let clipboardText;
+/** Listeners of `onChanged`, as main's watcher would call them. */
+let changeListeners = [];
+const emitChange = (payload) =>
+  act(async () => {
+    for (const listener of changeListeners) listener(payload);
+  });
 const LONG = `MIIK${'A'.repeat(3000)}EA==`;
 
 /** `window.electronAPI.envVaults` wired straight to the real handlers. */
@@ -68,6 +76,24 @@ function wire(handlers) {
     copy: call('env:copy'),
     transfer: call('env:transfer'),
     exportEnv: call('env:export'),
+    manageEnv: call('env:manage'),
+    editText: call('env:edit-text'),
+    templateEnv: call('env:template'),
+    diff: call('env:diff'),
+    validate: call('env:validate'),
+    importPick: call('env:import-pick'),
+    importApply: call('env:import-apply'),
+    importCancel: call('env:import-cancel'),
+    changePassword: call('env-vault:change-password'),
+    history: call('env:history'),
+    rollback: call('env:rollback'),
+    squash: call('env:squash'),
+    onChanged: (listener) => {
+      changeListeners.push(listener);
+      return () => {
+        changeListeners = changeListeners.filter((l) => l !== listener);
+      };
+    },
     onLocked: () => () => {},
   };
 }
@@ -105,6 +131,10 @@ beforeEach(async () => {
           },
         }),
         dialog: {
+          showOpenDialog: async () => ({
+            canceled: false,
+            filePaths: [path.join(dir, 'in.env')],
+          }),
           showSaveDialog: async () => ({
             canceled: false,
             filePath: path.join(dir, 'ci-dev.env'),
@@ -296,5 +326,339 @@ describe('env vault UI on the real handlers (StrictMode)', () => {
     expect(await fs.readFile(out, 'utf8')).toContain(
       'MATCH_PASSWORD=ci-dev-match'
     );
+  });
+
+  const vaultId = async () =>
+    (await win.electronAPI.envVaults.list()).vaults[0].id;
+
+  it('renames an env from its menu and keeps working in it', async () => {
+    await openEnv('ci-prod');
+    fireEvent.click(screen.getByLabelText('Manage ci-prod'));
+    fireEvent.click(await screen.findByText('Rename…'));
+    fireEvent.change(await screen.findByLabelText('New name'), {
+      target: { value: 'prod' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(
+      await screen.findByText('Renamed ci-prod to prod.')
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'prod' })
+    ).toBeInTheDocument();
+    await screen.findByLabelText('Reveal MATCH_PASSWORD');
+    await settle();
+    fireEvent.click(screen.getByLabelText('Reveal MATCH_PASSWORD'));
+    expect(await screen.findByText('ci-prod-match')).toBeInTheDocument();
+  });
+
+  it('deletes an env after a confirm', async () => {
+    await openEnv('ci-prod');
+    fireEvent.click(screen.getByLabelText('Manage ci-prod'));
+    fireEvent.click(await screen.findByText('Delete…'));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('.deleted.');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    expect(
+      await screen.findByText('Deleted ci-prod. A copy of the vault was kept.')
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByLabelText('Manage ci-prod')).not.toBeInTheDocument()
+    );
+  });
+
+  it('rolls back from the history', async () => {
+    await openEnv('ci-prod');
+    fireEvent.click(screen.getByLabelText('Edit MATCH_PASSWORD'));
+    fireEvent.change(await screen.findByLabelText('Value'), {
+      target: { value: 'edited' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(async () =>
+      expect((await activeVars('ci-prod')).MATCH_PASSWORD).toBe('edited')
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'History' }));
+    fireEvent.click(await screen.findByLabelText('Roll back to v1'));
+    fireEvent.click(screen.getByRole('button', { name: 'Roll back' }));
+    expect(
+      await screen.findByText(/ci-prod is back to version 1/)
+    ).toBeInTheDocument();
+    expect((await activeVars('ci-prod')).MATCH_PASSWORD).toBe('ci-prod-match');
+  });
+
+  it('squashes the history after a confirm that mentions the snapshot', async () => {
+    await EnvironmentVaultService.setEnv(
+      path.join(dir, 'app.env.vault'),
+      PW,
+      'ci-prod',
+      'EXTRA',
+      '1'
+    );
+    await openEnv('ci-prod');
+    fireEvent.click(screen.getByRole('button', { name: 'History' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Squash…' }));
+    expect(await screen.findByText(/\.squashed\./)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Squash' }));
+    expect(
+      await screen.findByText(/Squashed ci-prod's history/)
+    ).toBeInTheDocument();
+    const vault = (
+      await EnvironmentVaultService.read(path.join(dir, 'app.env.vault'), PW)
+    ).vault;
+    expect(vault.getHistory('ci-prod')).toHaveLength(1);
+  });
+
+  it('reloads when the vault changes outside the app', async () => {
+    await openEnv('ci-prod');
+    await EnvironmentVaultService.setEnv(
+      path.join(dir, 'app.env.vault'),
+      PW,
+      'ci-prod',
+      'FROM_CLI',
+      'x'
+    );
+    await emitChange({ id: await vaultId(), missing: false });
+    expect(await screen.findByLabelText('Copy FROM_CLI')).toBeInTheDocument();
+    expect(
+      screen.getByText('Updated with a change made outside the app.')
+    ).toBeInTheDocument();
+  });
+
+  it('keeps an open edit and warns when the vault changes outside the app', async () => {
+    await openEnv('ci-prod');
+    fireEvent.click(screen.getByLabelText('Edit MATCH_PASSWORD'));
+    await screen.findByLabelText('Value');
+    await EnvironmentVaultService.setEnv(
+      path.join(dir, 'app.env.vault'),
+      PW,
+      'ci-prod',
+      'FROM_CLI',
+      'x'
+    );
+    await emitChange({ id: await vaultId(), missing: false });
+    expect(
+      await screen.findAllByText(/changed elsewhere since you opened it/)
+    ).not.toHaveLength(0);
+    expect(screen.getByLabelText('Value')).toHaveValue('ci-prod-match');
+  });
+
+  it('says so when the vault file disappears', async () => {
+    await openEnv('ci-prod');
+    await emitChange({ id: await vaultId(), missing: true });
+    expect(
+      await screen.findByText(
+        'The vault file was moved or deleted outside the app.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('bulk edits as .env text, writing only what changed', async () => {
+    await openEnv('ci-prod');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit as .env' }));
+    const field = /** @type {HTMLTextAreaElement} */ (
+      await screen.findByLabelText('.env')
+    );
+    await waitFor(() =>
+      expect(field.value).toContain('MATCH_PASSWORD=ci-prod-match')
+    );
+    fireEvent.change(field, {
+      target: {
+        value:
+          'APPLE_API_ISSUER_ID=ci-prod-issuer\n# fastlane\nMATCH_PASSWORD=bulk\nNEW_ONE=1\n',
+      },
+    });
+    expect(screen.getByText('2 to set, 0 to remove')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('Saved 2 changes.')).toBeInTheDocument();
+    const vault = (
+      await EnvironmentVaultService.read(path.join(dir, 'app.env.vault'), PW)
+    ).vault;
+    const active = vault.getActiveVersion('ci-prod');
+    expect(active.vars).toEqual({
+      APPLE_API_ISSUER_ID: 'ci-prod-issuer',
+      MATCH_PASSWORD: 'bulk',
+      NEW_ONE: '1',
+    });
+    expect(active.comments).toEqual({ MATCH_PASSWORD: 'fastlane' });
+    expect(vault.getHistory('ci-prod')).toHaveLength(2); // one version
+  });
+
+  it('blocks a bulk save while lines would be skipped', async () => {
+    await openEnv('ci-prod');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit as .env' }));
+    const field = /** @type {HTMLTextAreaElement} */ (
+      await screen.findByLabelText('.env')
+    );
+    await waitFor(() => expect(field).not.toHaveValue(''));
+    fireEvent.change(field, { target: { value: 'not a line\nA=1\n' } });
+    expect(
+      screen.getByText('Line 1: Not KEY=value; skipped')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('lists conflicting keys in bulk edit and can overwrite them', async () => {
+    await openEnv('ci-prod');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit as .env' }));
+    const field = /** @type {HTMLTextAreaElement} */ (
+      await screen.findByLabelText('.env')
+    );
+    await waitFor(() => expect(field).not.toHaveValue(''));
+    await EnvironmentVaultService.setEnv(
+      path.join(dir, 'app.env.vault'),
+      PW,
+      'ci-prod',
+      'MATCH_PASSWORD',
+      'from-cli'
+    );
+    fireEvent.change(field, {
+      target: {
+        value: field.value.replace(
+          'MATCH_PASSWORD=ci-prod-match',
+          'MATCH_PASSWORD=mine'
+        ),
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(
+      await screen.findByTestId('conflict-MATCH_PASSWORD')
+    ).toHaveTextContent('changed');
+    fireEvent.click(screen.getByRole('button', { name: 'Overwrite' }));
+    expect(await screen.findByText('Saved 1 change.')).toBeInTheDocument();
+    expect((await activeVars('ci-prod')).MATCH_PASSWORD).toBe('mine');
+  });
+
+  it('merges a one-key edit with a change made elsewhere', async () => {
+    await openEnv('ci-prod');
+    fireEvent.click(screen.getByLabelText('Edit MATCH_PASSWORD'));
+    const value = await screen.findByLabelText('Value');
+    await EnvironmentVaultService.setEnv(
+      path.join(dir, 'app.env.vault'),
+      PW,
+      'ci-prod',
+      'FROM_CLI',
+      'x'
+    );
+    fireEvent.change(value, { target: { value: 'edited' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(
+      await screen.findByText('Saved, merged with a change made elsewhere.')
+    ).toBeInTheDocument();
+    expect(await activeVars('ci-prod')).toMatchObject({
+      MATCH_PASSWORD: 'edited',
+      FROM_CLI: 'x',
+    });
+  });
+
+  it('offers to overwrite when the same key changed elsewhere', async () => {
+    await openEnv('ci-prod');
+    fireEvent.click(screen.getByLabelText('Edit MATCH_PASSWORD'));
+    const value = await screen.findByLabelText('Value');
+    await EnvironmentVaultService.setEnv(
+      path.join(dir, 'app.env.vault'),
+      PW,
+      'ci-prod',
+      'MATCH_PASSWORD',
+      'from-cli'
+    );
+    fireEvent.change(value, { target: { value: 'mine' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(
+      await screen.findByText(/Changed elsewhere meanwhile: MATCH_PASSWORD/)
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Overwrite' }));
+    await waitFor(async () =>
+      expect((await activeVars('ci-prod')).MATCH_PASSWORD).toBe('mine')
+    );
+  });
+
+  const openMore = async (item) => {
+    fireEvent.click(screen.getByLabelText('More environment actions'));
+    fireEvent.click(await screen.findByText(item));
+  };
+
+  it('imports a .env after a preview of key names', async () => {
+    await fs.writeFile(
+      path.join(dir, 'in.env'),
+      '# rotated yearly\nMATCH_PASSWORD=from-file\nNEW_KEY=n\n'
+    );
+    await openEnv('ci-prod');
+    await openMore('Import .env…');
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('Import in.env into ci-prod');
+    expect(dialog).not.toHaveTextContent('from-file');
+    expect(within(dialog).getByText('rotated yearly')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
+    expect(
+      await screen.findByText('Imported 2 keys from in.env.')
+    ).toBeInTheDocument();
+    const vars = await activeVars('ci-prod');
+    expect(vars).toMatchObject({
+      MATCH_PASSWORD: 'from-file',
+      NEW_KEY: 'n',
+      APPLE_API_ISSUER_ID: 'ci-prod-issuer',
+    });
+  });
+
+  it('compares two envs, values hidden until asked', async () => {
+    await openEnv('ci-prod');
+    await openMore('Compare with…');
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      await within(dialog).findByText('MATCH_PASSWORD')
+    ).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent('ci-dev-match');
+    fireEvent.click(within(dialog).getByLabelText('Show values'));
+    expect(await within(dialog).findByText('ci-dev-match')).toBeInTheDocument();
+  });
+
+  it('validates an env', async () => {
+    await openEnv('ci-prod');
+    await openMore('Validate');
+    expect(await screen.findByText(/No problems found/)).toBeInTheDocument();
+  });
+
+  it('changes the vault password and keeps working', async () => {
+    await openEnv('ci-prod');
+    fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
+    fireEvent.change(await screen.findByLabelText('Current password'), {
+      target: { value: PW },
+    });
+    fireEvent.change(screen.getByLabelText('New password'), {
+      target: { value: 'Next-Pass-77&y' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirm new password'), {
+      target: { value: 'Next-Pass-77&y' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Change' }));
+    expect(await screen.findByText(/Password changed\./)).toBeInTheDocument();
+    const vaultFile = path.join(dir, 'app.env.vault');
+    expect((await EnvironmentVaultService.read(vaultFile, PW)).success).toBe(
+      false
+    );
+    expect(
+      (await EnvironmentVaultService.read(vaultFile, 'Next-Pass-77&y')).success
+    ).toBe(true);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.click(screen.getByLabelText('Reveal MATCH_PASSWORD'));
+    expect(await screen.findByText('ci-prod-match')).toBeInTheDocument();
+  });
+
+  it('keeps revealing after changing the env on screen', async () => {
+    await openEnv('ci-prod');
+    fireEvent.click(screen.getByLabelText('Manage ci-prod'));
+    fireEvent.click(await screen.findByText('Description…'));
+    fireEvent.change(await screen.findByLabelText('Description'), {
+      target: { value: 'Production CI' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(
+      await screen.findByText('Updated the description of ci-prod.')
+    ).toBeInTheDocument();
+    expect(await screen.findByText(/Production CI/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await settle();
+    fireEvent.click(screen.getByLabelText('Reveal MATCH_PASSWORD'));
+    expect(await screen.findByText('ci-prod-match')).toBeInTheDocument();
   });
 });

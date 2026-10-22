@@ -130,7 +130,13 @@ describe('Entry Types', () => {
     describe('getSearchFields', () => {
       it('should return correct search fields for bank account', () => {
         const fields = getSearchFields(ENTRY_TYPES.BANK_ACCOUNT);
-        expect(fields).toEqual(['title', 'bankName', 'accountHolder']);
+        expect(fields).toEqual(['title', 'bankName', 'accountHolder', 'notes']);
+      });
+
+      it('searches notes for every entry type (New-28)', () => {
+        for (const type of Object.values(ENTRY_TYPES)) {
+          expect(getSearchFields(type)).toContain('notes');
+        }
       });
     });
   });

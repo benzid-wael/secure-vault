@@ -95,3 +95,32 @@ describe('moveWithRetry', () => {
     }
   });
 });
+
+describe('moveWithRetry on a real directory', () => {
+  it('replaces the target without it ever disappearing', async () => {
+    const fsx = (await import('fs-extra')).default;
+    const os = await import('os');
+    const path = await import('path');
+    const dir = await fsx.mkdtemp(path.join(os.tmpdir(), 'sv-move-'));
+    const target = path.join(dir, 'vault');
+    await fsx.writeFile(target, 'v0');
+    let missing = 0;
+    let stop = false;
+    const watcher = (async () => {
+      while (!stop) {
+        if (!(await fsx.pathExists(target))) missing++;
+        await new Promise((r) => setImmediate(r));
+      }
+    })();
+    for (let i = 1; i <= 200; i++) {
+      await fsx.writeFile(`${target}.tmp`, `v${i}`);
+      await moveWithRetry(`${target}.tmp`, target);
+    }
+    stop = true;
+    await watcher;
+    expect(missing).toBe(0);
+    expect(await fsx.readFile(target, 'utf8')).toBe('v200');
+    expect(await fsx.pathExists(`${target}.tmp`)).toBe(false);
+    await fsx.remove(dir);
+  });
+});

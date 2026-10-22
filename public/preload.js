@@ -146,6 +146,39 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('env:copy', id, viewId, key, format),
     transfer: (id, request) => ipcRenderer.invoke('env:transfer', id, request),
     exportEnv: (id, env) => ipcRenderer.invoke('env:export', id, env),
+    manageEnv: (id, request) => ipcRenderer.invoke('env:manage', id, request),
+    templateEnv: (id, env) => ipcRenderer.invoke('env:template', id, env),
+    diff: (id, envA, envB, options) =>
+      ipcRenderer.invoke('env:diff', id, envA, envB, options),
+    validate: (id, env) => ipcRenderer.invoke('env:validate', id, env),
+    // Import: main reads the file; the page sees key names until applied.
+    importPick: (id, viewId) =>
+      ipcRenderer.invoke('env:import-pick', id, viewId),
+    importApply: (id, token, options) =>
+      ipcRenderer.invoke('env:import-apply', id, token, options),
+    importCancel: (id, token) =>
+      ipcRenderer.invoke('env:import-cancel', id, token),
+    changePassword: (id, current, next) =>
+      ipcRenderer.invoke('env-vault:change-password', id, current, next),
+    // Bulk edit: the env's own values as .env text, asked for explicitly.
+    editText: (id, viewId) => ipcRenderer.invoke('env:edit-text', id, viewId),
+    history: (id, viewId) => ipcRenderer.invoke('env:history', id, viewId),
+    rollback: (id, viewId, n) =>
+      ipcRenderer.invoke('env:rollback', id, viewId, n),
+    squash: (id, viewId, keep) =>
+      ipcRenderer.invoke('env:squash', id, viewId, keep),
+    // Changes made outside the app (the CLI, a sync tool).
+    onChanged: (callback) => {
+      const listener = (event, payload) => {
+        try {
+          callback(payload);
+        } catch (error) {
+          console.error('Error in env-vault-changed handler:', error);
+        }
+      };
+      ipcRenderer.on('env-vault-changed', listener);
+      return () => ipcRenderer.removeListener('env-vault-changed', listener);
+    },
     onLocked: (callback) => {
       const listener = (event, payload) => {
         try {

@@ -1,6 +1,6 @@
 // The Environments UI end to end (GUI-ENV-BREAKDOWN Tasks 1, 2, 14–21 MVP):
 // unlock a seeded env vault, see secrets masked, reveal and edit one, lose
-// no write to a concurrent CLI-style edit (STALE, reload, save), lock, and
+// no write to a concurrent CLI-style edit (reload, merge, conflict), lock, and
 // create a new vault with an env and a variable. Plus the M0 checks: the
 // renderer is sandboxed and the CSP blocks inline scripts.
 process.env.SECURE_VAULT_ENV_UI = '1';
@@ -53,7 +53,7 @@ scenario(async (t) => {
   await t.submit();
   t.check(
     'a wrong password is refused',
-    await t.waitText('wrong password', 15000)
+    await t.waitText('Wrong password for app.env.vault', 15000)
   );
   await t.fill('Vault Password', PASSWORD);
   await t.submit();
@@ -98,11 +98,7 @@ scenario(async (t) => {
     !(await t.hasText('sk-edited-in-gui'))
   );
 
-  // A concurrent write from another tool: the GUI must not overwrite it.
-  // Reveal first, so the edit below starts from the shown value and the
-  // refusal comes from the save itself.
-  await t.clickLabel('Reveal API_KEY');
-  await t.waitText('sk-edited-in-gui');
+  // Another tool writes: the app notices on its own (Task 16).
   const cli = await EVS.setEnv(
     vaultPath,
     PASSWORD,
@@ -111,43 +107,56 @@ scenario(async (t) => {
     'cli-value'
   );
   t.check('the CLI-style write succeeds', cli.success === true, cli.error);
+  t.check(
+    'the app reloads after an outside change',
+    (await t.waitText('Updated with a change made outside the app.', 10000)) &&
+      (await t.waitText('FROM_CLI'))
+  );
+
+  // A write elsewhere during an edit: warned, then merged on save (Task 10).
   await t.clickLabel('Edit API_KEY');
   await t.waitText('Edit API_KEY');
+  await EVS.setEnv(vaultPath, PASSWORD, 'prod', 'FROM_CLI', 'cli-value-2');
+  t.check(
+    'an open edit is warned, not reloaded',
+    await t.waitText('changed elsewhere', 10000)
+  );
+  await t.fill('Value', 'sk-merged');
+  await t.click('Save');
+  t.check(
+    'the save merges with the other write',
+    await t.waitText('Saved, merged with a change made elsewhere.', 10000)
+  );
+  let after = await activeVars('prod');
+  t.check(
+    'both writes are kept',
+    after.API_KEY === 'sk-merged' && after.FROM_CLI === 'cli-value-2',
+    JSON.stringify(after)
+  );
+
+  // The same key written elsewhere: a conflict, then the user's choice.
+  await t.clickLabel('Edit API_KEY');
+  await t.waitText('Edit API_KEY');
+  await EVS.setEnv(vaultPath, PASSWORD, 'prod', 'API_KEY', 'sk-from-cli');
   await t.fill('Value', 'sk-second-edit');
   await t.click('Save');
   t.check(
-    'the stale save is refused',
-    await t.waitText('changed elsewhere', 10000)
+    'a conflicting save is refused and names the key',
+    await t.waitText('Changed elsewhere meanwhile: API_KEY', 10000)
   );
   t.check(
     'nothing was overwritten',
-    (await activeVars('prod')).FROM_CLI === 'cli-value' &&
-      (await activeVars('prod')).API_KEY === 'sk-edited-in-gui'
+    (await activeVars('prod')).API_KEY === 'sk-from-cli'
   );
-  await t.click('Reload');
-  await t.sleep(800);
-  await t.click('Save');
-  await t.sleep(500);
+  await t.click('Overwrite');
   await t.sleep(1500);
-  const after = await activeVars('prod');
+  after = await activeVars('prod');
   t.check(
-    'after reload the edit saves and keeps the CLI write',
-    after.API_KEY === 'sk-second-edit' && after.FROM_CLI === 'cli-value',
+    'overwrite keeps the edit',
+    after.API_KEY === 'sk-second-edit' && after.FROM_CLI === 'cli-value-2',
     JSON.stringify(after)
   );
-  t.check('the CLI key shows up', await t.waitText('FROM_CLI'));
-
-  // Revealing after another tool wrote is refused too, until a reload.
-  await EVS.setEnv(vaultPath, PASSWORD, 'prod', 'FROM_CLI', 'cli-value-2');
-  await t.clickLabel('Reveal API_KEY');
-  t.check(
-    'a reveal of a changed vault asks for a reload',
-    (await t.waitText('changed elsewhere', 10000)) &&
-      !(await t.hasText('sk-second-edit'))
-  );
-  await t.click('Reload');
   await t.sleep(800);
-  t.check('reload clears the warning', !(await t.hasText('changed elsewhere')));
 
   // Copy, export and move: values go through main, never the page.
   await t.clickLabel('Copy API_KEY');

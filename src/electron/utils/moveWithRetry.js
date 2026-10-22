@@ -5,9 +5,16 @@ import fs from 'fs-extra';
 const TRANSIENT = new Set(['EPERM', 'EBUSY', 'EACCES']);
 
 /**
- * `fs.move(from, to, { overwrite: true })`, retried on Windows when the
- * target is momentarily held open. Elsewhere those codes mean a real
- * permission problem, so they fail at once, as does any other error.
+ * Replace `to` with `from` in one step (`fs.rename`), retried on Windows
+ * when the target is momentarily held open. Elsewhere those codes mean a
+ * real permission problem, so they fail at once, as does any other error.
+ *
+ * Not fs-extra's `move(…, { overwrite: true })`: it deletes the target
+ * before renaming, so for a moment the file doesn't exist. A concurrent
+ * reader then gets "not found", and a crash in that gap leaves no file.
+ * `rename` replaces an existing file atomically on POSIX, and on Windows
+ * (Node uses MoveFileEx with MOVEFILE_REPLACE_EXISTING). Both paths must be
+ * on the same volume: callers write the temp file next to the target.
  *
  * @param {string} from
  * @param {string} to
@@ -23,7 +30,7 @@ export async function moveWithRetry(
   to,
   {
     platform = process.platform,
-    move = (a, b) => fs.move(a, b, { overwrite: true }),
+    move = (a, b) => fs.rename(a, b),
     sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     tries = 3,
     delayMs = 50,

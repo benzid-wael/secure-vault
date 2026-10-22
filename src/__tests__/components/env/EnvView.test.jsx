@@ -122,6 +122,7 @@ describe('EnvView', () => {
             comment: '',
           },
         ],
+        force: false,
       })
     );
     await waitFor(() =>
@@ -161,6 +162,7 @@ describe('EnvView', () => {
             comment: '',
           },
         ],
+        force: false,
       })
     );
   });
@@ -200,6 +202,7 @@ describe('EnvView', () => {
       expect(api.commit).toHaveBeenCalledWith('vault-1', {
         viewId: 'view-1',
         ops: [{ op: 'rm', key: 'API_KEY' }],
+        force: false,
       })
     );
   });
@@ -265,6 +268,20 @@ describe('EnvView', () => {
   it('shows other commit errors', async () => {
     api.commit.mockResolvedValue({
       success: false,
+      code: 'ERROR',
+      error: 'disk full',
+    });
+    renderView();
+    await shown();
+    fireEvent.click(screen.getByLabelText('Delete API_KEY'));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    expect(await screen.findByText('disk full')).toBeInTheDocument();
+  });
+
+  it('points to squash when the version limit is hit', async () => {
+    api.commit.mockResolvedValue({
+      success: false,
       code: 'LIMIT',
       error: 'too many versions',
     });
@@ -273,7 +290,9 @@ describe('EnvView', () => {
     fireEvent.click(screen.getByLabelText('Delete API_KEY'));
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
-    expect(await screen.findByText('too many versions')).toBeInTheDocument();
+    expect(
+      await screen.findByText(/reached its version limit: squash/)
+    ).toBeInTheDocument();
   });
 
   it('closes the view on unmount and drops revealed values', async () => {

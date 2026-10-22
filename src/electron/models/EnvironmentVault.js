@@ -1,3 +1,5 @@
+import { parseDotenv } from '../../utils/dotenv.js';
+
 /**
  * Environment names that cannot be used because they collide with reserved
  * template-reference keywords. `{{env:self/KEY}}` always means "this
@@ -395,59 +397,58 @@ export class EnvironmentVault {
     this.updated = new Date().toISOString();
   }
 
+  /**
+   * The comments `name` shows: its own, over those of the envs it extends
+   * (the same layering as the values).
+   *
+   * @returns {Record<string, string>}
+   */
+  commentsOf(name) {
+    const chain = [];
+    for (let env = name; env != null && !chain.includes(env); ) {
+      if (!this.environments[env]) break;
+      chain.push(env);
+      env = this.environments[env].extends;
+    }
+    /** @type {Record<string, string>} */
+    const merged = {};
+    for (const env of chain.reverse()) {
+      const version = this.getActiveVersion(env);
+      for (const key of Object.keys(version?.vars ?? {})) {
+        if (version.comments?.[key]) merged[key] = version.comments[key];
+        else delete merged[key];
+      }
+    }
+    return merged;
+  }
+
   isSensitive(name, key) {
     const version = this.getActiveVersion(name);
     if (!version) return true;
     return !version.nonSensitive.includes(key);
   }
 
+  /** The variables of a .env file (see `parseDotenv` for the rules). */
   static parseEnvFile(content) {
-    const vars = {};
-    const lines = content.split('\n');
-
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-
-      if (!line || line.startsWith('#')) continue;
-
-      const match = line.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-      if (!match) continue;
-
-      const key = match[1];
-      let value = match[2];
-
-      const isDoubleQuoted =
-        value.length >= 2 && value.startsWith('"') && value.endsWith('"');
-      const isSingleQuoted =
-        value.length >= 2 && value.startsWith("'") && value.endsWith("'");
-
-      if (isDoubleQuoted) {
-        // Decode the escapes written by toDotenv()/quoteDotenvValue():
-        // \n \r \t -> control chars; \" \\ -> the literal char.
-        value = value.slice(1, -1).replace(/\\([\\nrt"])/g, (_, c) => {
-          if (c === 'n') return '\n';
-          if (c === 'r') return '\r';
-          if (c === 't') return '\t';
-          return c; // \" -> "  and  \\ -> \
-        });
-      } else if (isSingleQuoted) {
-        // Single quotes are literal (no escape processing).
-        value = value.slice(1, -1);
-      }
-
-      vars[key] = value;
-    }
-
-    return vars;
+    return parseDotenv(content).vars;
   }
 
-  importFromEnvFile(name, content, { message = null } = {}) {
-    const vars = EnvironmentVault.parseEnvFile(content);
+  /**
+   * Replace `name`'s variables with a .env file's, as one new version.
+   * With `comments`, the file's `#` comments above a key become its comment;
+   * otherwise keys keep the comments they had.
+   */
+  importFromEnvFile(name, content, { message = null, comments = false } = {}) {
+    const parsed = parseDotenv(content);
 
     if (!this.environments[name]) {
       this.addEnvironment(name);
     }
 
-    return this.addVersion(name, vars, { message });
+    const kept = this.getActiveVersion(name)?.comments;
+    return this.addVersion(name, parsed.vars, {
+      message,
+      ...(comments && { comments: { ...kept, ...parsed.comments } }),
+    });
   }
 }

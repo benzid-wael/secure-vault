@@ -90,6 +90,52 @@ describe('EnvironmentVaultService write operations', () => {
   });
 
   describe('setEnv', () => {
+    it('keeps a key public until isPublic is false (New-27)', async () => {
+      await seed();
+      const set = (value, opts) =>
+        EnvironmentVaultService.setEnv(vaultPath, PW, ENV, 'URL', value, opts);
+      const isPublic = async () =>
+        (await reload()).getActiveVersion(ENV).nonSensitive.includes('URL');
+      await set('a');
+      expect(await isPublic()).toBe(false); // new keys are secret
+      await set('b', { isPublic: true });
+      await set('c');
+      expect(await isPublic()).toBe(true);
+      await set('d', { isPublic: false });
+      expect(await isPublic()).toBe(false);
+    });
+
+    it('exports comments only when asked; import reports skipped lines', async () => {
+      await seed(populated(ENV, { A: '1' }, { comments: { A: 'first key' } }));
+      const plain = await EnvironmentVaultService.exportEnv(vaultPath, PW, ENV);
+      expect(plain.data).toBe('A=1\n');
+      const noted = await EnvironmentVaultService.exportEnv(
+        vaultPath,
+        PW,
+        ENV,
+        'dotenv',
+        { comments: true }
+      );
+      expect(noted.data).toBe('# first key\nA=1\n');
+
+      const file = path.join(dir, 'in.env');
+      fs.writeFileSync(file, '# from file\nB=2\nbroken line\n');
+      const imported = await EnvironmentVaultService.importEnvFile(
+        vaultPath,
+        PW,
+        ENV,
+        file,
+        { comments: true }
+      );
+      expect(imported.success).toBe(true);
+      expect(imported.warnings).toEqual([
+        { line: 3, message: 'Not KEY=value; skipped' },
+      ]);
+      expect((await reload()).getActiveVersion(ENV).comments).toEqual({
+        B: 'from file',
+      });
+    });
+
     it('sets, keeps and clears a comment; show reports it; rm drops it', async () => {
       await seed(populated(ENV, { EXISTING: 'val' }));
       await EnvironmentVaultService.setEnv(vaultPath, PW, ENV, 'K', 'v', {
@@ -518,6 +564,68 @@ describe('EnvironmentVaultService write operations', () => {
 
       expect(result.success).toBe(true);
       expect((await reload()).getHistory(ENV)).toHaveLength(1);
+    });
+
+    it('keeps a snapshot of the pre-squash vault (Task 7)', async () => {
+      const vault = new EnvironmentVault();
+      vault.addEnvironment(ENV);
+      vault.addVersion(ENV, { A: '1' });
+      vault.addVersion(ENV, { A: '2' });
+      await seed(vault);
+      const before = fs.readFileSync(vaultPath);
+
+      await EnvironmentVaultService.squashEnv(vaultPath, PW, ENV, 1);
+
+      const snapshots = fs
+        .readdirSync(dir)
+        .filter((n) => n.startsWith('test.env.vault.squashed.'));
+      expect(snapshots).toHaveLength(1);
+      const snap = path.join(dir, snapshots[0]);
+      expect(fs.readFileSync(snap).equals(before)).toBe(true);
+      const opened = await EnvironmentVaultService.loadVault(snap, PW);
+      expect(opened.data.getHistory(ENV)).toHaveLength(2);
+    });
+
+    it('takes no snapshot when the env is missing', async () => {
+      await seed(populated(ENV, { A: '1' }));
+      const result = await EnvironmentVaultService.squashEnv(
+        vaultPath,
+        PW,
+        'ghost'
+      );
+      expect(result.success).toBe(false);
+      expect(fs.readdirSync(dir).some((n) => n.includes('.squashed.'))).toBe(
+        false
+      );
+    });
+
+    it('a password change re-keys squashed and deleted snapshots alike', async () => {
+      const vault = populated(ENV, { A: '1' });
+      vault.addVersion(ENV, { A: '2' });
+      vault.addEnvironment('other');
+      await seed(vault);
+      await EnvironmentVaultService.squashEnv(vaultPath, PW, ENV, 1);
+      await EnvironmentVaultService.deleteEnv(vaultPath, PW, 'other');
+
+      const changed = await EnvironmentVaultService.changePassword(
+        vaultPath,
+        PW,
+        NEW_PW
+      );
+      expect(changed.success).toBe(true);
+      const snaps = fs
+        .readdirSync(dir)
+        .filter((n) => /\.(squashed|deleted)\./.test(n));
+      expect(snaps).toHaveLength(2);
+      for (const name of snaps) {
+        const snap = path.join(dir, name);
+        expect(
+          (await EnvironmentVaultService.loadVault(snap, PW)).success
+        ).toBe(false);
+        expect(
+          (await EnvironmentVaultService.loadVault(snap, NEW_PW)).success
+        ).toBe(true);
+      }
     });
   });
 

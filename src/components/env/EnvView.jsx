@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { envApi } from './envApi';
+import EnvHistoryDialog from './EnvHistoryDialog';
+import EnvBulkEditDialog from './EnvBulkEditDialog';
+import EnvImportDialog from './EnvImportDialog';
+import { EnvCompareDialog, EnvValidateDialog } from './EnvCheckDialogs';
 import {
   Alert,
   Box,
@@ -35,7 +39,11 @@ import {
 const MASK = '••••••••';
 const STALE_MESSAGE =
   'This vault was changed elsewhere since you opened it. Reload to see the ' +
-  'changes, then try again. Your edit is kept.';
+  'changes. Saving still works: it merges your edit, or says which keys ' +
+  'conflict. Your edit is kept.';
+const LIMIT_MESSAGE =
+  'This environment has reached its version limit: squash its history ' +
+  '(History), then save again.';
 /** Longer values (or multi-line ones) are cut in the table; "Show" opens them. */
 export const LONG_VALUE = 80;
 
@@ -144,6 +152,8 @@ const EnvView = ({
   onLocked,
   otherEnvs = [],
   onChanged = () => {},
+  externalChange = 0,
+  quietReload = 0,
 }) => {
   const api = envApi();
   const [view, setView] = useState(null); // { viewId, revision, vars }
@@ -158,6 +168,12 @@ const EnvView = ({
   const [menu, setMenu] = useState(null); // { anchor, row }
   const [fullValue, setFullValue] = useState(null); // { key, value }
   const [busy, setBusy] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [envMenu, setEnvMenu] = useState(null); // anchor of the More menu
+  const [importPreview, setImportPreview] = useState(null);
+  const [check, setCheck] = useState(null); // 'compare' | 'validate'
+  const [conflict, setConflict] = useState(null); // the CONFLICT result of a one-key save
   const viewIdRef = useRef(null);
 
   const handleFailure = useCallback(
@@ -204,6 +220,71 @@ const EnvView = ({
 
   const reload = async () => show(await api.refresh(vaultId, view.viewId));
 
+  // The file changed outside the app (Task 16): reload what's shown, unless
+  // the user is in the middle of something; then say so and keep it.
+  const busyRef = useRef(false);
+  busyRef.current =
+    editing !== null ||
+    toDelete !== null ||
+    transfer !== null ||
+    historyOpen ||
+    bulkOpen ||
+    importPreview !== null ||
+    selected.length > 0;
+  const seenChange = useRef(externalChange);
+  useEffect(() => {
+    if (externalChange === seenChange.current) return;
+    seenChange.current = externalChange;
+    const viewId = viewIdRef.current;
+    if (!viewId) return;
+    if (busyRef.current) {
+      setStale(true);
+      return;
+    }
+    api.refresh(vaultId, viewId).then((result) => {
+      if (viewIdRef.current !== viewId) return;
+      showRef.current(result);
+      if (result.success)
+        setNotice('Updated with a change made outside the app.');
+    });
+  }, [api, vaultId, externalChange]);
+
+  // The app rewrote the file itself (a password change): follow it quietly.
+  const seenQuiet = useRef(quietReload);
+  useEffect(() => {
+    if (quietReload === seenQuiet.current) return;
+    seenQuiet.current = quietReload;
+    const viewId = viewIdRef.current;
+    if (!viewId) return;
+    api.refresh(vaultId, viewId).then((result) => {
+      if (viewIdRef.current === viewId) showRef.current(result);
+    });
+  }, [api, vaultId, quietReload]);
+
+  const loadHistory = useCallback(
+    () => api.history(vaultId, viewIdRef.current),
+    [api, vaultId]
+  );
+
+  const runHistory = async (action) => {
+    const result =
+      action.kind === 'rollback'
+        ? await api.rollback(vaultId, view.viewId, action.n)
+        : await api.squash(vaultId, view.viewId, action.keep);
+    if (!result.success && ['LOCKED', 'STALE'].includes(result.code)) {
+      setHistoryOpen(false);
+      handleFailure(result);
+    }
+    return result;
+  };
+
+  const historyDone = async (message) => {
+    setHistoryOpen(false);
+    setNotice(message);
+    show(await api.refresh(vaultId, view.viewId));
+    onChanged();
+  };
+
   const toggleReveal = async (key) => {
     if (key in revealed) {
       const rest = { ...revealed };
@@ -236,20 +317,98 @@ const EnvView = ({
     setNotice(`Exported ${env} to ${result.path}`);
   };
 
-  const commit = async (ops) => {
+  /**
+   * Save a changeset; resolves to the result. A CONFLICT or LIMIT is left
+   * to the caller, which knows what the user was doing.
+   */
+  const save = async (ops, { force = false } = {}) => {
+    const result = await api.commit(vaultId, {
+      viewId: view.viewId,
+      ops,
+      force,
+    });
+    if (!result.success) {
+      if (!['CONFLICT', 'LIMIT'].includes(result.code)) handleFailure(result);
+      return result;
+    }
+    show(await api.refresh(vaultId, view.viewId));
+    if (result.rebased) {
+      setNotice('Saved, merged with a change made elsewhere.');
+    }
+    onChanged();
+    return result;
+  };
+
+  const commit = async (ops, options) => {
     setBusy(true);
     try {
-      const result = await api.commit(vaultId, { viewId: view.viewId, ops });
-      if (!result.success) {
-        handleFailure(result);
-        return false;
-      }
-      show(await api.refresh(vaultId, view.viewId));
-      onChanged();
-      return true;
+      const result = await save(ops, options);
+      if (result.code === 'CONFLICT') setConflict(result);
+      if (result.code === 'LIMIT') setError(LIMIT_MESSAGE);
+      return result.success;
     } finally {
       setBusy(false);
     }
+  };
+
+  const loadText = useCallback(
+    () => api.editText(vaultId, viewIdRef.current),
+    [api, vaultId]
+  );
+
+  const exportTemplate = async () => {
+    setEnvMenu(null);
+    const result = await api.templateEnv(vaultId, env);
+    if (result.canceled) return;
+    if (!result.success) return handleFailure(result);
+    setNotice(`Saved a template of ${env} to ${result.path}`);
+  };
+
+  const startImport = async () => {
+    setEnvMenu(null);
+    const result = await api.importPick(vaultId, view.viewId);
+    if (result.canceled) return;
+    if (!result.success) return handleFailure(result);
+    setImportPreview(result);
+  };
+
+  const applyImport = async (options) => {
+    const result = await api.importApply(vaultId, importPreview.token, options);
+    if (!result.success) {
+      if (['LOCKED', 'STALE'].includes(result.code)) {
+        setImportPreview(null);
+        handleFailure(result);
+      }
+      return result;
+    }
+    setImportPreview(null);
+    setNotice(
+      `Imported ${result.count} key${result.count === 1 ? '' : 's'} from ${importPreview.fileName}.`
+    );
+    show(await api.refresh(vaultId, view.viewId));
+    onChanged();
+    return result;
+  };
+
+  const cancelImport = () => {
+    api.importCancel(vaultId, importPreview.token);
+    setImportPreview(null);
+  };
+
+  const loadDiff = useCallback(
+    (other, reveal) => api.diff(vaultId, env, other, { reveal }),
+    [api, vaultId, env]
+  );
+  const loadValidate = useCallback(
+    () => api.validate(vaultId, env),
+    [api, vaultId, env]
+  );
+
+  const bulkDone = (result, count) => {
+    setBulkOpen(false);
+    setNotice(
+      `Saved ${count} change${count === 1 ? '' : 's'}${result.rebased ? ', merged with a change made elsewhere' : ''}.`
+    );
   };
 
   const runTransfer = async ({ target, overwrite }) => {
@@ -277,17 +436,44 @@ const EnvView = ({
     return result;
   };
 
-  const saveEdit = async () => {
+  const saveEdit = async (force = false) => {
     const { key, value, sensitive, comment } = editing;
     const op = { op: 'set', key: key.trim(), value, sensitive, comment };
-    if (await commit([op])) {
+    setConflict(null);
+    if (await commit([op], { force })) {
       setEditing(null);
     }
   };
 
   const confirmDelete = async () => {
+    setConflict(null);
     if (await commit([{ op: 'rm', key: toDelete }])) setToDelete(null);
   };
+
+  // A conflict belongs to the dialog it came from.
+  useEffect(() => {
+    if (editing === null && toDelete === null) setConflict(null);
+  }, [editing, toDelete]);
+
+  const conflictAlert = conflict && (
+    <Alert
+      severity="warning"
+      sx={{ mb: 2 }}
+      action={
+        editing && conflict.conflicts?.[0]?.kind !== 'env-gone' ? (
+          <Button
+            color="inherit"
+            disabled={busy}
+            onClick={() => saveEdit(true)}
+          >
+            Overwrite
+          </Button>
+        ) : null
+      }
+    >
+      {conflict.error}. Reload to see it, or overwrite with yours.
+    </Alert>
+  );
 
   // Editing starts from the current value, so a masked one is revealed
   // first: saving an untouched field must not wipe the secret.
@@ -360,8 +546,21 @@ const EnvView = ({
         <Typography variant="h6" sx={{ flexGrow: 1 }}>
           {env}
         </Typography>
+        <Button variant="outlined" onClick={() => setBulkOpen(true)}>
+          Edit as .env
+        </Button>
+        <Button variant="outlined" onClick={() => setHistoryOpen(true)}>
+          History
+        </Button>
         <Button variant="outlined" onClick={exportEnv}>
           Export .env
+        </Button>
+        <Button
+          variant="outlined"
+          aria-label="More environment actions"
+          onClick={(e) => setEnvMenu(e.currentTarget)}
+        >
+          <MoreIcon fontSize="small" />
         </Button>
         <Button
           variant="outlined"
@@ -579,6 +778,81 @@ const EnvView = ({
         )}
       </Menu>
 
+      <Menu
+        anchorEl={envMenu}
+        open={envMenu !== null}
+        onClose={() => setEnvMenu(null)}
+      >
+        <MenuItem onClick={startImport}>Import .env…</MenuItem>
+        <MenuItem onClick={exportTemplate}>
+          Save template (.env.example)…
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setEnvMenu(null);
+            setCheck('compare');
+          }}
+        >
+          Compare with…
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setEnvMenu(null);
+            setCheck('validate');
+          }}
+        >
+          Validate
+        </MenuItem>
+      </Menu>
+
+      {importPreview && (
+        <EnvImportDialog
+          env={env}
+          preview={importPreview}
+          apply={applyImport}
+          onClose={cancelImport}
+        />
+      )}
+      {check === 'compare' && (
+        <EnvCompareDialog
+          env={env}
+          otherEnvs={otherEnvs}
+          load={loadDiff}
+          onClose={() => setCheck(null)}
+        />
+      )}
+      {check === 'validate' && (
+        <EnvValidateDialog
+          env={env}
+          load={loadValidate}
+          onClose={() => setCheck(null)}
+        />
+      )}
+
+      {bulkOpen && (
+        <EnvBulkEditDialog
+          env={env}
+          load={loadText}
+          save={save}
+          onDone={bulkDone}
+          onOpenHistory={() => {
+            setBulkOpen(false);
+            setHistoryOpen(true);
+          }}
+          onClose={() => setBulkOpen(false)}
+        />
+      )}
+
+      {historyOpen && (
+        <EnvHistoryDialog
+          env={env}
+          load={loadHistory}
+          run={runHistory}
+          onDone={historyDone}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
+
       {transfer && (
         <TransferDialog
           request={transfer}
@@ -625,7 +899,10 @@ const EnvView = ({
 
       <Dialog
         open={editing !== null}
-        onClose={() => setEditing(null)}
+        onClose={() => {
+          setEditing(null);
+          setConflict(null);
+        }}
         fullWidth
         maxWidth="sm"
       >
@@ -633,11 +910,12 @@ const EnvView = ({
           {editing?.isNew ? 'Add variable' : `Edit ${editing?.key}`}
         </DialogTitle>
         <DialogContent>
-          {stale && (
+          {stale && !conflict && (
             <Alert severity="warning" sx={{ mb: 2 }}>
               {STALE_MESSAGE}
             </Alert>
           )}
+          {conflictAlert}
           {editing?.isNew && (
             <TextField
               id="env-var-key"
@@ -691,7 +969,7 @@ const EnvView = ({
           {stale && <Button onClick={reload}>Reload</Button>}
           <Button
             variant="contained"
-            onClick={saveEdit}
+            onClick={() => saveEdit()}
             disabled={busy || !editing?.key?.trim()}
           >
             Save
@@ -702,6 +980,7 @@ const EnvView = ({
       <Dialog open={toDelete !== null} onClose={() => setToDelete(null)}>
         <DialogTitle>Delete {toDelete}?</DialogTitle>
         <DialogContent>
+          {conflictAlert}
           <Typography>
             This adds a new version without {toDelete}. Earlier versions keep
             it.

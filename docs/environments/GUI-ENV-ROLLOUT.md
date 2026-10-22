@@ -333,3 +333,33 @@ Known hazards so far, to be completed per task:
 - **Rollback:** reinstall the previous version. The marker stays in files
   that have it; previous tools ignore it, which is the same exposure as
   before.
+
+### Second testing round: env management, merge, import, CLI flags
+
+- **Runtime change (desktop, gated):** live reload on outside changes (a
+  file watch while unlocked); merge-or-conflict saves; bulk edit as .env;
+  env rename, duplicate, delete, parent, description; history, rollback,
+  squash; compare, validate; import with preview; template; change password.
+- **Runtime change (CLI, not gated):**
+  - `set` keeps a key's public flag (`--secret` to undo).
+  - `.env` parsing follows dotenv tools; `import` warns per skipped line.
+  - `export --comments` and `import --comments` (opt-in).
+  - `squash` keeps a `.squashed.<ts>` snapshot, re-keyed by
+    `change-password`.
+- **Schema or config change:** none beyond New-25's comments. New files:
+  `<vault>.squashed.<ts>` next to the vault.
+- **Before it ships:** the CHANGELOG entries (added). Release notes: the
+  parser change (an unquoted ` #` now starts a comment); squash snapshots
+  hold the old history and are the user's to delete. New-29 still gates
+  comments.
+- **Gated by:** the desktop features by the Environments UI gate; the CLI
+  changes are not gated.
+- **Per environment:** CLI and desktop. The watcher uses `fs.watch` on the
+  vault's directory: on network or synced folders events can be late or
+  missing; the app then falls back to "changed elsewhere" on the next action.
+- **Verify after release:** `vault env set K v --public`, then
+  `vault env set K w`: `show` prints `w` unmasked. In the app, edit a key
+  while the CLI sets another one: the save says "merged".
+- **Rollback:** reinstall the previous version. Squash snapshots stay on
+  disk; the previous version neither creates nor re-keys them, so a later
+  password change there leaves them on the old password.

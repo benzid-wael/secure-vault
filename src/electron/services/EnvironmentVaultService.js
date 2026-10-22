@@ -16,7 +16,7 @@ const SUSPICIOUS_VALUE_RE =
 import { validatePasswordStrength } from '../../utils/passwordValidation.js';
 import { getAppDataPath, getEnvsDir } from '../utils/appPaths.js';
 import { moveWithRetry } from '../utils/moveWithRetry.js';
-import { toDotenv } from '../../utils/dotenv.js';
+import { parseDotenv, toDotenv } from '../../utils/dotenv.js';
 
 function resolvePath(...segments) {
   return process.platform === 'win32'
@@ -610,9 +610,10 @@ export class EnvironmentVaultService {
   }
 
   /**
-   * Re-encrypt the vault's `.deleted.<ts>` snapshots under the new password.
-   * Each one is a full copy of the vault taken before an environment was
-   * deleted; left alone, it would keep opening with the retired password.
+   * Re-encrypt the vault's `.deleted.<ts>` and `.squashed.<ts>` snapshots
+   * under the new password. Each one is a full copy of the vault taken before
+   * history was discarded; left alone, it would keep opening with the retired
+   * password.
    * A snapshot that doesn't open with the current password predates an
    * earlier password change and can't be re-keyed here, so it is left
    * untouched and reported for the user to handle.
@@ -622,7 +623,9 @@ export class EnvironmentVaultService {
    */
   static async #rekeySnapshots(vaultPath, currentPassword, newPassword) {
     const dir = path.dirname(vaultPath);
-    const prefix = `${path.basename(vaultPath)}.deleted.`;
+    const prefixes = this.SNAPSHOT_KINDS.map(
+      (kind) => `${path.basename(vaultPath)}.${kind}.`
+    );
     const rekeyedSnapshots = [];
     const skippedSnapshots = [];
 
@@ -631,7 +634,11 @@ export class EnvironmentVaultService {
     let names = [];
     try {
       names = ((await fs.readdir(dir)) || [])
-        .filter((name) => name.startsWith(prefix) && !name.endsWith('.tmp'))
+        .filter(
+          (name) =>
+            prefixes.some((prefix) => name.startsWith(prefix)) &&
+            !name.endsWith('.tmp')
+        )
         .sort();
     } catch {
       return { rekeyedSnapshots, skippedSnapshots };
@@ -661,7 +668,7 @@ export class EnvironmentVaultService {
 
         const tmpPath = `${snapshotPath}.tmp`;
         await fs.writeJSON(tmpPath, rekeyed, { spaces: 2 });
-        await fs.move(tmpPath, snapshotPath, { overwrite: true });
+        await moveWithRetry(tmpPath, snapshotPath);
         rekeyedSnapshots.push(name);
       } catch {
         skippedSnapshots.push(name);
@@ -707,7 +714,7 @@ export class EnvironmentVaultService {
     key,
     value,
     {
-      isPublic = false,
+      isPublic = undefined,
       isRequired = false,
       message = null,
       comment = undefined,
@@ -723,9 +730,10 @@ export class EnvironmentVaultService {
       const nonSensitive = activeVersion ? [...activeVersion.nonSensitive] : [];
       const required = activeVersion ? [...activeVersion.required] : [];
 
-      if (isPublic && !nonSensitive.includes(key)) {
+      // `isPublic` left out keeps the key's flag; a new key is secret.
+      if (isPublic === true && !nonSensitive.includes(key)) {
         nonSensitive.push(key);
-      } else if (!isPublic) {
+      } else if (isPublic === false) {
         const idx = nonSensitive.indexOf(key);
         if (idx !== -1) nonSensitive.splice(idx, 1);
       }
@@ -868,12 +876,27 @@ export class EnvironmentVaultService {
 
       // Deleting an environment discards its entire version history, so keep a
       // timestamped snapshot of the pre-delete vault alongside the rolling .bak.
-      // Under the lock, the file on disk is the one this vault was read from.
-      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-      await fs.copy(vaultPath, `${vaultPath}.deleted.${stamp}`, {
-        overwrite: true,
-      });
+      await this.snapshot(vaultPath, 'deleted');
     });
+  }
+
+  /** The kinds of snapshot kept next to a vault, re-keyed with it. */
+  static SNAPSHOT_KINDS = ['deleted', 'squashed'];
+
+  /**
+   * Copy the vault file to `<vault>.<kind>.<timestamp>` before a write that
+   * discards history. Call it inside `transact`'s mutate: under the lock, the
+   * file on disk is the one the vault was read from.
+   *
+   * @param {string} vaultPath
+   * @param {'deleted'|'squashed'} kind
+   * @returns {Promise<string>} The snapshot's path.
+   */
+  static async snapshot(vaultPath, kind) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const target = `${vaultPath}.${kind}.${stamp}`;
+    await fs.copy(vaultPath, target, { overwrite: true });
+    return target;
   }
 
   static async setExtends(vaultPath, password, envName, parent) {
@@ -918,7 +941,18 @@ export class EnvironmentVaultService {
     });
   }
 
-  static async exportEnv(vaultPath, password, envName, format = 'dotenv') {
+  /**
+   * @param {Object} [options]
+   * @param {boolean} [options.comments] Write key comments as `#` lines
+   *   (dotenv only).
+   */
+  static async exportEnv(
+    vaultPath,
+    password,
+    envName,
+    format = 'dotenv',
+    { comments = false } = {}
+  ) {
     const loadResult = await this.loadVault(vaultPath, password);
     if (!loadResult.success) return loadResult;
 
@@ -941,7 +975,12 @@ export class EnvironmentVaultService {
         return { success: true, data: vars };
       }
 
-      return { success: true, data: toDotenv(vars) };
+      return {
+        success: true,
+        data: toDotenv(vars, {
+          comments: comments ? vault.commentsOf(envName) : {},
+        }),
+      };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -975,7 +1014,23 @@ export class EnvironmentVaultService {
     }
   }
 
-  static async importEnvFile(vaultPath, password, envName, filePath) {
+  /**
+   * Replace an env's variables with a .env file's. The result carries the
+   * parser's `warnings` (skipped lines, repeated keys), which hold no value.
+   *
+   * @param {Object} [options]
+   * @param {boolean} [options.comments] Take the file's `#` comments above a
+   *   key as its comment.
+   * @returns {Promise<{success: boolean, error?: string, code?: string,
+   *   revision?: string, warnings?: Array<{line: number, message: string}>}>}
+   */
+  static async importEnvFile(
+    vaultPath,
+    password,
+    envName,
+    filePath,
+    { comments = false } = {}
+  ) {
     let content;
     try {
       // Read the .env before taking the lock: it's not part of the vault.
@@ -983,15 +1038,21 @@ export class EnvironmentVaultService {
     } catch (error) {
       return { success: false, error: error.message };
     }
-    return this.#mutate(vaultPath, password, (vault) => {
+    const { warnings } = parseDotenv(content);
+    const result = await this.#mutate(vaultPath, password, (vault) => {
       vault.importFromEnvFile(envName, content, {
         message: `Imported from ${path.basename(filePath)}`,
+        comments,
       });
     });
+    return result.success ? { ...result, warnings } : result;
   }
 
+  /** Squash `envName`'s history, keeping a snapshot of the vault first. */
   static async squashEnv(vaultPath, password, envName, keep = 1) {
-    return this.#mutate(vaultPath, password, (vault) => {
+    return this.#mutate(vaultPath, password, async (vault) => {
+      vault.getHistory(envName); // throws before any snapshot if it's missing
+      await this.snapshot(vaultPath, 'squashed');
       vault.squash(envName, { keep: Math.max(1, keep) });
     });
   }
@@ -1032,9 +1093,19 @@ export class EnvironmentVaultService {
   static async diffEnvs(vaultPath, password, envA, envB) {
     const loadResult = await this.loadVault(vaultPath, password);
     if (!loadResult.success) return loadResult;
+    return this.diffVaultEnvs(loadResult.data, envA, envB);
+  }
 
+  /**
+   * `diffEnvs` on an open vault (the desktop app reads through its session).
+   *
+   * @param {EnvironmentVault} vault
+   * @param {string} envA
+   * @param {string} envB
+   * @returns {any}
+   */
+  static diffVaultEnvs(vault, envA, envB) {
     try {
-      const vault = loadResult.data;
       const versionA = vault.getActiveVersion(envA);
       const versionB = vault.getActiveVersion(envB);
 
@@ -1087,9 +1158,18 @@ export class EnvironmentVaultService {
   static async validateEnv(vaultPath, password, envName) {
     const loadResult = await this.loadVault(vaultPath, password);
     if (!loadResult.success) return loadResult;
+    return this.validateVaultEnv(loadResult.data, envName);
+  }
 
+  /**
+   * `validateEnv` on an open vault.
+   *
+   * @param {EnvironmentVault} vault
+   * @param {string} envName
+   * @returns {any}
+   */
+  static validateVaultEnv(vault, envName) {
     try {
-      const vault = loadResult.data;
       // Throws if the environment does not exist.
       const activeVersion = vault.getActiveVersion(envName);
 

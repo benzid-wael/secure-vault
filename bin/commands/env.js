@@ -459,6 +459,10 @@ export function registerEnvCommand(program) {
     .option('--password <password>', 'Vault password (non-interactive)')
     .option('--password-file <path>', 'Read vault password from a file')
     .option('--password-stdin', 'Read vault password from stdin')
+    .option(
+      '--comments',
+      'Keep the # comment lines directly above a key as its comment'
+    )
     .action(async (envName, files, options) => {
       const spinner = oraQuiet('Importing .env files...').start();
 
@@ -482,12 +486,16 @@ export function registerEnvCommand(program) {
             vaultPath,
             vaultPassword,
             envName,
-            file
+            file,
+            { comments: !!options.comments }
           );
 
           if (!result.success) {
             spinner.fail(chalk.red(`${file}: ${result.error}`));
             process.exit(1);
+          }
+          for (const w of result.warnings ?? []) {
+            console.error(chalk.yellow(`${file}:${w.line}: ${w.message}`));
           }
         }
 
@@ -520,7 +528,14 @@ export function registerEnvCommand(program) {
       'Read the value from stdin (keeps it out of argv, shell history and temp files)'
     )
     .option('--encode <codec>', 'Encode the value before storing (base64)')
-    .option('--public', 'Mark variable as non-sensitive')
+    .option(
+      '--public',
+      'Mark variable as non-sensitive (kept on later sets until --secret)'
+    )
+    .option(
+      '--secret',
+      'Mark variable as sensitive (the default for a new key)'
+    )
     .option('--required', 'Mark variable as required (checked by validate)')
     .option('--extends <parent>', 'Set this environment to extend <parent>')
     .option('-m, --message <text>', 'Version message')
@@ -538,6 +553,10 @@ export function registerEnvCommand(program) {
               `Unknown encode "${options.encode}" (supported: ${ENCODERS.join(', ')})`
             )
           );
+          process.exit(1);
+        }
+        if (options.public && options.secret) {
+          console.error(chalk.red('Use --public or --secret, not both.'));
           process.exit(1);
         }
         const fromFile = options.in !== undefined;
@@ -640,7 +659,12 @@ export function registerEnvCommand(program) {
           key,
           value,
           {
-            isPublic: !!options.public,
+            // Neither flag keeps the key's current flag.
+            isPublic: options.public
+              ? true
+              : options.secret
+                ? false
+                : undefined,
             isRequired: !!options.required,
             message: options.message,
             comment: options.comment,
@@ -902,6 +926,7 @@ export function registerEnvCommand(program) {
       'dotenv'
     )
     .option('--clip', 'Copy output to clipboard')
+    .option('--comments', 'Write key comments as # lines (dotenv format)')
     .action(async (envName, options) => {
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
@@ -911,7 +936,8 @@ export function registerEnvCommand(program) {
           vaultPath,
           vaultPassword,
           name,
-          options.format
+          options.format,
+          { comments: !!options.comments }
         );
 
         if (!result.success) {

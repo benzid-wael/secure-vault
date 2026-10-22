@@ -576,3 +576,39 @@ describe('key comments', () => {
     ).toThrow("Comment for 'HOST' exceeds maximum length");
   });
 });
+
+describe('comments across envs and imports', () => {
+  it('commentsOf layers a child over the env it extends', () => {
+    const vault = new EnvironmentVault();
+    vault.addEnvironment('base');
+    vault.addVersion(
+      'base',
+      { A: '1', B: '2' },
+      { comments: { A: 'a', B: 'b' } }
+    );
+    vault.addEnvironment('prod');
+    vault.addVersion('prod', { B: 'x', C: '3' }, { comments: { C: 'c' } });
+    vault.setExtends('prod', 'base');
+    expect(vault.commentsOf('prod')).toEqual({ A: 'a', C: 'c' });
+  });
+
+  it('importFromEnvFile takes the file comments only when asked', () => {
+    const vault = new EnvironmentVault();
+    vault.addEnvironment('dev');
+    vault.addVersion(
+      'dev',
+      { A: '1', B: '2' },
+      { comments: { A: 'old', B: 'kept' } }
+    );
+    vault.importFromEnvFile('dev', '# new\nA=1\nB=2\n');
+    expect(vault.getActiveVersion('dev').comments).toEqual({
+      A: 'old',
+      B: 'kept',
+    });
+    vault.importFromEnvFile('dev', '# new\nA=1\nB=2\n', { comments: true });
+    expect(vault.getActiveVersion('dev').comments).toEqual({
+      A: 'new',
+      B: 'kept',
+    });
+  });
+});

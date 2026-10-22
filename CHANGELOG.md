@@ -12,11 +12,41 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Added
 
+- **Key comments in env vaults.** `vault env set KEY value --comment "…"`
+  stores a note about a key (`--comment ""` removes it); `vault env show`
+  prints it under the key. Later writes keep it. An older CLI or app that
+  writes the vault drops comments from the version it writes, so upgrade
+  every machine that writes a vault before you rely on them.
+- **`vault env export --comments`** writes key comments as `#` lines above
+  each key, and **`vault env import --comments`** reads the `#` lines
+  directly above a key back as its comment.
+- **`vault env set --secret`** marks a key sensitive again.
 - **`npm run test:e2e`** — end-to-end checks that build the desktop app and
   drive its real window: first launch, unlocking and upgrading an older vault,
   export / import, manual lock and auto-lock (sleep and screen lock),
   recovery-key unlock, and changing the password from Settings. Each scenario
   runs with its own empty home directory.
+
+### Changed
+
+- **`vault env set` keeps a key's public flag.** Setting a new value without
+  `--public` used to make a public key secret again; it now stays as it was
+  until `--secret`. A new key is still secret by default.
+- **`.env` files are read the way dotenv tools read them** (`import`, `init
+--env`, `run --env-file`): values in quotes may span lines, spaces around
+  `=` are allowed, an unquoted value ends at ` #` (an inline comment), and
+  backtick quotes work. `vault env import` prints a warning with the line
+  number for each line it skips. An unquoted value that contained ` #` now
+  stops there: quote it to keep the rest.
+
+### Fixed
+
+- **A vault no longer disappears for a moment on every save.** Saves wrote a
+  temp file, deleted the vault, then renamed the temp file into place. A
+  command reading the vault in that moment (another `vault env` command,
+  `vault env run`, the desktop app) failed with "vault not found", and a
+  crash at that point left only the `.tmp` and `.bak` files. Saves now
+  replace the file in one step. Env vaults and desktop vaults alike.
 
 ### Security
 

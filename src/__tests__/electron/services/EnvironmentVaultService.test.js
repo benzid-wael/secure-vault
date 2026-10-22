@@ -376,11 +376,12 @@ describe('EnvironmentVaultService', () => {
         expect.objectContaining({ type: 'environment-vault' }),
         { spaces: 2 }
       );
-      expect(fsMock.move).toHaveBeenCalledWith(
+      // One-step replace: the vault never stops existing (New-33).
+      expect(fsMock.rename).toHaveBeenCalledWith(
         `${testVaultPath}.tmp`,
-        testVaultPath,
-        { overwrite: true }
+        testVaultPath
       );
+      expect(fsMock.move).not.toHaveBeenCalled();
     });
 
     it('skips the backup when no vault exists yet', async () => {

@@ -4,6 +4,7 @@ import os from 'os';
 import crypto from 'crypto';
 
 import { CryptographyService } from './CryptographyService.js';
+import { moveWithRetry } from '../utils/moveWithRetry.js';
 
 /** Copies kept per vault name from deleting it; older ones are removed. */
 export const DELETED_COPIES_KEPT = 5;
@@ -104,8 +105,8 @@ export class VaultFileService {
       // Verify temp file can be read
       await fs.readJSON(tempPath);
 
-      // Move temp file to final location (atomic operation)
-      await fs.move(tempPath, vaultPath, { overwrite: true });
+      // Replace the vault in one step: it never stops existing.
+      await moveWithRetry(tempPath, vaultPath);
     } catch (error) {
       await fs.remove(tempPath).catch(() => {});
       throw error;

@@ -18,6 +18,8 @@ const locked = () => ({
  * @property {string} id       The vault's id.
  * @property {string} env
  * @property {string} revision The file revision the renderer was shown.
+ * @property {Record<string, string>} [stamps] A hash per own key at that
+ *   revision (EnvVaultIpc `stampsOf`), for merging later commits.
  */
 
 /**
@@ -88,6 +90,23 @@ export class EnvVaultSession {
     });
     this.touch(id);
     return { success: true, revision: result.revision };
+  }
+
+  /**
+   * The vault's password was changed through the app (Task 28): keep the
+   * new one, and drop the cached key so the next op derives it afresh.
+   */
+  setPassword(id, password) {
+    const entry = this.#vaults.get(id);
+    if (!entry) return;
+    entry.keyMaterial?.key?.fill(0);
+    entry.keyMaterial = null;
+    entry.password = password;
+  }
+
+  /** The path of an unlocked vault, for ops that need it, or null. */
+  pathOf(id) {
+    return this.#vaults.get(id)?.path ?? null;
   }
 
   isUnlocked(id) {

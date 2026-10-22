@@ -613,9 +613,10 @@ export const getSearchFields = (entryType) => {
     'notes',
   ];
 
-  // If the entry type has specific search fields defined, use those
+  // If the entry type has specific search fields defined, use those, plus
+  // the notes every type has.
   if (definition && definition.searchFields) {
-    return definition.searchFields;
+    return [...new Set([...definition.searchFields, 'notes'])];
   }
 
   // Otherwise, return a combination of default fields and any fields from the schema

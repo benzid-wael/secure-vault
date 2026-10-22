@@ -47,3 +47,32 @@ describe('vault env set --comment', () => {
     expect(show()).not.toContain('# Rotate monthly');
   });
 });
+
+describe('vault env set --public/--secret (New-27)', () => {
+  it('keeps a public key public on a later set, until --secret', () => {
+    expect(set('URL', 'https://a', '--public').status).toBe(0);
+    expect(set('URL', 'https://b').status).toBe(0);
+    expect(show()).toContain('URL = https://b');
+    expect(set('URL', 'https://c', '--secret').status).toBe(0);
+    expect(show()).not.toContain('URL = https://c');
+  });
+
+  it('refuses --public with --secret', () => {
+    const r = set('URL', 'x', '--public', '--secret');
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('Use --public or --secret, not both.');
+  });
+});
+
+describe('vault env import/export --comments (New-26)', () => {
+  it('imports comments, warns about skipped lines, exports them back', () => {
+    const file = path.join(workDir, 'in.env');
+    fs.writeFileSync(file, '# Primary DB\nDB_URL="postgres://x"\noops\n');
+    const r = cli(['import', 'dev', file, '--comments', '-v', vaultPath]);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain('in.env:3: Not KEY=value; skipped');
+    const out = cli(['export', 'dev', '--comments', '-v', vaultPath]).stdout;
+    expect(out).toContain('# Primary DB\nDB_URL=postgres://x');
+    expect(cli(['export', 'dev', '-v', vaultPath]).stdout).not.toContain('#');
+  });
+});
