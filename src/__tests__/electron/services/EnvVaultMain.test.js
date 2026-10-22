@@ -1403,11 +1403,11 @@ describe('env vault IPC: env management, history, watcher (Tasks 16, 24, 25)', (
       'log={{env:base/LOG_LEVEL}}'
     );
     let env = 'base';
-    for (const [name, updateReferences] of [
+    for (const [name, updateReferences] of /** @type {[string, any][]} */ ([
       ['c1', undefined],
       ['c2', false],
       ['c3', 'yes'], // only `true` counts
-    ]) {
+    ])) {
       const result = await manage({
         op: 'rename',
         env,

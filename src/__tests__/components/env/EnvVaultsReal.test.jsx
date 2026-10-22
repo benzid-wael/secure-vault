@@ -89,6 +89,7 @@ function wire(handlers) {
     transfer: call('env:transfer'),
     exportEnv: call('env:export'),
     manageEnv: call('env:manage'),
+    references: call('env:references'),
     editText: call('env:edit-text'),
     templateEnv: call('env:template'),
     diff: call('env:diff'),
@@ -359,6 +360,11 @@ describe('env vault UI on the real handlers (StrictMode)', () => {
     fireEvent.change(await screen.findByLabelText('New name'), {
       target: { value: 'prod' },
     });
+    // Enabled once the references are checked; there are none to offer.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    );
+    expect(screen.queryByRole('checkbox')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(
       await screen.findByText('Renamed ci-prod to prod.')
@@ -370,6 +376,59 @@ describe('env vault UI on the real handlers (StrictMode)', () => {
     await settle();
     fireEvent.click(screen.getByLabelText('Reveal MATCH_PASSWORD'));
     expect(await screen.findByText('ci-prod-match')).toBeInTheDocument();
+  });
+
+  const referToProd = () =>
+    EnvironmentVaultService.setEnv(
+      path.join(dir, 'app.env.vault'),
+      PW,
+      'ci-dev',
+      'PROD_ISSUER',
+      '{{env:ci-prod/APPLE_API_ISSUER_ID}}'
+    );
+  const renameProd = async () => {
+    await openEnv('ci-prod');
+    fireEvent.click(screen.getByLabelText('Manage ci-prod'));
+    fireEvent.click(await screen.findByText('Rename…'));
+    fireEvent.change(await screen.findByLabelText('New name'), {
+      target: { value: 'prod' },
+    });
+  };
+
+  it('renames an env and the references to it (New-30)', async () => {
+    await referToProd();
+    await renameProd();
+    const offer = await screen.findByLabelText(
+      'Update 1 reference to ci-prod in ci-dev'
+    );
+    expect(offer).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(
+      await screen.findByText(
+        'Renamed ci-prod to prod. Updated 1 reference in ci-dev.'
+      )
+    ).toBeInTheDocument();
+    expect((await activeVars('ci-dev')).PROD_ISSUER).toBe(
+      '{{env:prod/APPLE_API_ISSUER_ID}}'
+    );
+  });
+
+  it('warns, and leaves references alone, when the offer is declined', async () => {
+    await referToProd();
+    await renameProd();
+    fireEvent.click(
+      await screen.findByLabelText('Update 1 reference to ci-prod in ci-dev')
+    );
+    expect(
+      screen.getByText(/point to an environment that no longer exists/)
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(
+      await screen.findByText('Renamed ci-prod to prod.')
+    ).toBeInTheDocument();
+    expect((await activeVars('ci-dev')).PROD_ISSUER).toBe(
+      '{{env:ci-prod/APPLE_API_ISSUER_ID}}'
+    );
   });
 
   it('deletes an env after a confirm', async () => {

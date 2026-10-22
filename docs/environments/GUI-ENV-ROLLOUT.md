@@ -536,3 +536,19 @@ Known hazards so far, to be completed per task:
   unlocked and the first one locks.
 - **Rollback:** reinstall the previous app. Env vaults then stay open on
   their own calls, as before.
+
+### New-30: rename updates references to the env
+
+- **Runtime change (gated by the Environments UI gate):** renaming an env
+  offers to update `{{env:OLD/KEY}}` references in every env, on by
+  default, in the same write as the rename.
+- **Schema or config change:** none. Each env with a rewritten reference
+  gets a new version ("References to OLD renamed to NEW in the desktop
+  app").
+- **Before it ships:** nothing beyond the gate's own criteria.
+- **Gated by:** the Environments UI gate.
+- **Verify after release:** in a vault where `shop` uses
+  `{{env:base/HOST}}`, rename `base` to `core` with the offer on; `vault
+env show shop` resolves as before.
+- **Rollback:** reinstall the previous app. Vaults it wrote stay valid; the
+  rewritten references are ordinary values.

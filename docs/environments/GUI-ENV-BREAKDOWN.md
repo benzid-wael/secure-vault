@@ -72,7 +72,7 @@ updated as each task finishes, not in a batch at the end.
 | New-27 | Fix: `env set` without `--public` makes a public key secret again  | M1  | P2  | ✅     | —                                      |
 | New-28 | Search password entries by their notes                             | —   | P2  | ✅     | —                                      |
 | New-29 | Recognise a newer vault format: warn, protect writes, show upgrade | M1  | P1  | ✅     | 8, New-25                              |
-| New-30 | Rename an env: update `{{env:NAME/KEY}}` references to it          | M5  | P2  | ⬜     | 24                                     |
+| New-30 | Rename an env: update `{{env:NAME/KEY}}` references to it          | M5  | P2  | ✅     | 24                                     |
 | New-31 | Merge, not STALE, for reveal, copy, transfer and import            | M4  | P2  | ⬜     | 10                                     |
 | New-32 | `env import` keeps the flags of the keys it replaces               | M1  | P2  | ⬜     | 9                                      |
 | New-33 | Fix: a vault briefly vanished on every save                        | —   | P2  | ✅     | —                                      |
@@ -86,6 +86,7 @@ updated as each task finishes, not in a batch at the end.
 | New-41 | Find the unit test that failed once in ten full runs               | —   | P2  | ⬜     | —                                      |
 | New-42 | Decide whether input in the window keeps env vaults unlocked       | —   | P2  | ✅     | 13                                     |
 | New-43 | `npm run lint` lints the docs site's ignored build output          | —   | P3  | ⬜     | —                                      |
+| New-44 | CLI `env rename` leaves `extends` and references on the old name   | —   | P1  | ⬜     | New-30                                 |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -1900,7 +1901,36 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### New-30: Rename an env: update `{{env:NAME/KEY}}` references to it
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
+  `feat/vault-env-gui`; not merged, not released. Behind the env UI gate.
+- **Built:**
+  - Model: `referencesTo(env)` counts `{{env:env/KEY}}` per env in active
+    versions; `renameReferences(old, new)` rewrites them, one new version
+    per env that had any, flags and comments kept. Spaces inside the braces
+    are kept; `self/` and names that merely start the same aren't touched;
+    older versions keep what they said.
+  - IPC: `env:references(id, env)` returns names and counts, no values.
+    `env:manage` rename takes `updateReferences` (only `true` counts) and
+    rewrites in the same write as the rename, returning `updated`.
+  - Rename dialog: once the references are checked (Save waits for it), it
+    offers "Update N references to X in A, B", on by default. Turning it off
+    warns that they'll point to an environment that no longer exists. If the
+    check fails, it says the references won't be updated. The notice adds
+    "Updated N references in A, B."
+- **Validation done:**
+  - Model: after rename plus `renameReferences`, every env resolves to the
+    values it had before; without it, resolving fails. Counts, flags,
+    comments, history, prefix names and spaces covered.
+  - IPC: counts; NOT_FOUND, INVALID, LOCKED; rename with references in one
+    write (resolves, one new version); `undefined`, `false`, `'yes'` leave
+    them alone.
+  - UI on the real handlers: rename with the offer updates the file;
+    declining warns and leaves it; a rename with no references offers
+    nothing. Dialog: Save waits; counts across envs; the check failing.
+  - Coverage: `EnvManageDialog.jsx` 92% lines, `EnvironmentVault.js` 97%,
+    `EnvVaultIpc.js` 98%, `EnvVaultsPanel.jsx` 93%. e2e 8/8.
+- **Found:** the CLI's `vault env rename` updates neither `extends` nor
+  references (New-44).
 - **Found:** building Task 24, 2026-10-22. Rename moves `extends` but not
   template references, which then fail to resolve (the dialog says so).
 - **Goal:** rename offers to rewrite references in every env, in the same
@@ -2175,3 +2205,21 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
   both; the ESLint config doesn't. A clean checkout and CI are unaffected.
 - **Goal:** `npm run lint` checks only source.
 - **Validation:** with the docs built, `npm run lint` reports 0 errors.
+
+### New-44: CLI `env rename` leaves `extends` and references on the old name
+
+- **Status:** ⬜ found 2026-10-22 during New-30.
+- **Found:** `EnvironmentVaultService.renameEnv` only calls
+  `renameEnvironment`. Envs that extended the renamed one keep `extends`
+  pointing at a name that no longer exists, and `{{env:OLD/KEY}}`
+  references stop resolving. The app does both (Task 24, New-30).
+- **Goal:** `vault env rename` gives the same result as the app: children
+  follow, and references are updated (by default, with a flag to skip, or
+  the reverse; to decide).
+- **Implementation guidance:** move the app's rename body (children,
+  `renameReferences`) into the service so the CLI and the app share it.
+  It changes what the CLI writes: CHANGELOG entry.
+- **Validation:** a CLI test: after `rename`, every env resolves and
+  `doctor` is clean.
+- **Cost of leaving it:** a rename from the CLI, the primary tool, can
+  break `run` and exports for every env that built on the renamed one.
