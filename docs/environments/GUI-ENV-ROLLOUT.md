@@ -256,8 +256,13 @@ Known hazards so far, to be completed per task:
   Task 6's `transact` with `tool: 'gui'` in the lock.
 - **Before it ships:**
   1. New-19: the packaged app on each OS starts with the CSP (blocks the
-     next tag, gated or not).
+     next tag, gated or not). _Status:_ passed on macOS; the release
+     workflow now runs `npm run test:packaged` after packaging on each OS
+     and stops the release if it fails. Run the workflow by hand once to
+     see Windows and Linux green before tagging.
   2. "Must not ship early" 1–3 and 6 still hold for flipping the gate.
+  3. Proposed (author to confirm): New-38, Electron fuses, before the gate
+     flips, since the app then holds env vault secrets and saved passwords.
 - **Gated by:** the Environments UI gate (table above). How to try it:
   `npm run dev:electron`, or `SECURE_VAULT_ENV_UI=1 npm run start:prod`
   after `npm run build:all`.

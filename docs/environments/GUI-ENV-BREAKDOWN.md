@@ -61,7 +61,7 @@ updated as each task finishes, not in a batch at the end.
 | New-16 | ESLint flags MUI components used only in JSX as unused             | —   | P2  | ⬜     | —                                      |
 | New-17 | Shared test mock lacks `removeAllListeners` / `onVaultLocked`      | —   | P2  | ⬜     | —                                      |
 | New-18 | Dev-mode Content-Security-Policy                                   | M0  | P2  | ⬜     | 2                                      |
-| New-19 | Verify the CSP and sandbox in packaged builds (asar)               | M0  | P1  | ⬜     | 2 (blocks the next tag)                |
+| New-19 | Verify the CSP and sandbox in packaged builds (asar)               | M0  | P1  | 🟡     | 2 (blocks the next tag)                |
 | New-20 | Fix: reveal/edit fail with "Unknown view" in dev                   | M4  | P0  | ✅     | 15, 20                                 |
 | New-21 | Move or duplicate keys between environments                        | M4  | P0  | ✅     | 9, 17, 20                              |
 | New-22 | Open a folder and find the vault the CLI would use                 | M3  | P1  | ⬜     | 14                                     |
@@ -80,6 +80,8 @@ updated as each task finishes, not in a batch at the end.
 | New-35 | JSON export from the app                                           | M5  | P2  | ⬜     | 27                                     |
 | New-36 | Prune saved passwords of gone vaults; "forget all"                 | M5  | P2  | ⬜     | New-24                                 |
 | New-37 | Authenticate the envelope header (GCM additional data)             | M5  | P2  | ⬜     | New-29                                 |
+| New-38 | Set Electron fuses in packaged builds                              | M0  | P1  | ⬜     | New-19                                 |
+| New-39 | Fix: a failed page load loops instead of showing the error page    | —   | P2  | ⬜     | —                                      |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -224,8 +226,8 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 ### Task 2: Content-Security-Policy for the renderer
 
 - **Status:** 🟡 partial 2026-10-22. Uncommitted on `feat/vault-env-gui`; not merged, not released. Built and verified on the built app
-  (`file://`, as packaged); **not yet checked in a packaged (asar) build**
-  (New-19).
+  (`file://`, as packaged), and in the packaged macOS app (New-19).
+  Windows and Linux packaged builds wait on New-19's CI run.
 - **Built:** a build-only Vite plugin (`renderer-csp` in `vite.config.js`)
   injects the RFC §6.10 policy as the first `<meta>` in `build/index.html`,
   plus `font-src 'self' data:` and `form-action 'none'`.
@@ -1369,7 +1371,11 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### New-19: Verify the CSP and sandbox in packaged builds (asar)
 
-- **Status:** ⬜ not started.
+- **Status:** 🟡 partial 2026-10-22: passed on macOS (arm64, unsigned
+  `electron-builder --mac --dir`). Windows and Linux run in the release
+  workflow's new smoke step; run it with "Run workflow" on the Release
+  workflow (no tag needed) and the item is done when both are green.
+  Uncommitted on `feat/vault-env-gui`.
 - **Found:** Task 2, 2026-10-22.
 - **Goal:** the packaged app on macOS, Windows and Linux starts, renders, and
   logs no CSP violation.
@@ -1377,10 +1383,36 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
   built one.
 - **Dependencies:** 2. **Blocks the next tag**, because the CSP and the
   sandbox ship ungated and affect password vaults too.
-- **Implementation guidance:** `npm run package:<os>`, launch, unlock a
-  password vault, open DevTools-free logs (`--enable-logging`).
-- **Validation:** on each OS, the app unlocks a vault and the log has no
-  "Content Security Policy" line.
+- **Built:**
+  - `e2e/packaged.mjs` (`npm run test:packaged`) runs the unpacked app
+    electron-builder leaves in `dist/` (or a path given), with an empty home
+    and its own Chromium profile, and drives it over the DevTools protocol.
+    It checks:
+    - the page loads from inside `app.asar`;
+    - the page carries the CSP and has no Node.js;
+    - the renderer runs sandboxed, read from the real process's flags
+      (`--enable-sandbox`, never `--no-sandbox`);
+    - a vault is created, listed and unlocked through the UI;
+    - no CSP violation, from page events, the console or the app's log.
+  - The page helpers move from `e2e/driver.cjs` to `e2e/pageHelpers.cjs`,
+    shared by both runners.
+  - `release.yml` runs the check after packaging on each OS (Linux under
+    `xvfb-run`, with Ubuntu 24.04's user-namespace restriction lifted so
+    Chromium's sandbox can start). A failure stops the release.
+- **Validation:**
+  - macOS: 10/10, with and without a global `WebSocket` (Node 20 uses the
+    `ws` fallback).
+  - The check can fail: a copy that makes the page run an inline script
+    reports the violation in the page and in the log (8/10). A plain
+    Electron window with `sandbox: false` gets `--no-sandbox`, with
+    `sandbox: true` `--enable-sandbox`.
+  - Still to do: Windows and Linux green in the release workflow.
+- **Found while doing it:**
+  - New-38: the packaged app keeps Electron's default fuses.
+  - New-39: a page load aborted at startup loops on `ERR_FAILED`.
+  - Chromium keeps its profile in the real `~/Library/Application Support`
+    on macOS even with `HOME` changed; the check passes `--user-data-dir`.
+    Whether `npm run test:e2e` writes there too is not checked.
 - **Cost of leaving it:** a blank window for every user if `file://` inside
   asar treats `'self'` differently.
 
@@ -1759,3 +1791,50 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 - **Cost of leaving it:** anyone able to edit the file can mark it newer and
   make tools refuse writes; they could equally corrupt it, so the exposure
   is no worse than today.
+
+### New-38: Set Electron fuses in packaged builds
+
+- **Status:** ⬜ found 2026-10-22 while doing New-19.
+- **Goal:** the packaged app can't be turned into a debuggable or plain
+  Node.js process by whoever launches it.
+- **Found:** `npx @electron/fuses read` on the packaged macOS app: every
+  fuse is at Electron's default, so `RunAsNode`,
+  `EnableNodeOptionsEnvironmentVariable` and `EnableNodeCliInspectArguments`
+  are on and `OnlyLoadAppFromAsar` and asar integrity are off. A process
+  running as the user can start the app with `--inspect` and get a
+  debugger in main, which holds unlocked vaults and, since New-24, the
+  app's keychain access.
+- **Constraints:**
+  - `GrantFileProtocolExtraPrivileges` must stay on while the renderer loads
+    from `file://`.
+  - New-19's check drives the app with `--remote-debugging-port`, a Chromium
+    switch no fuse controls. Refusing it in packaged builds (main quits when
+    it sees the switch) would need another way to run that check. Decide
+    which.
+- **Dependencies:** New-19 (its check proves the fused app still starts).
+- **Implementation guidance:** electron-builder's `electronFuses` option (or
+  an `afterPack` hook with `@electron/fuses`). Asar integrity needs
+  electron-builder to write the header hash; on macOS it ties in with code
+  signing.
+- **Validation:** `@electron/fuses read` shows the three Node fuses off and
+  `OnlyLoadAppFromAsar` on; `ELECTRON_RUN_AS_NODE=1 <app> -e 1` and
+  `<app> --inspect` do nothing; New-19's check still passes.
+- **Cost of leaving it:** a same-user process can read unlocked vaults and
+  saved env vault passwords through the app. Proposed: before the env UI
+  gate flips (author to confirm).
+
+### New-39: Fix: a failed page load loops instead of showing the error page
+
+- **Status:** ⬜ found 2026-10-22 while doing New-19.
+- **Found:** reloading the page while the packaged app's first load was
+  still running aborted it (`ERR_ABORTED`); the app then logged
+  "Failed to load URL … ERR_FAILED" without end and never showed a page.
+  Not yet traced: `WindowManager` answers `did-fail-load` with an error page
+  loaded from a `data:` URL, and that load seems to fail in turn.
+- **Goal:** a failed load shows the error page once; an aborted load
+  (`-3`, a newer navigation replaced it) is not treated as a failure.
+- **Dependencies:** none.
+- **Validation:** a test that fails the first load shows the error page and
+  stops; a reload during startup ends on the app.
+- **Cost of leaving it:** rare (a reload during startup, or a damaged
+  install), but then the app spins on an empty window.

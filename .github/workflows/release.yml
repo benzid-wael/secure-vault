@@ -55,6 +55,20 @@ jobs:
           # SmartScreen per the README.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
+      - name: Smoke-test the packaged app (CSP, sandbox, unlock)
+        # The installed app loads its renderer from inside app.asar, which
+        # `npm run test:e2e` never does (GUI-ENV-BREAKDOWN New-19).
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            # Ubuntu 24.04 blocks the unprivileged user namespaces Chromium's
+            # sandbox needs; an installed desktop allows them via AppArmor.
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            xvfb-run -a npm run test:packaged
+          else
+            npm run test:packaged
+          fi
+
       - name: Collect installers
         shell: bash
         run: |
