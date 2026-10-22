@@ -58,7 +58,8 @@ Known so far. Each entry says what breaks.
    Otherwise users meet `BUSY` with no documentation and no way to diagnose a
    stale lock.
 4. **Task 3 (async PBKDF2) not in a tag before New-5 passes.** Binary users
-   could be unable to unlock vaults.
+   could be unable to unlock vaults. _Status:_ New-5 passed on macOS arm64 (2026-10-22);
+   the release workflow now checks the Linux x64 binary before publishing.
 5. **Task 13 (password-vault idle lock) only with a release-note entry.** It
    changes behavior for every existing user, including people who never touch
    env vaults.

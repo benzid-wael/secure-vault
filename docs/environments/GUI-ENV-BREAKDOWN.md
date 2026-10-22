@@ -47,7 +47,7 @@ updated as each task finishes, not in a batch at the end.
 | New-2  | App-wide settings store                                            | M3  | P1  | ⬜     | 0                                      |
 | New-3  | Decide which secrets go through `ClipboardService`                 | —   | P1  | ⬜     | —                                      |
 | New-4  | Feature gate for the Environments UI                               | M4  | P0  | ✅     | 0                                      |
-| New-5  | Verify async PBKDF2 in the Bun-compiled CLI binary                 | M1  | P1  | 🔶     | 3                                      |
+| New-5  | Verify async PBKDF2 in the Bun-compiled CLI binary                 | M1  | P1  | ✅     | 3                                      |
 | New-6  | Decide whether project coverage should include `src/electron/**`   | —   | P2  | ⬜     | New-1                                  |
 | New-7  | Commit a way to measure coverage of excluded files                 | —   | P1  | ⬜     | New-1                                  |
 | New-8  | `npm run lint` fails locally on gitignored build output            | —   | P2  | ⬜     | —                                      |
@@ -1054,9 +1054,8 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### New-5: Verify async PBKDF2 in the Bun-compiled CLI binary
 
-- **Status:** 🔶 ready to run since Task 3 (2026-10-21). Needs Bun installed
-  locally, or a CI run of `npm run package:cli`. Blocks the release that
-  carries Task 3.
+- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted
+  on `feat/vault-env-gui`; not merged, not released.
 - **Found:** Task 0, 2026-10-21.
 - **Goal:** The standalone `vault` binaries (`scripts/build-cli.js`, Bun
   `--compile`) derive keys with the async path and produce the same keys as
@@ -1069,6 +1068,21 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
   created by the Node CLI, and the reverse.
 - **Cost of leaving it:** Binary users could fail to unlock vaults after the
   release, and no test would catch it.
+- **Built:**
+  - `scripts/verify-cli-binary.mjs <binary>` runs the Node CLI and a compiled
+    binary against the same vaults:
+    - each creates a vault the other reads, and each writes to a vault the
+      other then reads back;
+    - a vault re-keyed at the legacy count with no `kdf` header is read and
+      written by the binary;
+    - a wrong password fails in the binary.
+  - `release.yml` runs it on the `vault-linux-x64` binary right after
+    `npm run package:cli`; a mismatch stops the release.
+- **Validation:** 6/6 with `vault-macos-arm64` compiled by Bun 1.4.4
+  (`npx bun@1 build bin/cli.js --compile --target=bun-darwin-arm64`).
+  `vault-linux-x64` is checked on every release run. `vault-macos-x64`,
+  `vault-linux-arm64` and `vault-windows-x64.exe` aren't run anywhere; they
+  share Bun's crypto code with the two that are.
 
 ### New-6: Decide whether project coverage should include `src/electron/**`
 

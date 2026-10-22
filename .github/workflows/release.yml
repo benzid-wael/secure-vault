@@ -113,6 +113,11 @@ jobs:
       - name: Build standalone binaries
         run: npm run package:cli
 
+      - name: Check the Linux binary against the Node CLI
+        # Env vaults derive keys with async PBKDF2, which the binaries run on
+        # Bun's node:crypto: each must open the other's vaults (New-5).
+        run: node scripts/verify-cli-binary.mjs dist-cli/vault-linux-x64
+
       - uses: actions/upload-artifact@v4
         with:
           name: cli-binaries
