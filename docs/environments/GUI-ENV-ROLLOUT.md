@@ -197,3 +197,46 @@ Known hazards so far, to be completed per task:
   next to any vault after a failed write.
 - **Rollback:** fully available. Reverting restores leaving `.tmp` behind on
   failure.
+
+### Task 6: every env write goes through `transact` (CLI behavior change)
+
+- **Runtime change (CLI, today's commands):** `set`, `rm`, `delete`,
+  `extends`, `describe`, `rename`, `copy`, `import`, `squash`,
+  `rollback` and `change-password` now each take `<vault>.lock`, read
+  once, write atomically and release. When another writer holds the lock, a
+  command **waits up to 3 s, then fails** with "Vault is busy (held by … pid …).
+  Try again, or remove <path>.lock …". Before, the last writer silently won.
+  `init` and read-only commands don't lock.
+- **Error text:** unchanged for every existing failure, with one exception:
+  a vault with unsupported KDF parameters now says "Unsupported key
+  derivation parameters" instead of "wrong password or corrupted file", for
+  writes only.
+- **Schema:** writes now create and remove `<vault>.lock` (Task 4's format).
+  Vault files are unchanged and stay readable by older versions.
+- **Before it ships (in order):**
+  1. Task 8: docs, CHANGELOG and `doctor` in the **same** release ("must not
+     ship early" item 3).
+  2. New-10's Linux CI run is green (item 7).
+  3. New-12 shipped with it (it is), and ideally New-13 has run Windows tests
+     (item 8).
+  4. New-5 passed, because Task 3 rides in the same release.
+- **Gated by:** nothing. It's a correctness change to existing commands;
+  there's no flag.
+- **Must not ship early:** see above. With the MVP-first rule, Task 6 can be
+  **merged** before Task 8 but must not be **released** (tagged) before it.
+- **Per environment:**
+  - npm CLI and binaries: the change applies.
+  - Desktop app: no env UI yet, so no change.
+  - Mixed versions: an older CLI ignores the lock and can still overwrite
+    (RFC §8). Release notes should tell users to upgrade every machine.
+- **Verify after release:**
+  1. Run two `vault env set` commands with different keys at the same time
+     on one vault; `vault env show <env>` lists both.
+  2. While one is running, `ls <vault>.lock` shows the lock, and it's gone
+     afterwards.
+  3. `kill -9` a writer mid-command; the next command takes over the stale
+     lock without waiting.
+- **Rollback:** reinstall the previous version. Older versions ignore
+  `.lock` files; a leftover one is harmless to them and taken over by newer
+  ones once its pid is dead. No vault data changes. The `.deleted.<ts>`
+  snapshots are unchanged in format.

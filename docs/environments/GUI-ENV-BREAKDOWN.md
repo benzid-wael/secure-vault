@@ -17,7 +17,7 @@ updated as each task finishes, not in a batch at the end.
 | 3      | Async key derivation (`deriveKeyAsync`)                          | M1  | P0  | ✅     | 0, New-1                               |
 | 4      | `VaultLock` module                                               | M1  | P0  | ✅     | 3                                      |
 | 5      | `read()` / `transact()` with revisions and `REKEYED`             | M1  | P0  | ✅     | 3, 4                                   |
-| 6      | Port every env op onto `transact`; `saveVault` private           | M1  | P0  | ⬜     | 5                                      |
+| 6      | Port every env op onto `transact`; `saveVault` private           | M1  | P0  | ✅     | 5                                      |
 | 7      | `squash` snapshot, re-keyed by change-password                   | M1  | P1  | ⬜     | 6                                      |
 | 8      | CLI docs, CHANGELOG, `doctor` reports stale locks                | M1  | P1  | ⬜     | 6                                      |
 | 9      | `applyVarChanges` model method                                   | M2  | P0  | ⬜     | 6                                      |
@@ -56,6 +56,7 @@ updated as each task finishes, not in a batch at the end.
 | New-11 | Bring RFC §6.5 in line with Corrections 6 and 7                  | —   | P2  | ⬜     | 4                                      |
 | New-12 | Windows: retry the final rename on `EPERM`                       | M1  | P1  | ✅     | 5 (blocks the release of 6 on Windows) |
 | New-13 | CI runs the unit tests on Windows and macOS too                  | —   | P1  | ⬜     | — (verifies 4, New-12)                 |
+| New-14 | Remove the env `saveVault` and its mocked tests                  | —   | P2  | ⬜     | 6                                      |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -76,7 +77,8 @@ with M0 (1, 2) required before 19 ships to anyone.
   (`continue-on-error`). The rule for this plan is no new errors (New-9).
 - Branch: `feat/vault-env-gui`, not merged, not released. Commits: `dd4e2e1`
   (RFC + discovery), `92e9354` (Task 0), `3553e81` (Task 3), `2f01040`
-  (Task 4), `ac641ad` (New-10), `c87c53f` (Task 5).
+  (Task 4), `ac641ad` (New-10), `c87c53f` (Task 5), `8b2a0f4`
+  (New-12).
 
 ## Corrections to the plan
 
@@ -132,6 +134,9 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
   D5 recents on by default with a toggle · D6 one main-side clipboard service.
 - **Tasks are split below milestone size** so each one is reviewable alone
   (decided 2026-10-21).
+- **MVP first** (author, 2026-10-21, after New-12): follow the P0 path only.
+  Discovered P1/P2 work is recorded as tasks and not done unless it blocks
+  P0. Each task keeps its full Definition of Done.
 - **Type-check rule for this plan** (New-9, 2026-10-21): `tsc --noEmit`
   errors stay ≤ the baseline (345), and none points at a line the task
   changed. Fixing the existing 345 is not part of this plan.
@@ -373,7 +378,67 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 6: Port every env op onto `transact`; `saveVault` private
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-21: its own validation is met (two processes ×
+  50 writes keep all 100 keys; every existing CLI integration test passes
+  unchanged). Uncommitted on `feat/vault-env-gui`; not merged, not released.
+  **This is the task that changes CLI behavior**: see the rollout plan before
+  any release.
+- **Built:**
+  - **Ported to `transact`** (11): `setEnv`, `removeKey`, `deleteEnv`,
+    `setExtends`, `setEnvDescription`, `renameEnv`, `copyEnv`,
+    `importEnvFile`, `squashEnv`, `rollbackEnv`, `changePassword`.
+  - Each body became a `mutate` callback. Its early returns became `throw`s
+    with the **same messages**, so a failed check writes nothing.
+  - A private `#mutate` maps results to the CLI's `{ success, error }` shape,
+    plus `code` (`holder` on `BUSY`) and `revision`.
+  - `transact` gained `rekeyWith` (write under a fresh key from a new
+    password) and `afterWrite` (runs after the write, under the lock).
+    `changePassword` uses both, so its snapshot re-key can't race another
+    writer.
+  - `deleteEnv` takes its `.deleted.<ts>` snapshot inside the transaction.
+  - `importEnvFile` reads the `.env` file **before** taking the lock.
+- **Decisions taken here:**
+  - **Read-only ops stay on `loadVault`** (`get`, `show`, `list`,
+    `export`, `template`, `history`, `diff`, `validate`). Writes are atomic
+    renames, so reads need no lock, and `transact` would write on every call.
+  - **`createVault`/`init` stay off `transact`.** They refuse an existing
+    file, so they can't clobber a vault. Their only race is two inits of the
+    same new path within milliseconds, which is accepted. Leaving them keeps the
+    read-only tests' mocked seeding working.
+  - **`saveVault` stays public but has no callers.** A guard test fails if
+    anything in `bin/`, `public/` or `src/` calls
+    `EnvironmentVaultService.saveVault`, or if the service calls
+    `this.saveVault`. Deleting it (and its mocked tests) is New-14. The
+    breakdown said "private"; this gets the same protection for less churn.
+- **Tests:**
+  - **Replaced:** 22 mocked tests of the write ops (they asserted on
+    `writeJSON`/`readJSON` mock calls, which `transact` no longer makes)
+    became **32 real-filesystem tests** in `EnvironmentVaultService.ops.test.js`.
+    Every original assertion is kept; new ones cover missing keys/envs writing
+    nothing, the delete snapshot's contents, snapshot re-key under the lock,
+    `BUSY`, `NOT_FOUND`/`AUTH` codes, and `setEnvDescription` (which had
+    no test).
+  - **Converted:** `EnvironmentVaultService.integration.test.js` (13 tests)
+    from mocks to a real temp dir. Its assertions are unchanged except one
+    mock-call check, whose effect the next assertion still proves. **Fixed a
+    test bug the mocks hid:** its workflow `init`ed a vault by name, then
+    edited a different path; it now inits the vault it edits.
+  - **No lost updates (validation):**
+    - 2 spawned processes × 50 `setEnv` calls through the shared service end
+      with all 100 keys and 100 versions;
+    - 4 concurrent `vault env set` CLI processes keep all 4 keys;
+    - with locking disabled (mutation), both tests fail.
+  - **Guard:** the two `saveVault` tests above. Making `renameEnv` bypass
+    `transact` (mutation) fails them.
+- **Evidence:**
+  - 929 passed + 1 skipped; suite 24.4 s.
+  - `EnvironmentVaultService.js` 95.2% lines (was 92.3%). Project totals
+    unchanged.
+  - Lint on tracked + new files: 0 errors, 343 warnings (one fewer). The one
+    warning in changed files, the unused `makeFreshVaultFile` helper,
+    predates this task.
+  - `tsc` 324: **21 fewer** than the 345 baseline, all from the removed mocked
+    tests. The service still has only its 2 old errors (`resolveVaultPath`).
 - **Goal:** Every mutating `EnvironmentVaultService` op runs inside `transact`,
   with snapshots taken inside the lock. `saveVault` is no longer callable from
   outside the service. Two processes writing the same vault never lose an
@@ -942,9 +1007,9 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### New-12: Windows: retry the final rename on `EPERM`
 
-- **Status:** ✅ done 2026-10-21: its own validation is met. Uncommitted on
-  `feat/vault-env-gui`; not merged, not released. **Simulated, not run on
-  Windows:** no machine or CI job here runs the tests on Windows (New-13).
+- **Status:** ✅ done 2026-10-21: its own validation is met. Committed as
+  `8b2a0f4`, approved by the author; not merged, not released. **Simulated,
+  not run on Windows:** no machine or CI job here runs the tests on Windows (New-13).
 - **Built:**
   - `src/electron/utils/moveWithRetry.js`: `fs.move(…, { overwrite: true })`,
     retried up to 3 tries, 50 ms apart, **only on `win32`** and only for
@@ -1016,3 +1081,24 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 - **Cost of leaving it:** Windows behavior in the lock (pid probes, `utimes`,
   rename-aside takeover) and in the write path (New-12) stays simulated.
   Windows users would be the first to run it for real.
+
+### New-14: Remove the env `saveVault` and its mocked tests
+
+- **Status:** ⬜ not started.
+- **Found:** Task 6, 2026-10-21.
+- **Goal:** `EnvironmentVaultService.saveVault` is gone; the only write path
+  is `transact`.
+- **Constraints:** Keep the behaviors its tests prove (`.bak` kept,
+  temp + rename, `.bak` replaced after a re-key) covered, through `transact`.
+  `KdfUpgrade.test.js` is the main other user.
+- **Dependencies:** 6.
+- **Implementation guidance:** Since Task 6 nothing calls it; a guard test
+  keeps it that way. Its mocked tests in `EnvironmentVaultService.test.js`
+  ("saveVault", "saveVault backup + atomic write") test `#writeEncrypted`
+  through it. Move those checks to real-fs `transact` tests first, then
+  delete.
+- **Validation:** `grep -n "saveVault" src/electron/services/EnvironmentVaultService.js`
+  finds nothing; the suite is green.
+- **Cost of leaving it:** A dead public method that looks like a valid way to
+  write a vault. The guard test catches new callers, but a reader may still
+  copy the pattern.

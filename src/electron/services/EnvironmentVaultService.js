@@ -42,6 +42,7 @@ function resolvePath(...segments) {
  * @property {string} [revision] - the new one; on STALE, the current one
  * @property {{key: Buffer, header: Object}} [keyMaterial]
  * @property {*} [result] - what `mutate` returned
+ * @property {*} [after] - what `afterWrite` returned
  * @property {Object} [holder] - on BUSY, the lock's current holder
  */
 
@@ -396,7 +397,13 @@ export class EnvironmentVaultService {
    * @param {boolean} [options.create] Allow a missing file: `mutate` gets an
    *   empty vault, and `auth` must carry a password.
    * @param {number} [options.lockTimeoutMs]
-   * @param {'cli'|'gui'} [options.tool] Recorded in the lock, for messages.   * @returns {Promise<TransactResult>} On success, `keyMaterial` is what the
+   * @param {'cli'|'gui'} [options.tool] Recorded in the lock, for messages.
+   * @param {string} [options.rekeyWith] Write under a fresh key derived from
+   *   this password instead (a password change).
+   * @param {() => Promise<any>} [options.afterWrite] Runs after a successful
+   *   write, still under the lock (re-keying snapshots must not race another
+   *   writer). Its return value comes back as `after`. It must not throw: the
+   *   write is already committed.   * @returns {Promise<TransactResult>} On success, `keyMaterial` is what the
    *   file now uses: a legacy vault written with a
    *   password is re-salted, and callers caching keys must keep the new one.
    */
@@ -409,6 +416,8 @@ export class EnvironmentVaultService {
       create = false,
       lockTimeoutMs = 3000,
       tool = 'cli',
+      rekeyWith = null,
+      afterWrite = null,
     } = {}
   ) {
     const { password, keyMaterial: givenKey } = normalizeAuth(auth);
@@ -472,18 +481,20 @@ export class EnvironmentVaultService {
       let key;
       let header;
       let rekeyed = false;
+      const writePassword = rekeyWith ?? password;
       if (
         keyMaterial &&
+        !rekeyWith &&
         !(password && CryptographyService.needsKdfUpgrade(keyMaterial.header))
       ) {
         ({ key, header } = keyMaterial);
       } else {
-        if (typeof password !== 'string') {
+        if (typeof writePassword !== 'string') {
           return fail('AUTH', 'A password is required to create a vault');
         }
         const salt = CryptographyService.generateSalt();
         key = await CryptographyService.deriveKeyAsync(
-          password,
+          writePassword,
           salt,
           CryptographyService.ITERATIONS
         );
@@ -508,11 +519,13 @@ export class EnvironmentVaultService {
       );
       // Still under the lock: nobody else can have written since.
       const written = await fs.readFile(vaultPath);
+      const after = afterWrite ? await afterWrite() : undefined;
       return {
         success: true,
         revision: this.revisionOf(written),
         keyMaterial: { key, header },
         result,
+        after,
       };
     } catch (error) {
       return fail('ERROR', error.message);
@@ -578,21 +591,16 @@ export class EnvironmentVaultService {
       return { success: false, error: passwordErrors[0] };
     }
 
-    const loadResult = await this.loadVault(vaultPath, currentPassword);
-    if (!loadResult.success) {
-      return loadResult;
-    }
-
-    // No keyMaterial: a new password needs a fresh salt and key.
-    const saved = await this.saveVault(vaultPath, newPassword, loadResult.data);
-    if (!saved.success) return saved;
-
-    const snapshots = await this.#rekeySnapshots(
-      vaultPath,
-      currentPassword,
-      newPassword
-    );
-    return { success: true, ...snapshots };
+    // A new password needs a fresh salt and key; the snapshots are re-keyed
+    // after the vault itself is safely written, under the same lock.
+    const result = await this.#mutate(vaultPath, currentPassword, () => {}, {
+      rekeyWith: newPassword,
+      afterWrite: () =>
+        this.#rekeySnapshots(vaultPath, currentPassword, newPassword),
+    });
+    if (!result.success) return result;
+    const { after, ...rest } = result;
+    return { ...rest, ...after };
   }
 
   /**
@@ -694,12 +702,7 @@ export class EnvironmentVaultService {
     value,
     { isPublic = false, isRequired = false, message = null } = {}
   ) {
-    const loadResult = await this.loadVault(vaultPath, password);
-    if (!loadResult.success) return loadResult;
-
-    try {
-      const vault = loadResult.data;
-
+    return this.#mutate(vaultPath, password, (vault) => {
       if (!vault.listEnvironmentNames().includes(envName)) {
         vault.addEnvironment(envName); // throws on a reserved name
       }
@@ -730,11 +733,7 @@ export class EnvironmentVaultService {
         required,
         message,
       });
-
-      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+    });
   }
 
   static async getEnv(vaultPath, password, envName, key) {
@@ -819,25 +818,15 @@ export class EnvironmentVaultService {
   }
 
   static async removeKey(vaultPath, password, envName, key) {
-    const loadResult = await this.loadVault(vaultPath, password);
-    if (!loadResult.success) return loadResult;
-
-    try {
-      const vault = loadResult.data;
+    return this.#mutate(vaultPath, password, (vault) => {
       const activeVersion = vault.getActiveVersion(envName);
 
       if (!activeVersion) {
-        return {
-          success: false,
-          error: `Environment '${envName}' has no versions`,
-        };
+        throw new Error(`Environment '${envName}' has no versions`);
       }
 
       if (!(key in activeVersion.vars)) {
-        return {
-          success: false,
-          error: `Key '${key}' not found in environment '${envName}'`,
-        };
+        throw new Error(`Key '${key}' not found in environment '${envName}'`);
       }
 
       const newVars = { ...activeVersion.vars };
@@ -851,87 +840,46 @@ export class EnvironmentVaultService {
         required,
         message: `Remove ${key}`,
       });
-
-      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+    });
   }
 
   static async deleteEnv(vaultPath, password, envName) {
-    const loadResult = await this.loadVault(vaultPath, password);
-    if (!loadResult.success) return loadResult;
-
-    try {
-      const vault = loadResult.data;
+    return this.#mutate(vaultPath, password, async (vault) => {
       vault.removeEnvironment(envName); // throws if the environment is missing
 
       // Deleting an environment discards its entire version history, so keep a
       // timestamped snapshot of the pre-delete vault alongside the rolling .bak.
-      if (await fs.pathExists(vaultPath)) {
-        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-        await fs.copy(vaultPath, `${vaultPath}.deleted.${stamp}`, {
-          overwrite: true,
-        });
-      }
-
-      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+      // Under the lock, the file on disk is the one this vault was read from.
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      await fs.copy(vaultPath, `${vaultPath}.deleted.${stamp}`, {
+        overwrite: true,
+      });
+    });
   }
 
   static async setExtends(vaultPath, password, envName, parent) {
-    const loadResult = await this.loadVault(vaultPath, password);
-    if (!loadResult.success) return loadResult;
-
-    try {
-      const vault = loadResult.data;
+    return this.#mutate(vaultPath, password, (vault) => {
       vault.setExtends(envName, parent);
-      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+    });
   }
 
   static async setEnvDescription(vaultPath, password, envName, description) {
-    const loadResult = await this.loadVault(vaultPath, password);
-    if (!loadResult.success) return loadResult;
-
-    try {
-      const vault = loadResult.data;
+    return this.#mutate(vaultPath, password, (vault) => {
       if (!vault.environments[envName]) {
-        return {
-          success: false,
-          error: `Environment '${envName}' not found`,
-        };
+        throw new Error(`Environment '${envName}' not found`);
       }
       vault.environments[envName].description = description || '';
-      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+    });
   }
 
   static async renameEnv(vaultPath, password, oldName, newName) {
-    const loadResult = await this.loadVault(vaultPath, password);
-    if (!loadResult.success) return loadResult;
-
-    try {
-      const vault = loadResult.data;
+    return this.#mutate(vaultPath, password, (vault) => {
       vault.renameEnvironment(oldName, newName);
-      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+    });
   }
 
   static async copyEnv(vaultPath, password, sourceName, destName) {
-    const loadResult = await this.loadVault(vaultPath, password);
-    if (!loadResult.success) return loadResult;
-
-    try {
-      const vault = loadResult.data;
+    return this.#mutate(vaultPath, password, (vault) => {
       // Reading the source first validates it exists before we mutate anything.
       const activeVersion = vault.getActiveVersion(sourceName);
       vault.addEnvironment(destName);
@@ -947,11 +895,7 @@ export class EnvironmentVaultService {
           }
         );
       }
-
-      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+    });
   }
 
   static async exportEnv(vaultPath, password, envName, format = 'dotenv') {
@@ -1012,46 +956,44 @@ export class EnvironmentVaultService {
   }
 
   static async importEnvFile(vaultPath, password, envName, filePath) {
+    let content;
     try {
-      const content = await fs.readFile(filePath, 'utf-8');
-      const loadResult = await this.loadVault(vaultPath, password);
-      if (!loadResult.success) return loadResult;
-
-      const vault = loadResult.data;
+      // Read the .env before taking the lock: it's not part of the vault.
+      content = await fs.readFile(filePath, 'utf-8');
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+    return this.#mutate(vaultPath, password, (vault) => {
       vault.importFromEnvFile(envName, content, {
         message: `Imported from ${path.basename(filePath)}`,
       });
-
-      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+    });
   }
 
   static async squashEnv(vaultPath, password, envName, keep = 1) {
-    const loadResult = await this.loadVault(vaultPath, password);
-    if (!loadResult.success) return loadResult;
-
-    try {
-      const vault = loadResult.data;
+    return this.#mutate(vaultPath, password, (vault) => {
       vault.squash(envName, { keep: Math.max(1, keep) });
-      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+    });
   }
 
   static async rollbackEnv(vaultPath, password, envName, versionN) {
-    const loadResult = await this.loadVault(vaultPath, password);
-    if (!loadResult.success) return loadResult;
-
-    try {
-      const vault = loadResult.data;
+    return this.#mutate(vaultPath, password, (vault) => {
       vault.rollback(envName, versionN);
-      return this.saveVault(vaultPath, password, vault, loadResult.keyMaterial);
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+    });
+  }
+
+  /**
+   * Run one write through `transact`, in the `{ success, error }` shape the
+   * CLI reads, plus `code` (and `holder` on BUSY) and the new `revision`.
+   */
+  static async #mutate(vaultPath, auth, mutate, options = {}) {
+    const result = await this.transact(vaultPath, auth, mutate, options);
+    if (!result.success) return result;
+    return {
+      success: true,
+      revision: result.revision,
+      ...(result.after !== undefined && { after: result.after }),
+    };
   }
 
   static async getHistory(vaultPath, password, envName) {
