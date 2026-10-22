@@ -5,6 +5,8 @@ import {
   dialog,
   powerMonitor,
   clipboard,
+  safeStorage,
+  systemPreferences,
 } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -52,6 +54,7 @@ import { EnvVaultSession } from '../src/electron/services/EnvVaultSession.js';
 import { ClipboardService } from '../src/electron/services/ClipboardService.js';
 import { createEnvVaultHandlers } from '../src/electron/services/EnvVaultIpc.js';
 import { EnvVaultWatcher } from '../src/electron/services/EnvVaultWatcher.js';
+import { EnvVaultKeychain } from '../src/electron/services/EnvVaultKeychain.js';
 
 class ElectronApp {
   constructor() {
@@ -261,6 +264,26 @@ class ElectronApp {
         dialog,
         clipboard: new ClipboardService({ clipboard }),
         watcher: this.envWatcher,
+        // Opt-in per vault (New-24). The file sits in userData: safeStorage's
+        // key belongs to this app build, so other builds couldn't read it.
+        keychain: new EnvVaultKeychain({
+          file: path.join(app.getPath('userData'), 'env-vault-passwords.json'),
+          safeStorage,
+          confirmPresence: async (reason) => {
+            if (
+              process.platform !== 'darwin' ||
+              !systemPreferences.canPromptTouchID()
+            ) {
+              return true;
+            }
+            try {
+              await systemPreferences.promptTouchID(reason);
+              return true;
+            } catch {
+              return false;
+            }
+          },
+        }),
       });
       for (const [channel, fn] of Object.entries(envHandlers)) {
         handle(channel, fn);

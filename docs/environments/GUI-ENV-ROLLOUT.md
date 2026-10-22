@@ -363,3 +363,25 @@ Known hazards so far, to be completed per task:
 - **Rollback:** reinstall the previous version. Squash snapshots stay on
   disk; the previous version neither creates nor re-keys them, so a later
   password change there leaves them on the old password.
+
+### Saved password per vault (New-24)
+
+- **Runtime change (desktop, gated):** an opt-in "Remember on this computer"
+  when unlocking an env vault. A kept password unlocks the vault from the
+  list after Touch ID where available.
+- **Schema or config change:** a new file,
+  `<userData>/env-vault-passwords.json` (0600): `safeStorage` ciphertexts by
+  vault path. Vault files are unchanged.
+- **Before it ships:** release notes say that anyone signed in as the user
+  can open a remembered vault in the app (after Touch ID where the Mac has
+  it), and how to forget it. Code signing matters: an unsigned build's
+  keychain item is tied to that build, so after an update a kept password
+  may not decrypt. It is then forgotten and the user types it once.
+- **Gated by:** the Environments UI gate.
+- **Per environment:** macOS Keychain, Windows DPAPI, Linux Secret Service.
+  Linux without a keyring never offers the option.
+- **Verify after release:** remember a vault, quit, relaunch, click it: it
+  opens after Touch ID. Change its password with the CLI, click it: the
+  app says the saved password no longer works and asks for it.
+- **Rollback:** reinstall the previous version. It ignores the passwords
+  file; delete it to remove the kept passwords.

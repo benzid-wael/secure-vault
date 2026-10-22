@@ -66,7 +66,7 @@ updated as each task finishes, not in a batch at the end.
 | New-21 | Move or duplicate keys between environments                        | M4  | P0  | ✅     | 9, 17, 20                              |
 | New-22 | Open a folder and find the vault the CLI would use                 | M3  | P1  | ⬜     | 14                                     |
 | New-23 | Unlock error says which file, without "corrupted" first            | M4  | P2  | ✅     | 19                                     |
-| New-24 | Unlock an env vault with the password a profile injects            | M4  | P2  | 🟡     | 15                                     |
+| New-24 | Unlock an env vault with the password a profile injects            | M4  | P2  | ✅     | 15                                     |
 | New-25 | Optional comment per key (env vaults) and notes on entry cards     | M4  | P1  | ✅     | 9, 20                                  |
 | New-26 | Export and import key comments as `#` lines in a .env              | M4  | P2  | ✅     | 27, New-25                             |
 | New-27 | Fix: `env set` without `--public` makes a public key secret again  | M1  | P2  | ✅     | —                                      |
@@ -78,6 +78,7 @@ updated as each task finishes, not in a batch at the end.
 | New-33 | Fix: a vault briefly vanished on every save                        | —   | P2  | ✅     | —                                      |
 | New-34 | Drop a pending import as soon as the vault locks                   | M5  | P2  | ⬜     | 27                                     |
 | New-35 | JSON export from the app                                           | M5  | P2  | ⬜     | 27                                     |
+| New-36 | Prune saved passwords of gone vaults; "forget all"                 | M5  | P2  | ⬜     | New-24                                 |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -1432,32 +1433,49 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### New-24: Unlock an env vault with the password a profile injects
 
-- **Status:** 🟡 design note written 2026-10-22; nothing built.
-- **Design note:**
-  - The profile wrapper (`profile vault run <name>`) puts the password in
-    `VAULT_ENV_PASSWORD` for one process. The app can't read another
-    process's environment, and asking the wrapper for the password would
-    hand it to anything that can run the wrapper.
-  - Option A: start the app through the wrapper (`profile vault run default
--- open -a SecureVault`); main reads `VAULT_ENV_PASSWORD` once at launch,
-    offers "Unlock with the launch password", then deletes it from
-    `process.env`. Cheap; the password lives in main like a typed one.
-  - Option B: keep the password in the OS keychain (Electron
-    `safeStorage`) after one typed unlock, opt-in per vault, "Unlock with
-    Touch ID / keychain". Works however the app starts; needs a clear
-    "forget" and must be off by default.
-  - Recommendation: B, with A as a dev convenience behind the same gate.
-    Decide before building.
-- **Validation (once decided):** the password never reaches the page; it
-  is cleared from `process.env` (A) or stored only via `safeStorage` (B).
+- **Status:** ✅ done 2026-10-22 with option B (the author's "go" on the
+  recommendation): its own validation is met. Uncommitted on
+  `feat/vault-env-gui`; not merged, not released. Option A (the launch
+  password) is not built.
 - **Found:** author testing, 2026-10-22: `pvault` gets the password from
   `VAULT_ENV_PASSWORD`, set by a profile wrapper, so it's never typed.
-- **Goal:** decide whether the GUI should offer "Unlock with profile <name>".
-- **Constraints:** the password must stay in main.
-- **Dependencies:** 15; a design note first.
-- **Validation:** to be set by the design note.
-- **Cost of leaving it:** users who never type the password can't unlock in
-  the GUI without looking it up.
+- **Design note (kept):**
+  - The app can't read another process's environment, and asking the
+    wrapper for the password would hand it to anything that can run it.
+  - A: start the app through the wrapper; main reads `VAULT_ENV_PASSWORD`
+    once. Only works when launched that way.
+  - B: keep the password in the OS keychain after one typed unlock, opt-in
+    per vault. Works however the app starts. Chosen.
+- **Built:**
+  - `EnvVaultKeychain` (main): `safeStorage`-encrypted passwords in
+    `<userData>/env-vault-passwords.json` (0600, atomic writes), keyed by
+    the vault's absolute path. Linux's `basic_text` fallback is refused.
+  - On macOS and Windows, listing vaults never calls `safeStorage`:
+    `isEncryptionAvailable` reads the app's keychain item, which blocks
+    main and can prompt. Found by the e2e run, which hung on the list.
+    The keychain is asked only on "Remember" or on a saved unlock.
+  - A saved unlock asks Touch ID first where the Mac has it
+    (`systemPreferences.promptTouchID`); declined does nothing.
+  - Channels: `env-vault:unlock` takes `{remember}` (true keeps, false
+    forgets, absent leaves it); `env-vault:unlock-saved`;
+    `env-vault:forget-password`; `env-vaults:list` reports `keychain` and
+    each vault's `remembered`. No channel returns a password.
+  - A saved password the CLI made stale is forgotten on its first failure,
+    with a message to type the new one. A password change in the app
+    updates the kept one.
+  - UI: "Remember on this computer" in the unlock dialog (ticked when one
+    is kept; unticking forgets); clicking a vault with a kept password
+    unlocks directly; "Use saved password" after a declined Touch ID;
+    "Password saved" chip; "Forget saved password" on the vault screen; a
+    notice when the keychain refuses to store it.
+- **Validation:** the password never reaches the page (IPC test checks the
+  `unlock-saved` result); stored only via `safeStorage` (unit test: the file
+  never holds the plaintext); nothing is stored unless asked (IPC and UI
+  tests). Unit, IPC, UI and e2e green.
+- **Not covered:** the real macOS Keychain and Touch ID prompts are not
+  automated (e2e never opts in); author testing covers them. An unsigned
+  dev build shows the macOS "wants to use your confidential information"
+  prompt on the first Remember.
 
 ### New-25: Optional comment per key (env vaults) and notes on entry cards
 
@@ -1660,3 +1678,17 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 - **Dependencies:** 27.
 - **Validation:** a contract test of the JSON file.
 - **Cost of leaving it:** JSON users export from the CLI.
+
+### New-36: Prune saved passwords of gone vaults; "forget all"
+
+- **Status:** ⬜ found 2026-10-22 while building New-24.
+- **Goal:** a kept password whose vault file was deleted or moved doesn't
+  linger in `env-vault-passwords.json`, and one action forgets every kept
+  password.
+- **Constraints:** never touch the keychain to prune (listing must not
+  prompt); a vault on an unmounted drive isn't "gone".
+- **Dependencies:** New-24.
+- **Validation:** a kept password of a deleted app-folder vault is dropped
+  at the next list; "Forget all saved passwords" empties the file.
+- **Cost of leaving it:** ciphertexts of old vault passwords stay on disk,
+  readable only through the OS keychain.

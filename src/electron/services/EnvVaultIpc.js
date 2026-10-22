@@ -84,6 +84,17 @@ function describeEnv(vault, env) {
   return [...rows.values()].sort((a, b) => a.key.localeCompare(b.key));
 }
 
+/** A failed typed unlock: AUTH is almost always a typo, so say so (New-23). */
+function wrongPassword(result, vaultPath) {
+  if (result.code !== 'AUTH') return result;
+  return {
+    ...result,
+    error:
+      `Wrong password for ${path.basename(vaultPath)}. ` +
+      "If you're sure it's right, the file may be damaged.",
+  };
+}
+
 const masked = (rows) =>
   rows.map(({ value, ...row }) => (row.sensitive ? row : { ...row, value }));
 
@@ -109,6 +120,8 @@ const masked = (rows) =>
  * @param {import('./EnvVaultWatcher.js').EnvVaultWatcher} [deps.watcher]
  *   Told when a vault is unlocked and of every revision the app reads or
  *   writes, so it reports only changes made elsewhere.
+ * @param {import('./EnvVaultKeychain.js').EnvVaultKeychain} [deps.keychain]
+ *   Passwords the user chose to keep on this computer (New-24).
  */
 export function createEnvVaultHandlers({
   registry,
@@ -118,6 +131,7 @@ export function createEnvVaultHandlers({
   dialog = null,
   clipboard = null,
   watcher = null,
+  keychain = null,
 }) {
   const withVault =
     (fn) =>
@@ -249,10 +263,17 @@ export function createEnvVaultHandlers({
       const entries = await registry.list();
       return {
         success: true,
-        vaults: entries.map((e) => ({
-          ...e,
-          unlocked: session.isUnlocked(e.id),
-        })),
+        // Whether "Remember on this computer" can be offered at all.
+        keychain: keychain?.available() ?? false,
+        vaults: await Promise.all(
+          entries.map(async (e) => ({
+            ...e,
+            unlocked: session.isUnlocked(e.id),
+            remembered: keychain
+              ? await keychain.has(registry.resolve(e.id))
+              : false,
+          }))
+        ),
       };
     },
 
@@ -276,19 +297,66 @@ export function createEnvVaultHandlers({
       return { success: true, id: reserved.id };
     },
 
-    'env-vault:unlock': withVault(async ({ id, vaultPath }, password) => {
-      const result = await session.unlock(id, vaultPath, password);
-      if (result.success) watcher?.start(id, vaultPath, result.revision);
+    /**
+     * Unlock with a typed password. `options.remember` true keeps it on this
+     * computer (New-24), false forgets a kept one, absent leaves it as is.
+     */
+    'env-vault:unlock': withVault(
+      async ({ id, vaultPath }, password, options = {}) => {
+        const result = await session.unlock(id, vaultPath, password);
+        if (!result.success) return wrongPassword(result, vaultPath);
+        watcher?.start(id, vaultPath, result.revision);
+        if (keychain && options?.remember === true) {
+          return {
+            ...result,
+            remembered: await keychain.remember(vaultPath, password),
+          };
+        }
+        if (keychain && options?.remember === false) {
+          await keychain.forget(vaultPath);
+        }
+        return result;
+      }
+    ),
+
+    /**
+     * Unlock with the password kept on this computer (New-24), after the
+     * presence check. One that no longer opens the vault (changed by the CLI)
+     * is forgotten, so the next attempt asks for it.
+     */
+    'env-vault:unlock-saved': withVault(async ({ id, vaultPath }) => {
+      if (!keychain) return invalid('No saved password');
+      const name = path.basename(vaultPath);
+      const saved = await keychain.get(vaultPath, `unlock ${name}`);
+      if (!saved.success) {
+        return {
+          success: false,
+          code: saved.code,
+          error: {
+            NONE: `No saved password for ${name}. Type it instead.`,
+            UNAVAILABLE: `This computer can't read the saved password for ${name} right now. Type it instead.`,
+            CANCELED: 'Unlock canceled.',
+          }[saved.code],
+        };
+      }
+      const result = await session.unlock(id, vaultPath, saved.password);
+      if (result.success) {
+        watcher?.start(id, vaultPath, result.revision);
+        return result;
+      }
       if (result.code !== 'AUTH') return result;
-      // Almost always a typo: say so, and name the file (New-23).
+      await keychain.forget(vaultPath);
       return {
         ...result,
-        error:
-          `Wrong password for ${path.basename(vaultPath)}. ` +
-          "If you're sure it's right, the file may be damaged.",
+        remembered: false,
+        error: `The saved password no longer opens ${name}; it was changed elsewhere. Type the new one.`,
       };
     }),
 
+    'env-vault:forget-password': withVault(async ({ vaultPath }) => {
+      await keychain?.forget(vaultPath);
+      return { success: true };
+    }),
     'env-vault:lock': withVault(({ id }) => {
       session.lock(id);
       dropImports(id);
@@ -689,6 +757,10 @@ export function createEnvVaultHandlers({
         }
         session.setPassword(id, next);
         watcher?.note(id, result.revision);
+        // A kept password follows the change, or it would stop working.
+        if (keychain && (await keychain.has(vaultPath))) {
+          await keychain.remember(vaultPath, next);
+        }
         return {
           success: true,
           revision: result.revision,

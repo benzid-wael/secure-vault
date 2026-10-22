@@ -23,6 +23,8 @@ import { EnvVaultRegistry } from '../../../electron/services/EnvVaultRegistry.js
 import { EnvVaultSession } from '../../../electron/services/EnvVaultSession.js';
 import { createEnvVaultHandlers } from '../../../electron/services/EnvVaultIpc.js';
 import { ClipboardService } from '../../../electron/services/ClipboardService.js';
+import { EnvVaultKeychain } from '../../../electron/services/EnvVaultKeychain.js';
+import { fakeSafeStorage } from '../../helpers/fakeSafeStorage.js';
 
 // jsdom resolves `path` to the npm browser polyfill; the main-process code
 // under test needs Node's.
@@ -39,6 +41,10 @@ let dir;
 let session;
 let saved;
 let clipboardText;
+/** Whether the fake Touch ID check passes. */
+let present;
+/** The fake safeStorage behind the keychain, to make it refuse. */
+let safeStore;
 /** Listeners of `onChanged`, as main's watcher would call them. */
 let changeListeners = [];
 const emitChange = (payload) =>
@@ -65,6 +71,8 @@ function wire(handlers) {
     open: call('env-vaults:open'),
     create: call('env-vaults:create'),
     unlock: call('env-vault:unlock'),
+    unlockSaved: call('env-vault:unlock-saved'),
+    forgetPassword: call('env-vault:forget-password'),
     lock: call('env-vault:lock'),
     listEnvs: call('env:list'),
     createEnv: call('env:create'),
@@ -115,6 +123,8 @@ beforeEach(async () => {
     vault.toJSON()
   );
   session = new EnvVaultSession();
+  present = true;
+  safeStore = fakeSafeStorage();
   saved = win.electronAPI;
   win.electronAPI = {
     ...saved,
@@ -122,6 +132,11 @@ beforeEach(async () => {
       createEnvVaultHandlers({
         registry: new EnvVaultRegistry({ envsDir: dir }),
         session,
+        keychain: new EnvVaultKeychain({
+          file: path.join(dir, 'kept', 'passwords.json'),
+          safeStorage: safeStore,
+          confirmPresence: async () => present,
+        }),
         clipboard: new ClipboardService({
           clipboard: {
             writeText: (text) => {
@@ -660,5 +675,101 @@ describe('env vault UI on the real handlers (StrictMode)', () => {
     await settle();
     fireEvent.click(screen.getByLabelText('Reveal MATCH_PASSWORD'));
     expect(await screen.findByText('ci-prod-match')).toBeInTheDocument();
+  });
+  /** Unlock `app` by typing the password, ticking "Remember" or not. */
+  const typeUnlock = async ({ remember }) => {
+    fireEvent.change(await screen.findByLabelText('Vault Password'), {
+      target: { value: PW },
+    });
+    const box = /** @type {HTMLInputElement} */ (
+      screen.getByLabelText('Remember on this computer')
+    );
+    if (box.checked !== remember) fireEvent.click(box);
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    await screen.findByText('New environment');
+  };
+
+  const backToList = async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Lock' }));
+    await screen.findByText('Environment Vaults');
+  };
+
+  it('remembers the password when asked and unlocks with it next time', async () => {
+    render(<EnvVaultsPanel />);
+    fireEvent.click(await screen.findByText('app'));
+    await typeUnlock({ remember: true });
+    await backToList();
+    expect(await screen.findByText('Password saved')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('app'));
+    expect(await screen.findByText('New environment')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Vault Password')).toBeNull();
+  });
+
+  it('asks for the password when the presence check is declined', async () => {
+    render(<EnvVaultsPanel />);
+    fireEvent.click(await screen.findByText('app'));
+    await typeUnlock({ remember: true });
+    await backToList();
+    present = false;
+    fireEvent.click(await screen.findByText('app'));
+    expect(await screen.findByLabelText('Vault Password')).toBeInTheDocument();
+    expect(screen.getByLabelText('Remember on this computer')).toBeChecked();
+    present = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Use saved password' }));
+    expect(await screen.findByText('New environment')).toBeInTheDocument();
+  });
+
+  it('says so when the saved password no longer works', async () => {
+    render(<EnvVaultsPanel />);
+    fireEvent.click(await screen.findByText('app'));
+    await typeUnlock({ remember: true });
+    await backToList();
+    await EnvironmentVaultService.changePassword(
+      path.join(dir, 'app.env.vault'),
+      PW,
+      'Other-Pass-9!'
+    );
+    fireEvent.click(await screen.findByText('app'));
+    expect(
+      await screen.findByText(/saved password no longer opens app\.env\.vault/)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText('Remember on this computer')
+    ).not.toBeChecked();
+    expect(
+      screen.queryByRole('button', { name: 'Use saved password' })
+    ).toBeNull();
+  });
+
+  it('unlocks but says so when the keychain refuses the password', async () => {
+    safeStore.isEncryptionAvailable = () => false;
+    render(<EnvVaultsPanel />);
+    fireEvent.click(await screen.findByText('app'));
+    await typeUnlock({ remember: true });
+    expect(
+      await screen.findByText(/password couldn't be saved on this computer/)
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Forget saved password' })
+    ).toBeNull();
+  });
+
+  it('forgets the saved password from the vault screen', async () => {
+    render(<EnvVaultsPanel />);
+    fireEvent.click(await screen.findByText('app'));
+    await typeUnlock({ remember: true });
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Forget saved password' })
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'Forget saved password' })
+      ).toBeNull()
+    );
+    await backToList();
+    expect(screen.queryByText('Password saved')).toBeNull();
+    fireEvent.click(screen.getByText('app'));
+    expect(await screen.findByLabelText('Vault Password')).toBeInTheDocument();
   });
 });

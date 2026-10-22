@@ -5,11 +5,13 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   IconButton,
   List,
   ListItem,
@@ -104,13 +106,33 @@ function ChangePasswordDialog({ change, onClose }) {
   );
 }
 
-/** Unlock or create: the password goes to main once and isn't kept here. */
-function PasswordDialog({ title, withName = false, onSubmit, onClose }) {
+/**
+ * Unlock or create: the password goes to main once and isn't kept here.
+ * `remember` (unlock only, when this computer can keep it safely, New-24)
+ * is `{ initial }`: the box starts ticked for a vault whose password is
+ * already kept, and unticking it forgets that password. `onUseSaved`
+ * offers the kept password again, e.g. after a canceled Touch ID.
+ */
+function PasswordDialog({
+  title,
+  withName = false,
+  remember = null,
+  initialError = '',
+  onSubmit,
+  onUseSaved = null,
+  onClose,
+}) {
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-  const [error, setError] = useState('');
+  const [keep, setKeep] = useState(remember?.initial ?? false);
+  const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
+
+  const finish = (result) => {
+    setBusy(false);
+    if (!result.success) setError(result.error || 'Something went wrong');
+  };
 
   const submit = async (event) => {
     event.preventDefault();
@@ -119,9 +141,15 @@ function PasswordDialog({ title, withName = false, onSubmit, onClose }) {
       return;
     }
     setBusy(true);
-    const result = await onSubmit({ name, password });
-    setBusy(false);
-    if (!result.success) setError(result.error || 'Something went wrong');
+    finish(
+      await onSubmit({ name, password, remember: remember ? keep : undefined })
+    );
+  };
+
+  const useSaved = async () => {
+    setBusy(true);
+    setError('');
+    finish(await onUseSaved());
   };
 
   return (
@@ -166,8 +194,31 @@ function PasswordDialog({ title, withName = false, onSubmit, onClose }) {
               margin="dense"
             />
           )}
+          {remember && (
+            <>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={keep}
+                    onChange={(e) => setKeep(e.target.checked)}
+                  />
+                }
+                label="Remember on this computer"
+              />
+              <Typography variant="body2" color="text.secondary">
+                Kept encrypted by the system keychain. Anyone using your account
+                here can then open this vault in the app, after Touch ID where
+                the Mac has it.
+              </Typography>
+            </>
+          )}
         </DialogContent>
         <DialogActions>
+          {onUseSaved && (
+            <Button disabled={busy} onClick={useSaved} sx={{ mr: 'auto' }}>
+              Use saved password
+            </Button>
+          )}
           <Button onClick={onClose}>Cancel</Button>
           <Button type="submit" variant="contained" disabled={busy}>
             {withName ? 'Create' : 'Unlock'}
@@ -179,7 +230,7 @@ function PasswordDialog({ title, withName = false, onSubmit, onClose }) {
 }
 
 /** One unlocked vault: its environments on the left, the selected one right. */
-function EnvVaultScreen({ vault, onBack, onLock, onLocked }) {
+function EnvVaultScreen({ vault, onBack, onLock, onLocked, onForget }) {
   const api = envApi();
   const [envs, setEnvs] = useState(null);
   const [revision, setRevision] = useState(null);
@@ -189,7 +240,7 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked }) {
   const [newEnv, setNewEnv] = useState('');
   const [menu, setMenu] = useState(null); // { anchor, env }
   const [manage, setManage] = useState(null); // { op, env, description, extends }
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState(vault.notice ?? '');
   // Bumped when the file changes outside the app; EnvView reloads on it.
   const [externalChange, setExternalChange] = useState(0);
   const [changingPassword, setChangingPassword] = useState(false);
@@ -308,6 +359,9 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked }) {
         <Typography variant="h5" sx={{ flexGrow: 1 }}>
           {vault.label}
         </Typography>
+        {vault.remembered && (
+          <Button onClick={onForget}>Forget saved password</Button>
+        )}
         <Button variant="outlined" onClick={() => setChangingPassword(true)}>
           Change password
         </Button>
@@ -482,15 +536,19 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked }) {
 const EnvVaultsPanel = ({ header = null }) => {
   const api = envApi();
   const [vaults, setVaults] = useState([]);
+  // Whether this computer can keep a password safely (New-24).
+  const [keychain, setKeychain] = useState(false);
   const [error, setError] = useState('');
-  const [dialog, setDialog] = useState(null); // { kind: 'unlock', vault } | { kind: 'create' }
+  const [dialog, setDialog] = useState(null); // { kind: 'unlock', vault, error? } | { kind: 'create' }
   const [openVault, setOpenVault] = useState(null);
   const [notice, setNotice] = useState('');
 
   const refresh = useCallback(async () => {
     const result = await api.list();
-    if (result.success) setVaults(result.vaults);
-    else setError(result.error);
+    if (result.success) {
+      setVaults(result.vaults);
+      setKeychain(Boolean(result.keychain));
+    } else setError(result.error);
     return result.success ? result.vaults : [];
   }, [api]);
 
@@ -516,15 +574,37 @@ const EnvVaultsPanel = ({ header = null }) => {
     [api, onLocked, refresh]
   );
 
-  const enter = async (id) => {
+  // `notice` shows on the vault screen once it opens.
+  const enter = async (id, notice = '') => {
     const listed = await refresh();
-    setOpenVault(listed.find((v) => v.id === id) ?? null);
+    const vault = listed.find((v) => v.id === id);
+    setOpenVault(vault ? { ...vault, notice } : null);
     setDialog(null);
     setNotice('');
   };
 
-  const select = (vault) =>
-    vault.unlocked ? enter(vault.id) : setDialog({ kind: 'unlock', vault });
+  // A kept password is tried first; if it fails, the dialog says why.
+  const unlockSaved = async (vault) => {
+    const result = await api.unlockSaved(vault.id);
+    if (result.success) await enter(vault.id);
+    return result;
+  };
+
+  const select = async (vault) => {
+    if (vault.unlocked) return enter(vault.id);
+    if (vault.remembered) {
+      const result = await unlockSaved(vault);
+      if (result.success) return;
+      const listed = await refresh();
+      const current = listed.find((v) => v.id === vault.id) ?? vault;
+      return setDialog({
+        kind: 'unlock',
+        vault: current,
+        error: result.code === 'CANCELED' ? '' : result.error,
+      });
+    }
+    setDialog({ kind: 'unlock', vault });
+  };
 
   const openFromDisk = async () => {
     const result = await api.open();
@@ -535,9 +615,18 @@ const EnvVaultsPanel = ({ header = null }) => {
     if (vault) select(vault);
   };
 
-  const unlock = async ({ password }) => {
-    const result = await api.unlock(dialog.vault.id, password);
-    if (result.success) await enter(dialog.vault.id);
+  const unlock = async ({ password, remember }) => {
+    const result = await (remember === undefined
+      ? api.unlock(dialog.vault.id, password)
+      : api.unlock(dialog.vault.id, password, { remember }));
+    if (result.success) {
+      await enter(
+        dialog.vault.id,
+        remember && result.remembered === false
+          ? "Unlocked, but the password couldn't be saved on this computer (the keychain refused it)."
+          : ''
+      );
+    }
     return result;
   };
 
@@ -560,6 +649,11 @@ const EnvVaultsPanel = ({ header = null }) => {
         onBack={() => setOpenVault(null)}
         onLock={lock}
         onLocked={onLocked}
+        onForget={async () => {
+          await api.forgetPassword(openVault.id);
+          const listed = await refresh();
+          setOpenVault(listed.find((v) => v.id === openVault.id) ?? null);
+        }}
       />
     );
   }
@@ -600,7 +694,10 @@ const EnvVaultsPanel = ({ header = null }) => {
                 {vault.location}
               </Typography>
               {vault.unlocked && (
-                <Chip size="small" label="Unlocked" sx={{ mt: 1 }} />
+                <Chip size="small" label="Unlocked" sx={{ mt: 1, mr: 1 }} />
+              )}
+              {vault.remembered && (
+                <Chip size="small" label="Password saved" sx={{ mt: 1 }} />
               )}
               {!vault.exists && (
                 <Chip size="small" label="Missing" sx={{ mt: 1 }} />
@@ -629,6 +726,11 @@ const EnvVaultsPanel = ({ header = null }) => {
       {dialog?.kind === 'unlock' && (
         <PasswordDialog
           title={`Unlock ${dialog.vault.label}`}
+          remember={keychain ? { initial: dialog.vault.remembered } : null}
+          initialError={dialog.error}
+          onUseSaved={
+            dialog.vault.remembered ? () => unlockSaved(dialog.vault) : null
+          }
           onSubmit={unlock}
           onClose={() => setDialog(null)}
         />

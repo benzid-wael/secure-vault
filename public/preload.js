@@ -129,8 +129,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     open: () => ipcRenderer.invoke('env-vaults:open'),
     create: (options, password) =>
       ipcRenderer.invoke('env-vaults:create', options, password),
-    unlock: (id, password) =>
-      ipcRenderer.invoke('env-vault:unlock', id, password),
+    unlock: (id, password, options) =>
+      ipcRenderer.invoke('env-vault:unlock', id, password, options),
+    // A password kept on this computer (opt-in) never comes to the page.
+    unlockSaved: (id) => ipcRenderer.invoke('env-vault:unlock-saved', id),
+    forgetPassword: (id) => ipcRenderer.invoke('env-vault:forget-password', id),
     lock: (id) => ipcRenderer.invoke('env-vault:lock', id),
     listEnvs: (id) => ipcRenderer.invoke('env:list', id),
     createEnv: (id, name, expectedRevision) =>

@@ -17,6 +17,8 @@ import {
 } from '../../../electron/services/EnvVaultSession.js';
 import { createEnvVaultHandlers } from '../../../electron/services/EnvVaultIpc.js';
 import { readFeatures } from '../../../electron/utils/features.js';
+import { EnvVaultKeychain } from '../../../electron/services/EnvVaultKeychain.js';
+import { fakeSafeStorage } from '../../helpers/fakeSafeStorage.js';
 import {
   ClipboardService,
   CLIPBOARD_CLEAR_MS,
@@ -1371,5 +1373,154 @@ describe('env vault IPC: pending imports end with the session', () => {
       'INVALID'
     );
     session.lockAll();
+  });
+});
+
+describe('env vault IPC: password kept on this computer (New-24)', () => {
+  const ev = {};
+  let h;
+  let id;
+  let session;
+  let filePath;
+  let keychain;
+  let present;
+  let watcher;
+
+  beforeEach(async () => {
+    filePath = await seed();
+    session = new EnvVaultSession();
+    present = true;
+    keychain = new EnvVaultKeychain({
+      file: path.join(dir, 'kept', 'passwords.json'),
+      safeStorage: fakeSafeStorage(),
+      confirmPresence: async () => present,
+    });
+    watcher = /** @type {any} */ ({
+      start: vi.fn(),
+      note: vi.fn(),
+      stop: vi.fn(),
+    });
+    h = createEnvVaultHandlers({
+      registry: new EnvVaultRegistry({ envsDir }),
+      session,
+      keychain,
+      watcher,
+    });
+    id = (await h['env-vaults:list']()).vaults[0].id;
+  });
+  afterEach(() => session.lockAll());
+
+  const listed = async () => (await h['env-vaults:list']()).vaults[0];
+
+  it('keeps the password only when asked, and unlocks with it', async () => {
+    expect((await h['env-vaults:list']()).keychain).toBe(true);
+    expect((await listed()).remembered).toBe(false);
+
+    await h['env-vault:unlock'](ev, id, PW);
+    expect((await listed()).remembered).toBe(false);
+    session.lock(id);
+
+    const unlocked = await h['env-vault:unlock'](ev, id, PW, {
+      remember: true,
+    });
+    expect(unlocked).toMatchObject({ success: true, remembered: true });
+    expect((await listed()).remembered).toBe(true);
+    session.lock(id);
+
+    const saved = await h['env-vault:unlock-saved'](ev, id);
+    expect(saved.success).toBe(true);
+    expect(JSON.stringify(saved)).not.toContain(PW);
+    expect(session.isUnlocked(id)).toBe(true);
+    expect(watcher.start).toHaveBeenLastCalledWith(
+      id,
+      filePath,
+      saved.revision
+    );
+  });
+
+  it('does not keep a wrong password', async () => {
+    const result = await h['env-vault:unlock'](ev, id, 'nope', {
+      remember: true,
+    });
+    expect(result.error).toMatch(/^Wrong password for app\.env\.vault/);
+    expect((await listed()).remembered).toBe(false);
+  });
+
+  it('forgets on an unticked box or on request', async () => {
+    await h['env-vault:unlock'](ev, id, PW, { remember: true });
+    session.lock(id);
+    await h['env-vault:unlock'](ev, id, PW, { remember: false });
+    expect((await listed()).remembered).toBe(false);
+
+    await h['env-vault:unlock'](ev, id, PW, { remember: true });
+    expect((await h['env-vault:forget-password'](ev, id)).success).toBe(true);
+    expect((await listed()).remembered).toBe(false);
+    session.lock(id);
+    expect(await h['env-vault:unlock-saved'](ev, id)).toMatchObject({
+      success: false,
+      code: 'NONE',
+      error: 'No saved password for app.env.vault. Type it instead.',
+    });
+  });
+
+  it('does nothing when the presence check is declined', async () => {
+    await h['env-vault:unlock'](ev, id, PW, { remember: true });
+    session.lock(id);
+    present = false;
+    expect(await h['env-vault:unlock-saved'](ev, id)).toMatchObject({
+      success: false,
+      code: 'CANCELED',
+    });
+    expect(session.isUnlocked(id)).toBe(false);
+    expect((await listed()).remembered).toBe(true);
+  });
+
+  it('forgets a kept password the CLI made stale', async () => {
+    await h['env-vault:unlock'](ev, id, PW, { remember: true });
+    session.lock(id);
+    await EnvironmentVaultService.changePassword(filePath, PW, 'Other-Pass-9!');
+    const result = await h['env-vault:unlock-saved'](ev, id);
+    expect(result).toMatchObject({
+      success: false,
+      code: 'AUTH',
+      remembered: false,
+    });
+    expect(result.error).toMatch(/no longer opens app\.env\.vault/);
+    expect((await listed()).remembered).toBe(false);
+  });
+
+  it('follows a password change made in the app', async () => {
+    const NEW = 'Brand-New-Pass-42!';
+    await h['env-vault:unlock'](ev, id, PW, { remember: true });
+    await h['env-vault:change-password'](ev, id, PW, NEW);
+    session.lock(id);
+    expect((await h['env-vault:unlock-saved'](ev, id)).success).toBe(true);
+  });
+
+  it('leaves no password kept after a password change without one', async () => {
+    await h['env-vault:unlock'](ev, id, PW);
+    await h['env-vault:change-password'](ev, id, PW, 'Brand-New-Pass-42!');
+    expect((await listed()).remembered).toBe(false);
+  });
+
+  it('works without a keychain: nothing kept, nothing offered', async () => {
+    const plain = createEnvVaultHandlers({
+      registry: new EnvVaultRegistry({ envsDir }),
+      session,
+    });
+    const list = await plain['env-vaults:list']();
+    expect(list.keychain).toBe(false);
+    expect(list.vaults[0].remembered).toBe(false);
+    const plainId = list.vaults[0].id;
+    expect(
+      (await plain['env-vault:unlock'](ev, plainId, PW, { remember: true }))
+        .remembered
+    ).toBeUndefined();
+    expect((await plain['env-vault:unlock-saved'](ev, plainId)).code).toBe(
+      'INVALID'
+    );
+    expect(
+      (await plain['env-vault:forget-password'](ev, plainId)).success
+    ).toBe(true);
   });
 });
