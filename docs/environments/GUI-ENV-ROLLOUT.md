@@ -486,3 +486,19 @@ Known hazards so far, to be completed per task:
   window or Dock icon, and the first window comes forward. Open a project
   folder's vault, quit, relaunch: it's listed.
 - **Rollback:** reinstall the previous app. It ignores both new files.
+
+### Task 23: app settings in the Configuration dialog
+
+- **Runtime change (gated by the Environments UI gate):** Configuration
+  (menu or Ctrl/Cmd+S) starts with App settings: the env vault idle timeout
+  and the "remember vaults" toggle. Changes take effect at once.
+- **Schema or config change:** `app-settings.json` is written on the first
+  change (format in New-2).
+- **Before it ships:** nothing beyond the gate's own criteria.
+- **Gated by:** the Environments UI gate, channels included; they leave it
+  with Task 13, when the timeout also locks password vaults.
+- **Verify after release:** set the timeout to 1 minute, unlock an env vault
+  and leave it: it locks after a minute. Turn remembering off: vaults opened
+  from files or folders are gone from the list after a restart.
+- **Rollback:** reinstall the previous app. It ignores `app-settings.json`,
+  so env vaults lock after the default 5 minutes again.

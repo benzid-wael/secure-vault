@@ -122,6 +122,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Feature gates, decided by main (New-4).
   getFeatures: () => ipcRenderer.invoke('get-features'),
 
+  // App-wide settings, not secret (New-2, Task 23); main applies changes.
+  appSettings: {
+    get: () => ipcRenderer.invoke('app-settings:get'),
+    update: (patch) => ipcRenderer.invoke('app-settings:update', patch),
+  },
+
   // Env vaults: the page holds opaque vault ids, never file paths, and gets
   // a sensitive value only by revealing it (GUI-ENV-RFC §6.7).
   envVaults: {

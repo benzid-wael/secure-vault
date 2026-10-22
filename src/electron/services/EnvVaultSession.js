@@ -150,6 +150,16 @@ export class EnvVaultSession {
     entry.keyMaterial = keyMaterial;
   }
 
+  /**
+   * A new idle timeout (Settings, Task 23). Every unlocked vault's timer
+   * restarts with it, counted from now.
+   */
+  setIdleMs(ms) {
+    if (!Number.isInteger(ms) || ms <= 0) return;
+    this.#idleMs = ms;
+    for (const id of this.#vaults.keys()) this.touch(id);
+  }
+
   /** Reset the idle timer. Only user-initiated calls may do this. */
   touch(id) {
     const entry = this.#vaults.get(id);

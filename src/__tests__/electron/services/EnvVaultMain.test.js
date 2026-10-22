@@ -469,6 +469,23 @@ describe('EnvVaultSession', () => {
     expect(t.pending.size).toBe(0);
   });
 
+  it('takes a new idle time from Settings, restarting open timers', async () => {
+    const filePath = await seed();
+    const t = timers();
+    const session = new EnvVaultSession({ ...t });
+    await session.unlock('a', filePath, PW);
+    session.setIdleMs(30 * 60 * 1000);
+    expect([...t.pending].map((x) => x.ms)).toEqual([30 * 60 * 1000]);
+    for (const bad of [0, -1, 1.5, 'x']) session.setIdleMs(bad);
+    session.touch('a');
+    expect([...t.pending].map((x) => x.ms)).toEqual([30 * 60 * 1000]);
+    await session.unlock('b', filePath, PW); // later unlocks use it too
+    expect([...t.pending].map((x) => x.ms)).toEqual([
+      30 * 60 * 1000,
+      30 * 60 * 1000,
+    ]);
+  });
+
   it('zeroes the key and drops the vault’s views on lock', async () => {
     const filePath = await seed();
     const session = new EnvVaultSession();

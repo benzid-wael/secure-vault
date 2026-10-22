@@ -60,6 +60,10 @@ import { EnvVaultWatcher } from '../src/electron/services/EnvVaultWatcher.js';
 import { EnvVaultKeychain } from '../src/electron/services/EnvVaultKeychain.js';
 import { EnvVaultRecents } from '../src/electron/services/EnvVaultRecents.js';
 import { AppSettingsStore } from '../src/electron/services/AppSettingsStore.js';
+import {
+  createAppSettingsHandlers,
+  applyAppSettings,
+} from '../src/electron/services/AppSettingsIpc.js';
 import { claimSingleInstance } from '../src/electron/utils/singleInstance.js';
 
 class ElectronApp {
@@ -115,6 +119,17 @@ class ElectronApp {
           this.sendToWindow('env-vault-locked', { id });
         },
       });
+
+      // The saved idle timeout, once read (Task 23).
+      this.settings
+        .get()
+        .then((saved) =>
+          applyAppSettings(
+            { session: this.envSession, registry: this.envRegistry },
+            saved
+          )
+        )
+        .catch((error) => console.error('Could not apply settings:', error));
 
       this.mainWindow = null;
       console.log('ElectronApp initialized successfully');
@@ -311,6 +326,20 @@ class ElectronApp {
         }),
       });
       for (const [channel, fn] of Object.entries(envHandlers)) {
+        handle(channel, fn);
+      }
+      // Both settings concern env vaults for now; password vaults join with
+      // their idle lock (Task 13), and these channels leave the gate then.
+      const settingsHandlers = createAppSettingsHandlers({
+        settings: this.settings,
+        apply: (next, previous) =>
+          applyAppSettings(
+            { session: this.envSession, registry: this.envRegistry },
+            next,
+            previous
+          ),
+      });
+      for (const [channel, fn] of Object.entries(settingsHandlers)) {
         handle(channel, fn);
       }
     }

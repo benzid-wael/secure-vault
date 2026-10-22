@@ -34,7 +34,7 @@ updated as each task finishes, not in a batch at the end.
 | 20     | Renderer: env view (masked, reveal, copy, inline edit)             | M4  | P0  | 🟡     | 19                                     |
 | 21     | Renderer: bulk edit (table + dotenv text), conflicts               | M4  | P0  | ✅     | 20                                     |
 | 22     | Renderer: move secret copy to `ClipboardService`                   | M4  | P1  | ⬜     | 12, New-3                              |
-| 23     | Renderer: Settings for idle timeout and recents                    | M4  | P1  | ⬜     | 13, 14, New-2                          |
+| 23     | Renderer: Settings for idle timeout and recents                    | M4  | P1  | ✅     | 13, 14, New-2                          |
 | 24     | Renderer: env structure ops                                        | M5  | P2  | ✅     | 18, 20                                 |
 | 25     | Renderer: history, rollback, squash                                | M5  | P2  | ✅     | 7, 18, 20                              |
 | 26     | Renderer: diff and validate                                        | M5  | P2  | ✅     | 18, 20                                 |
@@ -83,6 +83,7 @@ updated as each task finishes, not in a batch at the end.
 | New-38 | Set Electron fuses in packaged builds                              | M0  | P1  | 🟡     | New-19                                 |
 | New-39 | Fix: a failed page load loops instead of showing the error page    | —   | P2  | ✅     | —                                      |
 | New-40 | Refuse `--remote-debugging-port` in packaged builds                | M0  | P2  | ⬜     | New-38                                 |
+| New-41 | Find the unit test that failed once in ten full runs               | —   | P2  | ⬜     | —                                      |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -889,12 +890,50 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 23: Renderer: Settings for idle timeout and recents
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
+  `feat/vault-env-gui`; not merged, not released. Behind the env UI gate.
+  The idle timeout applies to env vaults; password vaults pick it up with
+  their idle lock (Task 13).
 - **Goal:** Settings UI for D1 (timeout) and D5 (recents toggle, which clears
   the list when turned off).
 - **Dependencies:** 13, 14, New-2.
 - **Validation:** Component tests; the setting persists across an app restart
   (e2e).
+- **Built:**
+  - **App settings** at the top of the Configuration dialog (menu, or
+    Ctrl/Cmd+S), so it works with every vault locked:
+    - "Lock environment vaults after" 1–240 minutes without activity (a
+      saved value outside the usual choices is listed too);
+    - "Remember environment vaults I open"; turning it off deletes the kept
+      list (vaults opened this run stay listed until quit).
+      Each change saves at once and says what it did; a refused change keeps
+      the old value and shows why; a damaged settings file shows its warning.
+  - Channels `app-settings:get` / `app-settings:update`
+    (`AppSettingsIpc.js`), behind the env UI gate while both settings
+    concern env vaults; they leave the gate with Task 13. Preload
+    `appSettings.get/update`.
+  - `applyAppSettings`: `EnvVaultSession.setIdleMs` (restarts every unlocked
+    vault's timer from now), and `registry.clearRecents()` when remembering
+    goes from on to off. Main applies the saved settings at startup.
+- **Validation done:**
+  - `AppSettingsSection.test.jsx`: shows saved values; idle and remember
+    changes saved and confirmed; an unusual saved value; the damaged-file
+    warning; refused, unloadable and unsavable changes. The dialog shows
+    the section only when asked, plus tests for what it showed before
+    (storage folder, unlocked vault details, load errors, Close), which had
+    none.
+  - Unit: the channels apply only a saved change, with the before and after
+    values; idle time in ms; the list is cleared only on on → off, not at
+    startup; `setIdleMs` restarts open timers and ignores bad values.
+  - e2e `app-settings`: a seeded earlier run (30-minute timeout, a
+    remembered project vault): the vault is listed, the dialog shows 30
+    minutes; turning remembering off deletes `gui-env-recents.json` and
+    saves the change for the next run. 7/7 scenarios.
+  - Coverage: `AppSettingsSection.jsx` 97.5% lines,
+    `ConfigurationDialog.jsx` 98% (53% with only the new tests),
+    `EnvVaultSession.js` 98.6%.
+  - Found: one full unit run of ten failed one test, not identified
+    (New-41).
 
 ### Task 24: Renderer: env structure ops
 
@@ -2025,3 +2064,20 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 - **Cost of leaving it:** same-user access to unlocked vault pages. A
   same-user attacker has other ways in (reading memory, keystrokes), so
   this narrows the attack surface rather than closing a boundary.
+
+### New-41: Find the unit test that failed once in ten full runs
+
+- **Status:** ⬜ found 2026-10-22 during Task 23.
+- **Found:** `npx vitest run` reported "1 failed | 1287 passed" once; a
+  re-run to see which test printed no failure, and the next nine full runs
+  were green. Which test, and why, is unknown.
+- **Goal:** the test is identified and made deterministic.
+- **Implementation guidance:** run the suite in a loop with
+  `--reporter=json --outputFile` per run, so a failure keeps its name.
+  Likely suspects: tests with real timers or real file watching (the env
+  vault watcher, lock heartbeats, the settle delays in
+  `EnvVaultsReal.test.jsx`).
+- **Validation:** fifty full runs in a row green, or the failing test named
+  and fixed.
+- **Cost of leaving it:** CI goes red now and then for no change, and people
+  learn to re-run instead of read.

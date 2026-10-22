@@ -14,6 +14,10 @@ import {
   EnvVaultRecents,
   MAX_RECENTS,
 } from '../../../electron/services/EnvVaultRecents.js';
+import {
+  createAppSettingsHandlers,
+  applyAppSettings,
+} from '../../../electron/services/AppSettingsIpc.js';
 import { claimSingleInstance } from '../../../electron/utils/singleInstance.js';
 import { readJsonFile } from '../../../electron/utils/privateJsonFile.js';
 
@@ -213,5 +217,77 @@ describe('claimSingleInstance (Task 11)', () => {
     expect(claimSingleInstance(app, vi.fn())).toBe(false);
     expect(app.quit).toHaveBeenCalledOnce();
     expect(app.on).not.toHaveBeenCalled();
+  });
+});
+
+describe('app settings IPC (Task 23)', () => {
+  const targets = () => ({
+    session: { setIdleMs: vi.fn() },
+    registry: { clearRecents: vi.fn(async () => {}) },
+  });
+
+  it('reads the settings and the warning', async () => {
+    await fs.outputFile(file, 'damaged');
+    const h = createAppSettingsHandlers({
+      settings: new AppSettingsStore({ file }),
+      apply: vi.fn(),
+    });
+    expect(await h['app-settings:get']()).toEqual({
+      success: true,
+      settings: { idleMinutes: 5, rememberRecents: true },
+      warning: expect.stringMatching(/couldn't be read/),
+    });
+  });
+
+  it('saves, then applies with the settings before and after', async () => {
+    const apply = vi.fn();
+    const h = createAppSettingsHandlers({
+      settings: new AppSettingsStore({ file }),
+      apply,
+    });
+    const result = await h['app-settings:update']({}, { idleMinutes: 10 });
+    expect(result.success).toBe(true);
+    expect(apply).toHaveBeenCalledWith(
+      { idleMinutes: 10, rememberRecents: true },
+      { idleMinutes: 5, rememberRecents: true }
+    );
+  });
+
+  it('applies nothing when the change is refused', async () => {
+    const apply = vi.fn();
+    const h = createAppSettingsHandlers({
+      settings: new AppSettingsStore({ file }),
+      apply,
+    });
+    expect(
+      (await h['app-settings:update']({}, { idleMinutes: 0 })).success
+    ).toBe(false);
+    expect(apply).not.toHaveBeenCalled();
+  });
+
+  it('sets the env vault idle time in milliseconds', async () => {
+    const t = targets();
+    await applyAppSettings(t, { idleMinutes: 15, rememberRecents: true });
+    expect(t.session.setIdleMs).toHaveBeenCalledWith(15 * 60 * 1000);
+    expect(t.registry.clearRecents).not.toHaveBeenCalled();
+  });
+
+  it('clears the kept vault list only when remembering is turned off', async () => {
+    const on = { idleMinutes: 5, rememberRecents: true };
+    const off = { idleMinutes: 5, rememberRecents: false };
+    for (const [next, previous, clears] of [
+      [off, on, true],
+      [off, off, false],
+      [on, off, false],
+      [off, undefined, false], // at startup: nothing to turn off
+    ]) {
+      const t = targets();
+      await applyAppSettings(
+        t,
+        /** @type {any} */ (next),
+        /** @type {any} */ (previous)
+      );
+      expect(t.registry.clearRecents).toHaveBeenCalledTimes(clears ? 1 : 0);
+    }
   });
 });

@@ -373,6 +373,7 @@ function App() {
           open={showConfiguration}
           onClose={() => setShowConfiguration(false)}
           vaultName={isAuthenticated ? currentVault : null}
+          appSettings={features.envVaults}
         />
 
         <ImportExportDialog
