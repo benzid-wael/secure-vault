@@ -25,7 +25,8 @@ import {
 } from '@mui/material';
 import {
   Add as AddIcon,
-  FolderOpen as OpenIcon,
+  FolderOpen as FolderIcon,
+  FileOpen as OpenIcon,
   Lock as LockIcon,
   ArrowBack as BackIcon,
   MoreVert as MoreIcon,
@@ -115,6 +116,7 @@ function ChangePasswordDialog({ change, onClose }) {
  */
 function PasswordDialog({
   title,
+  location = '',
   withName = false,
   remember = null,
   initialError = '',
@@ -157,6 +159,16 @@ function PasswordDialog({
       <form onSubmit={submit}>
         <DialogTitle>{title}</DialogTitle>
         <DialogContent>
+          {location && (
+            // Which file this password unlocks, before it's typed (New-22).
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ mb: 1, wordBreak: 'break-all' }}
+            >
+              {location}
+            </Typography>
+          )}
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>
               {error}
@@ -631,6 +643,17 @@ const EnvVaultsPanel = ({ header = null }) => {
     if (vault) select(vault);
   };
 
+  // The vault the CLI would use in a folder: its path shows in the unlock
+  // dialog before the password is typed (New-22).
+  const openFolder = async () => {
+    const result = await api.openFolder();
+    if (result.canceled) return;
+    if (!result.success) return setError(result.error);
+    const listed = await refresh();
+    const vault = listed.find((v) => v.id === result.id);
+    if (vault) select(vault);
+  };
+
   const unlock = async ({ password, remember }) => {
     const result = await (remember === undefined
       ? api.unlock(dialog.vault.id, password)
@@ -692,8 +715,8 @@ const EnvVaultsPanel = ({ header = null }) => {
       )}
       {vaults.length === 0 && (
         <Typography sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 2 }}>
-          No environment vaults in the app folder. Open a project&apos;s
-          .env.vault, or create a new one.
+          No environment vaults in the app folder. Open a project folder (or its
+          .env.vault), or create a new one.
         </Typography>
       )}
       <div className="vault-list">
@@ -731,6 +754,13 @@ const EnvVaultsPanel = ({ header = null }) => {
           Open…
         </Button>
         <Button
+          variant="outlined"
+          startIcon={<FolderIcon />}
+          onClick={openFolder}
+        >
+          Open folder…
+        </Button>
+        <Button
           variant="contained"
           startIcon={<AddIcon />}
           onClick={() => setDialog({ kind: 'create' })}
@@ -742,6 +772,7 @@ const EnvVaultsPanel = ({ header = null }) => {
       {dialog?.kind === 'unlock' && (
         <PasswordDialog
           title={`Unlock ${dialog.vault.label}`}
+          location={dialog.vault.location}
           remember={keychain ? { initial: dialog.vault.remembered } : null}
           initialError={dialog.error}
           onUseSaved={

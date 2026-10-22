@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs-extra';
 import path from 'path';
 import { getEnvsDir } from '../utils/appPaths.js';
+import { EnvironmentVaultService } from './EnvironmentVaultService.js';
 
 const SUFFIX = '.env.vault';
 // Same names the CLI's `--name` turns into `<envs>/<name>.env.vault`.
@@ -110,7 +111,46 @@ export class EnvVaultRegistry {
     if (picked.canceled || picked.filePaths.length === 0) {
       return { success: false, canceled: true };
     }
-    const filePath = path.resolve(picked.filePaths[0]);
+    return this.#openFile(path.resolve(picked.filePaths[0]));
+  }
+
+  /**
+   * Let the user pick a project folder, and open the vault the CLI would use
+   * there (New-22): `.env.vault` in it or a parent up to the git root,
+   * `config/.env.vault`, then `<envs>/<folder name>.env.vault`.
+   * @returns {Promise<{success: boolean, id?: string, canceled?: boolean,
+   *   code?: string, error?: string}>}
+   */
+  async openFolderFromDialog(win) {
+    const picked = await this.#dialog.showOpenDialog(win, {
+      title: 'Open Project Folder',
+      properties: ['openDirectory'],
+    });
+    if (picked.canceled || picked.filePaths.length === 0) {
+      return { success: false, canceled: true };
+    }
+    const folder = path.resolve(picked.filePaths[0]);
+    const filePath = EnvironmentVaultService.resolveVaultPath({
+      cwd: folder,
+      envsDir: this.#envsDir,
+    });
+    if (!filePath) {
+      const top = EnvironmentVaultService.findGitRoot(folder) ?? folder;
+      return {
+        success: false,
+        code: 'NOT_FOUND',
+        error:
+          `No environment vault found for ${folder}. Looked for .env.vault ` +
+          (top === folder ? 'in it' : `in it and its parents up to ${top}`) +
+          `, config/.env.vault, and ${path.basename(
+            EnvironmentVaultService.defaultVaultPath(folder, this.#envsDir)
+          )} in the app folder.`,
+      };
+    }
+    return this.#openFile(filePath);
+  }
+
+  async #openFile(filePath) {
     if (!(await isEnvVaultFile(filePath))) {
       return {
         success: false,

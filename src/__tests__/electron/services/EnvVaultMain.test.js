@@ -169,6 +169,107 @@ describe('EnvVaultRegistry', () => {
     });
   });
 
+  // New-22: a folder opens the vault the CLI would use there.
+  describe('open a folder', () => {
+    const pickFolder = (folder) => ({
+      showOpenDialog: vi.fn(async () =>
+        folder
+          ? { canceled: false, filePaths: [folder] }
+          : { canceled: true, filePaths: [] }
+      ),
+    });
+    const openFolder = (folder) =>
+      new EnvVaultRegistry({ envsDir, dialog: pickFolder(folder) });
+
+    it("prefers the project's .env.vault over an app-folder vault of the same name", async () => {
+      const project = path.join(dir, 'Superxpense');
+      await seed(path.join(project, '.env.vault'));
+      await seed(path.join(envsDir, 'superxpense.env.vault'));
+      const registry = openFolder(project);
+      const opened = await registry.openFolderFromDialog('win');
+      expect(opened.success).toBe(true);
+      expect(registry.resolve(opened.id)).toBe(
+        path.join(project, '.env.vault')
+      );
+      expect(await registry.list()).toContainEqual(
+        expect.objectContaining({
+          id: opened.id,
+          label: 'Superxpense/.env.vault',
+          source: 'opened',
+        })
+      );
+    });
+
+    it('walks up to the git root, like the CLI', async () => {
+      const repo = path.join(dir, 'repo');
+      await fs.mkdirp(path.join(repo, '.git'));
+      await seed(path.join(repo, '.env.vault'));
+      const deep = path.join(repo, 'services', 'api');
+      await fs.mkdirp(deep);
+      const registry = openFolder(deep);
+      const opened = await registry.openFolderFromDialog(null);
+      expect(registry.resolve(opened.id)).toBe(path.join(repo, '.env.vault'));
+    });
+
+    it('finds config/.env.vault, then the app-folder vault named after the folder', async () => {
+      const withConfig = path.join(dir, 'web');
+      await seed(path.join(withConfig, 'config', '.env.vault'));
+      let registry = openFolder(withConfig);
+      let opened = await registry.openFolderFromDialog(null);
+      expect(registry.resolve(opened.id)).toBe(
+        path.join(withConfig, 'config', '.env.vault')
+      );
+
+      const bare = path.join(dir, 'Billing App');
+      await fs.mkdirp(bare);
+      await seed(path.join(envsDir, 'billing_app.env.vault'));
+      registry = openFolder(bare);
+      opened = await registry.openFolderFromDialog(null);
+      expect(registry.resolve(opened.id)).toBe(
+        path.join(envsDir, 'billing_app.env.vault')
+      );
+    });
+
+    it('says where it looked when the folder has no vault', async () => {
+      const repo = path.join(dir, 'empty-repo');
+      await fs.mkdirp(path.join(repo, '.git'));
+      const sub = path.join(repo, 'pkg');
+      await fs.mkdirp(sub);
+      const registry = openFolder(sub);
+      const result = await registry.openFolderFromDialog(null);
+      expect(result).toEqual({
+        success: false,
+        code: 'NOT_FOUND',
+        error:
+          `No environment vault found for ${sub}. Looked for .env.vault in ` +
+          `it and its parents up to ${repo}, config/.env.vault, and ` +
+          'pkg.env.vault in the app folder.',
+      });
+      expect(await registry.list()).toEqual([]);
+
+      const alone = path.join(dir, 'alone');
+      await fs.mkdirp(alone);
+      expect(
+        (await openFolder(alone).openFolderFromDialog(null)).error
+      ).toContain(`for ${alone}. Looked for .env.vault in it, config`);
+    });
+
+    it('refuses a .env.vault that is not an env vault', async () => {
+      const project = path.join(dir, 'odd');
+      await fs.outputFile(path.join(project, '.env.vault'), 'API_KEY=plain');
+      const registry = openFolder(project);
+      expect((await registry.openFolderFromDialog(null)).code).toBe('INVALID');
+      expect(await registry.list()).toEqual([]);
+    });
+
+    it('reports a canceled dialog', async () => {
+      expect(await openFolder(null).openFolderFromDialog(null)).toEqual({
+        success: false,
+        canceled: true,
+      });
+    });
+  });
+
   it('reserves a new app-folder path only for a valid, unused name', async () => {
     await seed();
     const registry = new EnvVaultRegistry({ envsDir });
@@ -710,6 +811,22 @@ describe('env vault IPC handlers (contract)', () => {
     expect(dialog.showOpenDialog).toHaveBeenCalledWith(
       'main-window',
       expect.anything()
+    );
+  });
+
+  it('opens a folder through the registry with the window as parent', async () => {
+    const dialog = { showOpenDialog: vi.fn(async () => ({ canceled: true })) };
+    const withDialog = createEnvVaultHandlers({
+      registry: new EnvVaultRegistry({ envsDir, dialog }),
+      session,
+      getWindow: () => 'main-window',
+    });
+    expect(await withDialog['env-vaults:open-folder']()).toMatchObject({
+      canceled: true,
+    });
+    expect(dialog.showOpenDialog).toHaveBeenCalledWith(
+      'main-window',
+      expect.objectContaining({ properties: ['openDirectory'] })
     );
   });
 

@@ -159,6 +159,39 @@ describe('EnvironmentVaultService', () => {
       expect(result).toBe('/no-git/app/.env.vault');
     });
 
+    // New-22: the app resolves a folder the user picked, not its own cwd.
+    it('resolves from a given folder instead of the process cwd', () => {
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/elsewhere');
+      existsForPaths('/repo/.git', '/repo/.env.vault');
+      expect(
+        EnvironmentVaultService.resolveVaultPath({ cwd: '/repo/svc/api' })
+      ).toBe('/repo/.env.vault');
+
+      existsForPaths('/proj/config/.env.vault');
+      expect(EnvironmentVaultService.resolveVaultPath({ cwd: '/proj' })).toBe(
+        '/proj/config/.env.vault'
+      );
+      expect(
+        EnvironmentVaultService.resolveVaultPath({
+          vault: 'x/.env.vault',
+          cwd: '/proj',
+        })
+      ).toBe('/proj/x/.env.vault');
+    });
+
+    it('looks for the folder-named vault in a given envs dir', () => {
+      existsForPaths('/data/envs/my_app.env.vault');
+      expect(
+        EnvironmentVaultService.resolveVaultPath({
+          cwd: '/work/My App',
+          envsDir: '/data/envs',
+        })
+      ).toBe('/data/envs/my_app.env.vault');
+      expect(
+        EnvironmentVaultService.defaultVaultPath('/work/My App', '/data/envs')
+      ).toBe('/data/envs/my_app.env.vault');
+    });
+
     it('falls back to config/.env.vault when no walk-up match', () => {
       cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/app');
       const configVault = path.resolve('config', '.env.vault');

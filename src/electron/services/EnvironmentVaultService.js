@@ -130,20 +130,30 @@ export class EnvironmentVaultService {
     }
   }
 
-  static resolveVaultPath({ vault, name } = {}) {
+  /**
+   * The vault a CLI command run in `cwd` uses: `vault` (a path), `name`
+   * (the app folder), else `.env.vault` in `cwd` or a parent up to the git
+   * root, `config/.env.vault`, then `<envs>/<folder name>.env.vault`. Null
+   * when none exists. The app passes a folder the user picked, and its own
+   * `envsDir` (New-22).
+   *
+   * @param {{vault?: string, name?: string, cwd?: string, envsDir?: string}}
+   *   [options]
+   * @returns {string|null}
+   */
+  static resolveVaultPath({
+    vault,
+    name,
+    cwd = process.cwd(),
+    envsDir = this.getEnvsDir(),
+  } = {}) {
     if (vault) {
-      return path.resolve(vault);
+      return path.resolve(cwd, vault);
     }
 
     if (name) {
       return this.getEnvVaultPath(name);
     }
-
-    const cwd = process.cwd();
-    const cwdName = path
-      .basename(cwd)
-      .replace(/[^a-z0-9_-]/gi, '_')
-      .toLowerCase();
 
     // Walk up from cwd toward ancestors looking for `.env.vault`, bounded by
     // the git root. If no git root is found, only cwd itself is checked.
@@ -154,12 +164,12 @@ export class EnvironmentVaultService {
       return path.resolve(upwardVault);
     }
 
-    const configVault = path.resolve('config', '.env.vault');
+    const configVault = path.resolve(cwd, 'config', '.env.vault');
     if (fs.existsSync(configVault)) {
       return configVault;
     }
 
-    const appDataVault = this.getEnvVaultPath(cwdName);
+    const appDataVault = this.defaultVaultPath(cwd, envsDir);
     if (fs.existsSync(appDataVault)) {
       return appDataVault;
     }
@@ -167,12 +177,13 @@ export class EnvironmentVaultService {
     return null;
   }
 
-  static defaultVaultPath() {
+  /** `<envs>/<folder name>.env.vault`, the app-folder vault for `cwd`. */
+  static defaultVaultPath(cwd = process.cwd(), envsDir = this.getEnvsDir()) {
     const cwdName = path
-      .basename(process.cwd())
+      .basename(cwd)
       .replace(/[^a-z0-9_-]/gi, '_')
       .toLowerCase();
-    return this.getEnvVaultPath(cwdName);
+    return resolvePath(envsDir, `${cwdName}.env.vault`);
   }
 
   static async vaultExists(path) {

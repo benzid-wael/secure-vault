@@ -45,6 +45,8 @@ let clipboardText;
 let present;
 /** The fake safeStorage behind the keychain, to make it refuse. */
 let safeStore;
+/** What the fake open dialog returns, when a test sets it. */
+let picked;
 /** Listeners of `onChanged`, as main's watcher would call them. */
 let changeListeners = [];
 const emitChange = (payload) =>
@@ -69,6 +71,7 @@ function wire(handlers) {
   return {
     list: call('env-vaults:list'),
     open: call('env-vaults:open'),
+    openFolder: call('env-vaults:open-folder'),
     create: call('env-vaults:create'),
     unlock: call('env-vault:unlock'),
     unlockSaved: call('env-vault:unlock-saved'),
@@ -124,13 +127,24 @@ beforeEach(async () => {
   );
   session = new EnvVaultSession();
   present = true;
+  picked = undefined;
+  const dialog = {
+    showOpenDialog: async () => ({
+      canceled: false,
+      filePaths: [picked ?? path.join(dir, 'in.env')],
+    }),
+    showSaveDialog: async () => ({
+      canceled: false,
+      filePath: path.join(dir, 'ci-dev.env'),
+    }),
+  };
   safeStore = fakeSafeStorage();
   saved = win.electronAPI;
   win.electronAPI = {
     ...saved,
     envVaults: wire(
       createEnvVaultHandlers({
-        registry: new EnvVaultRegistry({ envsDir: dir }),
+        registry: new EnvVaultRegistry({ envsDir: dir, dialog }),
         session,
         keychain: new EnvVaultKeychain({
           file: path.join(dir, 'kept', 'passwords.json'),
@@ -145,16 +159,7 @@ beforeEach(async () => {
             readText: () => clipboardText,
           },
         }),
-        dialog: {
-          showOpenDialog: async () => ({
-            canceled: false,
-            filePaths: [path.join(dir, 'in.env')],
-          }),
-          showSaveDialog: async () => ({
-            canceled: false,
-            filePath: path.join(dir, 'ci-dev.env'),
-          }),
-        },
+        dialog,
       })
     ),
   };
@@ -693,6 +698,38 @@ describe('env vault UI on the real handlers (StrictMode)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Lock' }));
     await screen.findByText('Environment Vaults');
   };
+
+  // New-22: a project folder opens the vault the CLI would use there.
+  it('opens the vault of a project folder and shows its path before unlocking', async () => {
+    const project = path.join(dir, 'Superxpense');
+    await fs.copy(
+      path.join(dir, 'app.env.vault'),
+      path.join(project, '.env.vault')
+    );
+    picked = project;
+    render(<EnvVaultsPanel />);
+    fireEvent.click(await screen.findByText('Open folder…'));
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(dialog).getByText(path.join(project, '.env.vault'))
+    ).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText('Vault Password'), {
+      target: { value: PW },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Unlock' }));
+    expect(await screen.findByText('New environment')).toBeInTheDocument();
+  });
+
+  it('says where it looked when a folder has no vault', async () => {
+    picked = path.join(dir, 'nothing-here');
+    await fs.mkdirp(picked);
+    render(<EnvVaultsPanel />);
+    fireEvent.click(await screen.findByText('Open folder…'));
+    expect(
+      await screen.findByText(/No environment vault found for .*nothing-here/)
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
 
   it('remembers the password when asked and unlocks with it next time', async () => {
     render(<EnvVaultsPanel />);

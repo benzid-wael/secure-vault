@@ -447,3 +447,19 @@ Known hazards so far, to be completed per task:
   shows RunAsNode, NodeOptions and NodeCliInspect disabled;
   `<app> --inspect` starts with no "Debugger listening" line.
 - **Rollback:** reinstall the previous app. Nothing on disk changes.
+
+### New-22: open a project folder
+
+- **Runtime change (gated by the Environments UI gate):** the env vault list
+  has Open folder…, which opens the vault the CLI would use in that folder.
+  The unlock dialog shows the vault's path.
+- **CLI:** `resolveVaultPath` now takes the folder as a parameter instead of
+  reading the process's; called without it, it resolves exactly as before.
+- **Schema or config change:** none.
+- **Before it ships:** nothing beyond the gate's own criteria.
+- **Gated by:** the Environments UI gate.
+- **Verify after release:** in a project where `vault env show` works with
+  no `-v`, Open folder… on the project (or a subfolder) shows that
+  project's `.env.vault` path (the nearest one up to the git root) in the
+  unlock dialog, and unlocking shows the same envs as `vault env list`.
+- **Rollback:** reinstall the previous app. Nothing on disk changes.

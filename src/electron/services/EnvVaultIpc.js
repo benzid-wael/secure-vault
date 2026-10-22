@@ -278,6 +278,7 @@ export function createEnvVaultHandlers({
     },
 
     'env-vaults:open': () => registry.openFromDialog(getWindow()),
+    'env-vaults:open-folder': () => registry.openFolderFromDialog(getWindow()),
 
     'env-vaults:create': async (event, options, password) => {
       if (options?.mode !== 'appdata') {

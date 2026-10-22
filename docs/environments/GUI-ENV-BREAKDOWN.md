@@ -64,7 +64,7 @@ updated as each task finishes, not in a batch at the end.
 | New-19 | Verify the CSP and sandbox in packaged builds (asar)               | M0  | P1  | 🟡     | 2 (blocks the next tag)                |
 | New-20 | Fix: reveal/edit fail with "Unknown view" in dev                   | M4  | P0  | ✅     | 15, 20                                 |
 | New-21 | Move or duplicate keys between environments                        | M4  | P0  | ✅     | 9, 17, 20                              |
-| New-22 | Open a folder and find the vault the CLI would use                 | M3  | P1  | ⬜     | 14                                     |
+| New-22 | Open a folder and find the vault the CLI would use                 | M3  | P1  | ✅     | 14                                     |
 | New-23 | Unlock error says which file, without "corrupted" first            | M4  | P2  | ✅     | 19                                     |
 | New-24 | Unlock an env vault with the password a profile injects            | M4  | P2  | ✅     | 15                                     |
 | New-25 | Optional comment per key (env vaults) and notes on entry cards     | M4  | P1  | ✅     | 9, 20                                  |
@@ -1497,7 +1497,8 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### New-22: Open a folder and find the vault the CLI would use
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
+  `feat/vault-env-gui`; not merged, not released. Behind the env UI gate.
 - **Found:** author testing, 2026-10-22: the app list showed an older
   `Superxpense.env.vault` in the app folder, while `pvault` used the
   project's hidden `.env.vault`.
@@ -1508,7 +1509,37 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
   shown before unlocking.
 - **Dependencies:** 14. Remembering opened vaults across restarts is the rest
   of Task 14.
-- **Validation:** opening `services/Superxpense` lists its `.env.vault`.
+- **Built:**
+  - `EnvironmentVaultService.resolveVaultPath` takes `cwd` (default
+    `process.cwd()`) and `envsDir`; `defaultVaultPath(cwd, envsDir)` names
+    the app-folder vault. The CLI passes neither, so its behavior is
+    unchanged; one function decides for both.
+  - `EnvVaultRegistry.openFolderFromDialog`: a folder dialog, then
+    `resolveVaultPath({cwd: folder, envsDir})`, then the same check as a
+    picked file (a JSON file of type `environment-vault`). No vault: a
+    `NOT_FOUND` error that names the folder and every place searched.
+  - Channel `env-vaults:open-folder`, preload `envVaults.openFolder()`.
+  - The vault list has **Open folder…** next to Open… (a separate button:
+    Windows and Linux dialogs can't pick a file and a folder at once).
+  - The unlock dialog shows the vault's full path above the password, for
+    every vault.
+- **Validation:**
+  - `EnvVaultMain.test.js` (real files): the project's `.env.vault` wins
+    over an app-folder vault of the same name (the Superxpense case);
+    a subfolder walks up to the git root; `config/.env.vault`; the
+    app-folder vault named after the folder ("Billing App" →
+    `billing_app.env.vault`); the not-found message, with and without a git
+    root; a `.env.vault` that isn't an env vault is refused; a canceled
+    dialog; the channel opens a folder dialog on the main window.
+  - `EnvironmentVaultService.test.js`: resolving from a given folder ignores
+    the process cwd; a relative `vault` resolves against it; `envsDir` is
+    used for the fallback.
+  - `EnvVaultsReal.test.jsx`: Open folder… on a project shows its
+    `.env.vault` path in the unlock dialog and unlocks; a folder without a
+    vault shows where it looked.
+  - Coverage: `EnvVaultsPanel.jsx` 93% lines; `EnvVaultIpc.js` 98%; the
+    three main-process files together 97%. Type check 291 (two fewer: the
+    resolver's options are now typed). e2e 5/5.
 - **Cost of leaving it:** users have to find a hidden file, and can unlock a
   different vault from the one their CLI uses without noticing.
 
