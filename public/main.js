@@ -39,6 +39,10 @@ import { WindowManager } from '../src/electron/services/WindowManager.js';
 import { MenuService } from '../src/electron/services/MenuService.js';
 import { SecurityManager } from '../src/electron/services/SecurityManager.js';
 import { getVaultsDir } from '../src/electron/utils/appPaths.js';
+import { readFeatures } from '../src/electron/utils/features.js';
+import { EnvVaultRegistry } from '../src/electron/services/EnvVaultRegistry.js';
+import { EnvVaultSession } from '../src/electron/services/EnvVaultSession.js';
+import { createEnvVaultHandlers } from '../src/electron/services/EnvVaultIpc.js';
 
 class ElectronApp {
   constructor() {
@@ -71,6 +75,13 @@ class ElectronApp {
       });
       // Set only by the native open dialog (`select-import-file`).
       this.selectedImportPath = null;
+
+      this.features = readFeatures();
+      // Env vaults (GUI-ENV-RFC §6.6): main maps ids to paths and holds keys.
+      this.envRegistry = new EnvVaultRegistry({ dialog });
+      this.envSession = new EnvVaultSession({
+        onLocked: (id) => this.sendToWindow('env-vault-locked', { id }),
+      });
 
       this.mainWindow = null;
       console.log('ElectronApp initialized successfully');
@@ -174,6 +185,12 @@ class ElectronApp {
     return rest;
   }
 
+  sendToWindow(channel, payload) {
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send(channel, payload);
+    }
+  }
+
   /** Close the session and tell the renderer to drop back to the selector. */
   lockSession() {
     const wasUnlocked = this.session.vaultName !== null;
@@ -185,9 +202,16 @@ class ElectronApp {
 
   setupAutoLock() {
     // Lock whenever the user steps away from the machine.
-    powerMonitor.on('suspend', () => this.lockSession());
-    powerMonitor.on('lock-screen', () => this.lockSession());
-    app.on('before-quit', () => this.session.close());
+    const lockAll = () => {
+      this.lockSession();
+      this.envSession.lockAll();
+    };
+    powerMonitor.on('suspend', lockAll);
+    powerMonitor.on('lock-screen', lockAll);
+    app.on('before-quit', () => {
+      this.session.close();
+      this.envSession.lockAll();
+    });
   }
 
   setupHandlers() {
@@ -208,6 +232,19 @@ class ElectronApp {
           ? fn(event, vaultName, ...args)
           : { success: false, error: check.error };
       });
+
+    handle('get-features', () => ({ success: true, ...this.features }));
+    // Behind the New-4 gate: with it off, none of these channels exist.
+    if (this.features.envVaults) {
+      const envHandlers = createEnvVaultHandlers({
+        registry: this.envRegistry,
+        session: this.envSession,
+        getWindow: () => this.mainWindow,
+      });
+      for (const [channel, fn] of Object.entries(envHandlers)) {
+        handle(channel, fn);
+      }
+    }
 
     // IPC Handlers using the new VaultService
     handle('get-vaults', async () => {

@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import { Snackbar, Alert } from '@mui/material';
+import {
+  Snackbar,
+  Alert,
+  Box,
+  ToggleButton,
+  ToggleButtonGroup,
+} from '@mui/material';
 import {
   BrowserRouter as Router,
   Routes,
@@ -15,6 +21,7 @@ import CreateVault from './components/CreateVault';
 import ConfigurationDialog from './components/ConfigurationDialog';
 import ImportExportDialog from './components/ImportExportDialog';
 import VaultRecovery from './components/VaultRecovery';
+import EnvVaultsPanel from './components/env/EnvVaultsPanel';
 import './App.css';
 
 const darkTheme = createTheme({
@@ -58,6 +65,10 @@ function App() {
   const [currentView, setCurrentView] = useState('selector'); // selector, login, manager, create, recovery
   const [showConfiguration, setShowConfiguration] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
+  // Gates decided by main (New-4); everything env-related is hidden until
+  // main says `envVaults`.
+  const [features, setFeatures] = useState({ envVaults: false });
+  const [selectorMode, setSelectorMode] = useState('passwords'); // passwords, environments
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: '',
@@ -80,6 +91,21 @@ function App() {
     }
     resetToSelector();
   }, [resetToSelector]);
+
+  useEffect(() => {
+    let active = true;
+    /** @type {any} */ (window).electronAPI
+      ?.getFeatures?.()
+      .then((result) => {
+        if (active && result?.success) {
+          setFeatures({ envVaults: result.envVaults === true });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     loadAvailableVaults();
@@ -267,11 +293,30 @@ function App() {
     setSnackbar({ ...snackbar, open: false });
   };
 
+  const modeSwitch = features.envVaults && (
+    <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
+      <ToggleButtonGroup
+        exclusive
+        size="small"
+        value={selectorMode}
+        onChange={(event, mode) => mode && setSelectorMode(mode)}
+        aria-label="Vault type"
+      >
+        <ToggleButton value="passwords">Passwords</ToggleButton>
+        <ToggleButton value="environments">Environments</ToggleButton>
+      </ToggleButtonGroup>
+    </Box>
+  );
+
   const renderCurrentView = () => {
     switch (currentView) {
       case 'selector':
+        if (features.envVaults && selectorMode === 'environments') {
+          return <EnvVaultsPanel header={modeSwitch} />;
+        }
         return (
           <VaultSelector
+            header={modeSwitch || null}
             vaults={availableVaults}
             onVaultSelect={handleVaultSelect}
             onCreateNew={() => setCurrentView('create')}

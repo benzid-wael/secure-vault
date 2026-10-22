@@ -12,27 +12,27 @@ updated as each task finishes, not in a batch at the end.
 | #      | Task                                                             | RFC | Pri | Status | Depends on                             |
 | ------ | ---------------------------------------------------------------- | --- | --- | ------ | -------------------------------------- |
 | 0      | Write this breakdown and the rollout plan                        | —   | P0  | ✅     | —                                      |
-| 1      | Make the renderer sandbox explicit and verified                  | M0  | P1  | ⬜     | 0, New-1                               |
-| 2      | Content-Security-Policy for the renderer                         | M0  | P1  | ⬜     | 1                                      |
+| 1      | Make the renderer sandbox explicit and verified                  | M0  | P1  | ✅     | 0, New-1                               |
+| 2      | Content-Security-Policy for the renderer                         | M0  | P1  | 🟡     | 1                                      |
 | 3      | Async key derivation (`deriveKeyAsync`)                          | M1  | P0  | ✅     | 0, New-1                               |
 | 4      | `VaultLock` module                                               | M1  | P0  | ✅     | 3                                      |
 | 5      | `read()` / `transact()` with revisions and `REKEYED`             | M1  | P0  | ✅     | 3, 4                                   |
 | 6      | Port every env op onto `transact`; `saveVault` private           | M1  | P0  | ✅     | 5                                      |
 | 7      | `squash` snapshot, re-keyed by change-password                   | M1  | P1  | ⬜     | 6                                      |
 | 8      | CLI docs, CHANGELOG, `doctor` reports stale locks                | M1  | P1  | ⬜     | 6                                      |
-| 9      | `applyVarChanges` model method                                   | M2  | P0  | ⬜     | 6                                      |
-| 10     | Changeset apply + rebase in the service                          | M2  | P0  | ⬜     | 9                                      |
+| 9      | `applyVarChanges` model method                                   | M2  | P0  | 🟡     | 6                                      |
+| 10     | Changeset apply + rebase in the service                          | M2  | P0  | ⏸     | 9                                      |
 | 11     | Single-instance lock for the app                                 | M3  | P1  | ⬜     | 0                                      |
 | 12     | Main-process `ClipboardService` + IPC                            | M3  | P1  | ⬜     | 0, New-3                               |
 | 13     | Idle lock for password vaults                                    | M3  | P1  | ⬜     | New-2                                  |
-| 14     | `EnvVaultRegistry` (ids, dialogs, recents)                       | M3  | P0  | ⬜     | 6, 11, New-2                           |
-| 15     | `EnvVaultSession` (keys, commit/recover, idle)                   | M3  | P0  | ⬜     | 5, 14, New-2                           |
+| 14     | `EnvVaultRegistry` (ids, dialogs, recents)                       | M3  | P0  | 🟡     | 6, 11, New-2                           |
+| 15     | `EnvVaultSession` (keys, commit/recover, idle)                   | M3  | P0  | 🟡     | 5, 14, New-2                           |
 | 16     | `EnvVaultWatcher`                                                | M3  | P1  | ⬜     | 15                                     |
-| 17     | IPC gate + core channels + preload                               | M3  | P0  | ⬜     | 10, 12, 14, 15                         |
+| 17     | IPC gate + core channels + preload                               | M3  | P0  | 🟡     | 10, 12, 14, 15                         |
 | 18     | IPC: structure, history, diff, import/export channels            | M3  | P2  | ⬜     | 17                                     |
-| 19     | Renderer: Environments switch, vault list, open/new/unlock       | M4  | P0  | ⬜     | 2, 17, New-4                           |
-| 20     | Renderer: env view (masked, reveal, copy, inline edit)           | M4  | P0  | ⬜     | 19                                     |
-| 21     | Renderer: bulk edit (table + dotenv text), conflicts             | M4  | P0  | ⬜     | 20                                     |
+| 19     | Renderer: Environments switch, vault list, open/new/unlock       | M4  | P0  | ✅     | 2, 17, New-4                           |
+| 20     | Renderer: env view (masked, reveal, copy, inline edit)           | M4  | P0  | 🟡     | 19                                     |
+| 21     | Renderer: bulk edit (table + dotenv text), conflicts             | M4  | P0  | ⏸     | 20                                     |
 | 22     | Renderer: move secret copy to `ClipboardService`                 | M4  | P1  | ⬜     | 12, New-3                              |
 | 23     | Renderer: Settings for idle timeout and recents                  | M4  | P1  | ⬜     | 13, 14, New-2                          |
 | 24     | Renderer: env structure ops                                      | M5  | P2  | ⬜     | 18, 20                                 |
@@ -40,13 +40,13 @@ updated as each task finishes, not in a batch at the end.
 | 26     | Renderer: diff and validate                                      | M5  | P2  | ⬜     | 18, 20                                 |
 | 27     | Renderer: import, export, template                               | M5  | P2  | ⬜     | 18, 20                                 |
 | 28     | Renderer: env vault change-password                              | M5  | P2  | ⬜     | 7, 18, 19                              |
-| 29     | e2e scenario `env-vault-concurrent`                              | M6  | P1  | ⬜     | 21                                     |
+| 29     | e2e scenario `env-vault-concurrent`                              | M6  | P1  | 🟡     | 21                                     |
 | 30     | CI e2e job (ubuntu + xvfb)                                       | M6  | P1  | ⬜     | 1, 29                                  |
 | 31     | User guide `docs/guide/gui/env-vaults.md`                        | M6  | P2  | ⬜     | 21                                     |
 | New-1  | Coverage can't see the code this plan changes                    | —   | P1  | ✅     | — (blocks 1, 3)                        |
 | New-2  | App-wide settings store                                          | M3  | P1  | ⬜     | 0                                      |
 | New-3  | Decide which secrets go through `ClipboardService`               | —   | P1  | ⬜     | —                                      |
-| New-4  | Feature gate for the Environments UI                             | M4  | P0  | ⬜     | 0                                      |
+| New-4  | Feature gate for the Environments UI                             | M4  | P0  | ✅     | 0                                      |
 | New-5  | Verify async PBKDF2 in the Bun-compiled CLI binary               | M1  | P1  | 🔶     | 3                                      |
 | New-6  | Decide whether project coverage should include `src/electron/**` | —   | P2  | ⬜     | New-1                                  |
 | New-7  | Commit a way to measure coverage of excluded files               | —   | P1  | ⬜     | New-1                                  |
@@ -57,6 +57,11 @@ updated as each task finishes, not in a batch at the end.
 | New-12 | Windows: retry the final rename on `EPERM`                       | M1  | P1  | ✅     | 5 (blocks the release of 6 on Windows) |
 | New-13 | CI runs the unit tests on Windows and macOS too                  | —   | P1  | ⬜     | — (verifies 4, New-12)                 |
 | New-14 | Remove the env `saveVault` and its mocked tests                  | —   | P2  | ⬜     | 6                                      |
+| New-15 | Type `window.electronAPI` once for the type check                | —   | P2  | ⬜     | —                                      |
+| New-16 | ESLint flags MUI components used only in JSX as unused           | —   | P2  | ⬜     | —                                      |
+| New-17 | Shared test mock lacks `removeAllListeners` / `onVaultLocked`    | —   | P2  | ⬜     | —                                      |
+| New-18 | Dev-mode Content-Security-Policy                                 | M0  | P2  | ⬜     | 2                                      |
+| New-19 | Verify the CSP and sandbox in packaged builds (asar)             | M0  | P1  | ⬜     | 2 (blocks the next tag)                |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -78,7 +83,7 @@ with M0 (1, 2) required before 19 ships to anyone.
 - Branch: `feat/vault-env-gui`, not merged, not released. Commits: `dd4e2e1`
   (RFC + discovery), `92e9354` (Task 0), `3553e81` (Task 3), `2f01040`
   (Task 4), `ac641ad` (New-10), `c87c53f` (Task 5), `8b2a0f4`
-  (New-12).
+  (New-12), `8c2a3c2` (Task 6).
 
 ## Corrections to the plan
 
@@ -137,6 +142,17 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 - **MVP first** (author, 2026-10-21, after New-12): follow the P0 path only.
   Discovered P1/P2 work is recorded as tasks and not done unless it blocks
   P0. Each task keeps its full Definition of Done.
+- **MVP scope cut** (author, 2026-10-22, after Task 6: "optimize for time,
+  e2e working MVP in the next iteration"):
+  - Out of the MVP: Task 10 (rebase) and Task 21 (bulk edit). An edit
+    against a changed file gets `STALE`; the UI keeps the draft and asks
+    for a reload. No update is lost; the user redoes nothing but a click.
+  - Leaner versions, gaps recorded on each task: Task 9 (model method
+    only), 14 (no persisted recents, so no Task 11 / New-2 yet), 15 (idle
+    fixed at 5 min), 17 (no `copy`/`bulk-load`), 20 (no copy, no
+    watcher-driven refresh).
+  - The remaining P0 tasks were built in one iteration with one review,
+    not one review per task.
 - **Type-check rule for this plan** (New-9, 2026-10-21): `tsc --noEmit`
   errors stay ≤ the baseline (345), and none points at a line the task
   changed. Fixing the existing 345 is not part of this plan.
@@ -165,7 +181,13 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 
 ### Task 1: Make the renderer sandbox explicit and verified
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Built:** `sandbox: true` set explicitly in `WindowManager`.
+- **Proof:** the e2e driver registers a test-only preload
+  (`e2e/probe-preload.cjs`) in the same renderer; it reports
+  `process.sandboxed === true`. Checked in `first-launch` and `env-vault`.
+  `WindowManager.test.js` fails if `sandbox` is removed (it also covers
+  loading and navigation; the file went from 49% to 88% lines).
 - **Goal:** `webPreferences.sandbox: true` is set explicitly, and a test proves
   the preload runs sandboxed. Nobody can turn it off by accident.
 - **Constraints:** No change to the preload API surface (`window.electronAPI`).
@@ -183,7 +205,18 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 
 ### Task 2: Content-Security-Policy for the renderer
 
-- **Status:** ⬜ not started.
+- **Status:** 🟡 partial 2026-10-22. Uncommitted on `feat/vault-env-gui`; not merged, not released. Built and verified on the built app
+  (`file://`, as packaged); **not yet checked in a packaged (asar) build**
+  (New-19).
+- **Built:** a build-only Vite plugin (`renderer-csp` in `vite.config.js`)
+  injects the RFC §6.10 policy as the first `<meta>` in `build/index.html`,
+  plus `font-src 'self' data:` and `form-action 'none'`.
+  `frame-ancestors` is left out: browsers ignore it in a `<meta>` policy.
+- **Decision:** dev mode (`vite` on :3000) gets **no** CSP, because
+  plugin-react's inline refresh preamble needs one with `'unsafe-inline'`
+  scripts. A dev policy is New-18.
+- **Proof (e2e `env-vault`):** an injected inline `<script>` doesn't run,
+  and it's the only CSP violation in the whole scenario.
 - **Goal:** The packaged app's renderer runs under the RFC §6.10 CSP, so an
   injected inline script cannot execute.
 - **Constraints:** MUI/emotion needs `style-src 'unsafe-inline'`. Dev mode
@@ -493,7 +526,15 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 9: `applyVarChanges` model method
 
-- **Status:** ⬜ not started.
+- **Status:** 🟡 partial 2026-10-22. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Built:** `EnvironmentVault.applyVarChanges(env, ops, { message, createEnv })`:
+  `set`/`rm` ops as one version; `set` keeps a key's sensitivity unless
+  the op sets it, new keys are secret; keys must match `ENV_KEY_PATTERN`
+  (what survives a dotenv round trip); refuses a missing env without
+  `createEnv`. The version cap now throws with `code: 'LIMIT'`, and
+  `transact` passes `LIMIT` through. 13 model tests.
+- **Not done (MVP cut):** `setEnv`, `removeKey` and `importEnvFile` are not
+  re-implemented on it; `meta` ops (required) aren't supported.
 - **Goal:** `EnvironmentVault.applyVarChanges(env, ops, { message, createEnv })`
   applies set/rm/meta ops as one version. `setEnv`, `removeKey` and
   `importEnvFile` are re-implemented on it.
@@ -510,7 +551,8 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 10: Changeset apply + rebase in the service
 
-- **Status:** ⬜ not started.
+- **Status:** ⏸ deferred 2026-10-22 by the MVP scope cut. `env:commit` returns `STALE`
+  instead of rebasing; the channel shape (`rebased: false`) is ready for it.
 - **Goal:** The service applies an `EnvChangeset` against a base (revision,
   `envIdentity`, `keyStamps`), rebasing when touched keys are unchanged and
   returning `CONFLICT` (`changed` / `removed` / `added` / `env-gone`) otherwise.
@@ -566,7 +608,15 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 14: `EnvVaultRegistry`
 
-- **Status:** ⬜ not started.
+- **Status:** 🟡 partial 2026-10-22. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Built:** `EnvVaultRegistry` (`list`, `openFromDialog`,
+  `createInAppData`, `resolve`). Ids are random 128-bit hex per run, one per
+  path; a picked file must parse with `type: 'environment-vault'` before it
+  gets an id. 100% lines.
+- **Not done (MVP cut):** persisted recents and the toggle (need New-2 and
+  Task 11), `createFromDialog` (a new vault at a chosen path, e.g. a
+  project's `.env.vault`), `forget`. Vaults opened from the dialog are
+  remembered for the run only.
 - **Goal:** Main is the only place that maps opaque ids to vault paths, from
   the appdata scan, the native open/save dialogs and recents (RFC §6.6).
 - **Constraints:** Ids are random, per app run. The recents file is `0600`,
@@ -581,7 +631,17 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 15: `EnvVaultSession`
 
-- **Status:** ⬜ not started.
+- **Status:** 🟡 partial 2026-10-22. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Built:** `EnvVaultSession`: `unlock`, `run` (every op gets the key
+  **and** the password, keeps the key the op returns, maps `AUTH` to
+  `LOCKED`), `touch`, `lock`/`lockAll` (keys zeroed, views dropped,
+  `env-vault-locked` sent), views scoped to their vault. Hooked into
+  suspend, lock-screen and quit. 100% lines.
+- **Decision:** `recover` isn't a separate step. Since Task 5 the service
+  opens a re-keyed file with the password, so `REKEYED` can't happen while
+  the session holds it.
+- **Not done:** the idle timeout is a constant (5 min; configurable needs
+  New-2); replacing the stored password after a GUI change-password (Task 28).
 - **Goal:** Per-id key custody with `commit` / `recover` / user-only idle reset
   / `lockAll`, as RFC §6.6 describes.
 - **Constraints:** Key buffers are zeroed on lock. `REKEYED` never reaches the
@@ -611,7 +671,18 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 17: IPC gate + core channels + preload
 
-- **Status:** ⬜ not started.
+- **Status:** 🟡 partial 2026-10-22. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Built:** `createEnvVaultHandlers` (`EnvVaultIpc.js`), registered by main
+  through the trusted-sender `handle`, only when the New-4 gate is on:
+  `env-vaults:list/open/create`, `env-vault:unlock/lock`, `env:list`,
+  `env:view`, `env:refresh` (no idle reset), `env:reveal` (refused with
+  `STALE` if the file moved since the view), `env:view-close`,
+  `env:commit` (against the view's base revision), `env:create`. Preload:
+  `window.electronAPI.envVaults` and `getFeatures`. 99% lines;
+  contract tests drive the handlers on a real vault.
+- **Not done:** `env:copy` (Task 12), `env:bulk-load` (Task 21),
+  `env-vault-changed` (Task 16), and the M5 channels (Task 18).
+  `env-vaults:create` supports `mode: 'appdata'` only.
 - **Goal:** `handleEnvVault` and the M4 channels (`env-vaults:*`,
   `env-vault:unlock/lock`, `env:list/view/refresh/reveal/copy/bulk-load/view-close/commit`),
   plus their preload methods and events.
@@ -635,7 +706,14 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 19: Renderer: Environments switch, vault list, open/new/unlock
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Built:** `App.jsx` asks main for features; with `envVaults` on, the
+  selector shows a **Passwords | Environments** switch and Environments
+  renders `EnvVaultsPanel` (list, Open…, New… in the app folder, unlock).
+- **Tests:** `AppEnvGate.test.jsx` (gate off, missing, failing, on);
+  `EnvVaultsPanel.test.jsx`; e2e `first-launch` checks nothing env-related
+  shows with the gate off. Existing App and selector tests pass unchanged.
+  `AppFlows.test.jsx` was added to lift `App.jsx` (61.7% before) to 91%.
 - **Goal:** Behind the New-4 gate, the selector shows Passwords | Environments.
   Environments lists vaults and opens, creates (no presets) and unlocks them.
 - **Constraints:** Nothing env-related is visible with the gate off. The
@@ -647,7 +725,16 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 20: Renderer: env view
 
-- **Status:** ⬜ not started.
+- **Status:** 🟡 partial 2026-10-22. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Built:** `EnvView`: masked table, Reveal/Hide per row, inherited keys
+  dimmed with "from <parent>" (edit = override, no delete), Add / Edit /
+  Delete as one-op changesets, a "changed elsewhere" banner on `STALE` that
+  keeps the draft, Reload. Revealed values live only in component state,
+  dropped on unmount and on lock. 96% lines.
+- **Decision:** editing a masked value reveals it first, so saving an
+  untouched field can't wipe the secret.
+- **Not done:** Copy (Task 12), refresh on window focus or file change
+  (Task 16).
 - **Goal:** Masked table, per-row reveal, copy through main, inline edit as a
   one-op changeset, refresh banner, inherited keys marked.
 - **Constraints:** Revealed values are cleared on view close and on
@@ -658,7 +745,8 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 21: Renderer: bulk edit (table + dotenv text), conflicts
 
-- **Status:** ⬜ not started.
+- **Status:** ⏸ deferred 2026-10-22 by the MVP scope cut. Bulk edit and conflict
+  highlighting come with Task 10.
 - **Goal:** One changeset per save, computed against the view's base. Conflicts
   highlighted; `env-gone` lets the user copy the draft out; `LIMIT` offers
   squash.
@@ -727,7 +815,10 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 29: e2e scenario `env-vault-concurrent`
 
-- **Status:** ⬜ not started.
+- **Status:** 🟡 partial 2026-10-22. Uncommitted on `feat/vault-env-gui`; not merged, not released. The `env-vault` e2e scenario covers
+  seed → open → unlock → reveal → edit → another tool writes → `STALE`, nothing
+  overwritten → reload → save keeps both. The rebase and conflict steps wait
+  on Task 10.
 - **Goal:** RFC goal 7 as an e2e scenario (seed → open → unlock → edit →
   CLI `set` → banner → disjoint commit rebased → overlapping commit conflicts).
 - **Dependencies:** 21.
@@ -826,7 +917,14 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### New-4: Feature gate for the Environments UI
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Built:** `readFeatures()` (`src/electron/utils/features.js`): the
+  Environments UI is on in dev runs (`ELECTRON_IS_DEV=1` or
+  `NODE_ENV=development`) and off in production and packaged builds;
+  `SECURE_VAULT_ENV_UI=1`/`0` forces it on/off (changed 2026-10-22 so
+  `npm run dev:electron` shows it without setup). With it off, main registers **none** of the env channels, and
+  the renderer shows nothing env-related (it asks main via `get-features`).
+- **Flip criterion:** see the rollout plan's Gates table.
 - **Found:** Task 0, 2026-10-21.
 - **Goal:** The env UI can be merged task by task without a tagged release
   exposing a half-built feature.
@@ -1102,3 +1200,75 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 - **Cost of leaving it:** A dead public method that looks like a valid way to
   write a vault. The guard test catches new callers, but a reader may still
   copy the pattern.
+
+### New-15: Type `window.electronAPI` once for the type check
+
+- **Status:** ⬜ not started.
+- **Found:** Task 19, 2026-10-22.
+- **Goal:** `tsc` knows `window.electronAPI`, so renderer files stop
+  reporting it as missing.
+- **Constraints:** `tsconfig.json` only includes `*.js`/`*.jsx`; a `.d.ts`
+  needs an include change.
+- **Dependencies:** none.
+- **Implementation guidance:** New code avoids the error with a typed
+  accessor (`src/components/env/envApi.js`) or a `/** @type {any} */` cast
+  in tests. A `Window` declaration would remove dozens of existing errors
+  in `App.jsx` and the component tests at once.
+- **Validation:** no `Property 'electronAPI' does not exist` errors remain.
+- **Cost of leaving it:** noise that hides real type errors in renderer code.
+
+### New-16: ESLint flags MUI components used only in JSX as unused
+
+- **Status:** ⬜ not started.
+- **Found:** Tasks 19–20, 2026-10-22.
+- **Goal:** `no-unused-vars` stops reporting imports used only in JSX.
+- **Constraints:** no new errors; warnings only go down.
+- **Dependencies:** none.
+- **Implementation guidance:** enable `react/jsx-uses-vars` (and
+  `jsx-uses-react`) from `eslint-plugin-react` in `eslint.config.js`.
+  This iteration added 49 such warnings (343 → 392), all false positives.
+- **Validation:** the warning count drops by at least those 49; 0 errors.
+- **Cost of leaving it:** real unused imports are lost among false ones.
+
+### New-17: Shared test mock lacks `removeAllListeners` / `onVaultLocked`
+
+- **Status:** ⬜ not started.
+- **Found:** Task 19 tests, 2026-10-22.
+- **Goal:** unmounting `App` under `src/setupTests.js`'s mock doesn't throw.
+- **Constraints:** existing tests keep passing.
+- **Dependencies:** none.
+- **Implementation guidance:** add the two methods (and `getFeatures`) to
+  the shared mock; `AppEnvGate.test.jsx` adds them locally today.
+- **Validation:** an App test can unmount without local patches.
+- **Cost of leaving it:** each new App test re-patches the mock.
+
+### New-18: Dev-mode Content-Security-Policy
+
+- **Status:** ⬜ not started.
+- **Found:** Task 2, 2026-10-22.
+- **Goal:** `npm run dev:electron` runs under a CSP close to production's.
+- **Constraints:** Vite HMR needs `ws://localhost:3000`; plugin-react's
+  refresh preamble is an inline script.
+- **Dependencies:** 2.
+- **Implementation guidance:** a `serve`-only plugin with a nonce or hash
+  for the preamble, or set the header from main for the dev URL.
+- **Validation:** dev mode loads with HMR and no CSP violations.
+- **Cost of leaving it:** a CSP regression (e.g. a new inline script) only
+  shows up in the built app.
+
+### New-19: Verify the CSP and sandbox in packaged builds (asar)
+
+- **Status:** ⬜ not started.
+- **Found:** Task 2, 2026-10-22.
+- **Goal:** the packaged app on macOS, Windows and Linux starts, renders, and
+  logs no CSP violation.
+- **Constraints:** Task 2's guidance: test the packaged build, not just the
+  built one.
+- **Dependencies:** 2. **Blocks the next tag**, because the CSP and the
+  sandbox ship ungated and affect password vaults too.
+- **Implementation guidance:** `npm run package:<os>`, launch, unlock a
+  password vault, open DevTools-free logs (`--enable-logging`).
+- **Validation:** on each OS, the app unlocks a vault and the log has no
+  "Content Security Policy" line.
+- **Cost of leaving it:** a blank window for every user if `file://` inside
+  asar treats `'self'` differently.

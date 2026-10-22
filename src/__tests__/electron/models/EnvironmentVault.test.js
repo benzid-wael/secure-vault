@@ -398,3 +398,99 @@ describe('EnvironmentVault', () => {
     });
   });
 });
+describe('applyVarChanges', () => {
+  const withEnv = () => {
+    const vault = new EnvironmentVault();
+    vault.addEnvironment('dev');
+    vault.addVersion(
+      'dev',
+      { HOST: 'localhost', TOKEN: 's3cret', PORT: '5432' },
+      { nonSensitive: ['HOST', 'PORT'], required: ['TOKEN'] }
+    );
+    return vault;
+  };
+
+  it('applies every op as one new version', () => {
+    const vault = withEnv();
+    const version = vault.applyVarChanges(
+      'dev',
+      [
+        { op: 'set', key: 'HOST', value: 'db.internal' },
+        { op: 'set', key: 'NEW_KEY', value: 'v' },
+        { op: 'rm', key: 'PORT' },
+      ],
+      { message: 'bulk' }
+    );
+    expect(vault.getHistory('dev')).toHaveLength(2);
+    expect(version.n).toBe(2);
+    expect(version.message).toBe('bulk');
+    expect(version.vars).toEqual({
+      HOST: 'db.internal',
+      TOKEN: 's3cret',
+      NEW_KEY: 'v',
+    });
+  });
+
+  it("keeps a key's sensitivity unless the op sets it; new keys are secret", () => {
+    const vault = withEnv();
+    const version = vault.applyVarChanges('dev', [
+      { op: 'set', key: 'HOST', value: 'h' },
+      { op: 'set', key: 'TOKEN', value: 't', sensitive: false },
+      { op: 'set', key: 'PORT', value: '1', sensitive: true },
+      { op: 'set', key: 'FRESH', value: 'f' },
+    ]);
+    expect(version.nonSensitive.sort()).toEqual(['HOST', 'TOKEN']);
+  });
+
+  it('drops a removed key from required and nonSensitive', () => {
+    const vault = withEnv();
+    const version = vault.applyVarChanges('dev', [
+      { op: 'rm', key: 'TOKEN' },
+      { op: 'rm', key: 'HOST' },
+    ]);
+    expect(version.required).toEqual([]);
+    expect(version.nonSensitive).toEqual(['PORT']);
+  });
+
+  it('refuses a missing env unless createEnv', () => {
+    const vault = new EnvironmentVault();
+    const ops = [{ op: 'set', key: 'A', value: '1' }];
+    expect(() => vault.applyVarChanges('prod', ops)).toThrow(
+      "Environment 'prod' not found"
+    );
+    expect(vault.listEnvironmentNames()).toEqual([]);
+    vault.applyVarChanges('prod', ops, { createEnv: true });
+    expect(vault.getActiveVersion('prod').vars).toEqual({ A: '1' });
+  });
+
+  it.each([
+    [[], 'No changes to apply'],
+    [null, 'No changes to apply'],
+    [[{ op: 'set', key: '1BAD', value: 'x' }], "Invalid key '1BAD'"],
+    [[{ op: 'set', key: 'A-B', value: 'x' }], "Invalid key 'A-B'"],
+    [[{ op: 'set', key: 'A', value: 3 }], "The value for 'A' must be a string"],
+    [[{ op: 'rm', key: 'NOPE' }], "Key 'NOPE' not found in environment 'dev'"],
+    [[{ op: 'move', key: 'HOST' }], "Unknown change 'move'"],
+    [[null], "Invalid key 'undefined'"],
+  ])('rejects %j and adds no version', (ops, message) => {
+    const vault = withEnv();
+    expect(() =>
+      vault.applyVarChanges('dev', /** @type {any} */ (ops))
+    ).toThrow(message);
+    expect(vault.getHistory('dev')).toHaveLength(1);
+  });
+
+  it('marks the version cap with code LIMIT', () => {
+    const vault = withEnv();
+    for (let i = 1; i < 1000; i++) {
+      vault.applyVarChanges('dev', [{ op: 'set', key: 'N', value: String(i) }]);
+    }
+    let error;
+    try {
+      vault.applyVarChanges('dev', [{ op: 'set', key: 'N', value: 'x' }]);
+    } catch (e) {
+      error = e;
+    }
+    expect(error.code).toBe('LIMIT');
+  });
+});

@@ -67,6 +67,9 @@ export class WindowManager {
         minWidth: 800,
         minHeight: 600,
         webPreferences: {
+          // Pinned, not left to Electron's default (GUI-ENV-RFC §6.10): the
+          // preload only needs contextBridge and ipcRenderer.
+          sandbox: true,
           nodeIntegration: false,
           contextIsolation: true,
           enableRemoteModule: false,

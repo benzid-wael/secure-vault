@@ -38,9 +38,9 @@ vault file and the files next to it (`.bak`, `.lock`, `.deleted.<ts>`,
 
 ## Gates
 
-| Gate                       | Default | Controls                                     | Flip on (evidence, not a date)                                                                                                                                     | Defined by |
-| -------------------------- | ------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- |
-| Environments UI (name TBD) | off     | Everything env-related in the renderer (19+) | Tasks 1, 2 (M0), 6 (locking), 19–21 and 29 done; `env-vault-concurrent` green in CI (Task 30); the CLI release carrying Task 6 has been out as `latest` (proposed) | New-4      |
+| Gate                                     | Default | Controls                                                                        | Flip on (evidence, not a date)                                                                                                                                                                                                                                    | Defined by |
+| ---------------------------------------- | ------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| Environments UI: `SECURE_VAULT_ENV_UI=1` | off     | Every env IPC channel in main, and everything env-related in the renderer (19+) | M0 done in packaged builds (New-19); Tasks 6 + 8 released; `env-vault` e2e green in CI (Task 30); Copy (Task 12) in; the CLI release carrying Task 6 has been out as `latest`. Bulk edit (21) is **not** required since the MVP cut (proposed, author to confirm) | New-4      |
 
 The CLI-side changes (Tasks 3–10) ship **ungated**: they change concurrency
 behavior and add files, not features.
@@ -240,3 +240,34 @@ Known hazards so far, to be completed per task:
   `.lock` files; a leftover one is harmless to them and taken over by newer
   ones once its pid is dead. No vault data changes. The `.deleted.<ts>`
   snapshots are unchanged in format.
+
+### Tasks 1, 2, 9, 14, 15, 17, 19, 20, New-4: the env vault MVP
+
+- **Runtime change, ungated (every user, password vaults too):**
+  - The renderer is explicitly sandboxed (it already was by default).
+  - The built renderer has a Content-Security-Policy `<meta>`: no inline
+    scripts, no remote content. Dev mode has none (New-18).
+- **Runtime change, gated (off in production and packaged builds, on in
+  dev runs):** with the gate on (`SECURE_VAULT_ENV_UI=1` forces it),
+  main registers the env vault channels and the selector shows Passwords |
+  Environments. With it unset, the app behaves as before; the only new
+  channel is `get-features`.
+- **Schema or config change:** none. Env vault files are written through
+  Task 6's `transact` with `tool: 'gui'` in the lock.
+- **Before it ships:**
+  1. New-19: the packaged app on each OS starts with the CSP (blocks the
+     next tag, gated or not).
+  2. "Must not ship early" 1–3 and 6 still hold for flipping the gate.
+- **Gated by:** the Environments UI gate (table above). How to try it:
+  `npm run dev:electron`, or `SECURE_VAULT_ENV_UI=1 npm run start:prod`
+  after `npm run build:all`.
+- **Must not ship early:** the gate stays off in any tag until its flip
+  criterion is met.
+- **Per environment:** desktop app only. The CLI is unchanged by this
+  iteration, apart from `LIMIT` replacing `ERROR` as the code when an env
+  hits 1000 versions (message unchanged).
+- **Verify after release:** with the gate off, the selector looks as before
+  and `window.electronAPI.envVaults.list()` rejects (no handler). With it
+  on, the `env-vault` e2e scenario's steps work by hand.
+- **Rollback:** reinstall the previous app. Nothing on disk changes format;
+  env vaults written by the GUI are ordinary vault files.

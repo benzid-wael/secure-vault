@@ -4,7 +4,7 @@
 // everything else is the production main + renderer.
 const path = require('path');
 const fs = require('fs');
-const { app, dialog, BrowserWindow } = require('electron');
+const { app, dialog, BrowserWindow, ipcMain, session } = require('electron');
 
 const REPO = process.env.E2E_REPO;
 const OUT = process.env.E2E_OUT;
@@ -64,6 +64,28 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * passed, 1 when one failed, 2 when the scenario threw.
  */
 module.exports = function scenario(fn) {
+  // A test-only preload in the same renderer reports whether it runs
+  // sandboxed: that proves Electron honored `sandbox: true`, which reading
+  // the window's options wouldn't (GUI-ENV-BREAKDOWN Task 1).
+  const sandboxed = new Promise((resolve) =>
+    ipcMain.once('e2e-sandboxed', (event, value) => resolve(value))
+  );
+  // Registered before main's own whenReady handler creates the window.
+  app.whenReady().then(() =>
+    session.defaultSession.registerPreloadScript({
+      type: 'frame',
+      filePath: path.join(__dirname, 'probe-preload.cjs'),
+    })
+  );
+  // CSP violations the page reports (GUI-ENV-BREAKDOWN Task 2).
+  const cspViolations = [];
+  app.on('web-contents-created', (event, contents) =>
+    contents.on('console-message', (details) => {
+      const message = details?.message ?? String(details);
+      if (/Content Security Policy/i.test(message)) cspViolations.push(message);
+    })
+  );
+
   require(path.join(REPO, 'build/electron/main.cjs'));
 
   const results = [];
@@ -97,7 +119,18 @@ module.exports = function scenario(fn) {
       OUT,
       VAULTS_DIR,
       EXPORT_PATH,
+      ENVS_DIR: path.join(path.dirname(VAULTS_DIR), 'envs'),
+      sandboxed: () =>
+        Promise.race([sandboxed, sleep(5000).then(() => 'no report')]),
+      cspViolations,
       api: (call) => js(`window.electronAPI.${call}`),
+      clickLabel: (label) =>
+        js(`(() => {
+          const el = document.querySelector('[aria-label=${JSON.stringify(label)}]');
+          if (!el) return false;
+          el.click();
+          return true;
+        })()`),
       hasText: (text) => js(`__e2e.hasText(${JSON.stringify(text)})`),
       waitText: async (text, ms = 10000) => {
         for (let i = 0; i < ms / 100; i += 1) {

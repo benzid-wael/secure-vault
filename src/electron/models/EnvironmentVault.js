@@ -12,6 +12,9 @@ const MAX_VARS = 500;
 const MAX_KEY_LENGTH = 1024;
 const MAX_VALUE_LENGTH = 65536;
 
+/** A key that survives a dotenv export and re-import (see `parseEnvFile`). */
+export const ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 function assertNameAllowed(name) {
   if (RESERVED_ENV_NAMES.has(String(name).toLowerCase())) {
     throw new Error(`Environment name '${name}' is reserved`);
@@ -153,8 +156,11 @@ export class EnvironmentVault {
     const env = this.#getEnv(name);
 
     if (env.versions.length >= MAX_VERSIONS) {
-      throw new Error(
-        `Cannot add version: maximum of ${MAX_VERSIONS} versions per environment reached`
+      throw Object.assign(
+        new Error(
+          `Cannot add version: maximum of ${MAX_VERSIONS} versions per environment reached`
+        ),
+        { code: 'LIMIT' }
       );
     }
 
@@ -193,6 +199,65 @@ export class EnvironmentVault {
     env.activeVersion = nextN;
     this.updated = new Date().toISOString();
     return version;
+  }
+
+  /**
+   * Apply a changeset to `name` as one new version (GUI-ENV-RFC §6.4).
+   *
+   * @param {string} name
+   * @param {Array<{op: string, key: string, value?: string,
+   *   sensitive?: boolean}>} ops `{op: 'set', key, value, sensitive?}` or
+   *   `{op: 'rm', key}`.
+   *   `set` without `sensitive` keeps the key's current flag; a new key is
+   *   sensitive. `rm` of a key that isn't there throws.
+   * @param {Object} [options]
+   * @param {string|null} [options.message]
+   * @param {boolean} [options.createEnv] Create a missing env instead of
+   *   throwing. Changesets from the GUI never do (RFC H2).
+   */
+  applyVarChanges(name, ops, { message = null, createEnv = false } = {}) {
+    if (!Array.isArray(ops) || ops.length === 0) {
+      throw new Error('No changes to apply');
+    }
+    if (!this.environments[name]) {
+      if (!createEnv) throw new Error(`Environment '${name}' not found`);
+      this.addEnvironment(name);
+    }
+
+    const active = this.getActiveVersion(name);
+    const vars = active ? { ...active.vars } : {};
+    const nonSensitive = new Set(active ? active.nonSensitive : []);
+    const required = new Set(active ? active.required : []);
+
+    for (const change of ops) {
+      const { op, key } = change ?? {};
+      if (typeof key !== 'string' || !ENV_KEY_PATTERN.test(key)) {
+        throw new Error(`Invalid key '${key}'`);
+      }
+      if (op === 'set') {
+        if (typeof change.value !== 'string') {
+          throw new Error(`The value for '${key}' must be a string`);
+        }
+        vars[key] = change.value;
+        if (change.sensitive === false) nonSensitive.add(key);
+        if (change.sensitive === true) nonSensitive.delete(key);
+      } else if (op === 'rm') {
+        if (!(key in vars)) {
+          throw new Error(`Key '${key}' not found in environment '${name}'`);
+        }
+        delete vars[key];
+        nonSensitive.delete(key);
+        required.delete(key);
+      } else {
+        throw new Error(`Unknown change '${op}'`);
+      }
+    }
+
+    return this.addVersion(name, vars, {
+      nonSensitive: [...nonSensitive],
+      required: [...required],
+      message,
+    });
   }
 
   getActiveVersion(name) {

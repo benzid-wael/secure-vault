@@ -9,10 +9,38 @@ const require = createRequire(import.meta.url);
 const root = fileURLToPath(new URL('.', import.meta.url));
 const isDev = process.env.NODE_ENV === 'development';
 
+// The renderer's Content-Security-Policy (GUI-ENV-RFC §6.10). Build only: in
+// dev, @vitejs/plugin-react injects an inline React Refresh script that a
+// strict `script-src` would block. emotion/MUI need inline styles.
+// `frame-ancestors` is left out: browsers ignore it in a <meta> policy.
+export const RENDERER_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+].join('; ');
+
+const cspMeta = () => ({
+  name: 'renderer-csp',
+  apply: 'build',
+  transformIndexHtml: () => [
+    {
+      tag: 'meta',
+      attrs: { 'http-equiv': 'Content-Security-Policy', content: RENDERER_CSP },
+      injectTo: 'head-prepend',
+    },
+  ],
+});
+
 export default defineConfig({
   root: '.',
   base: './',
-  plugins: [react()],
+  plugins: [react(), cspMeta()],
   build: {
     outDir: 'build',
     emptyOutDir: true,

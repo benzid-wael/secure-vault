@@ -26,6 +26,7 @@ const VaultSelector = ({
   onVaultSelect,
   onCreateNew,
   onVaultDeleted = undefined,
+  header = null,
 }) => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [vaultToDelete, setVaultToDelete] = useState('');
@@ -82,6 +83,7 @@ const VaultSelector = ({
 
   return (
     <div className="vault-container">
+      {header}
       <div className="vault-header">
         <Typography variant="h3" className="vault-title">
           <SecurityIcon

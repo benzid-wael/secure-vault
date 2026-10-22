@@ -119,6 +119,41 @@ contextBridge.exposeInMainWorld('electronAPI', {
       }
     }),
 
+  // Feature gates, decided by main (New-4).
+  getFeatures: () => ipcRenderer.invoke('get-features'),
+
+  // Env vaults: the page holds opaque vault ids, never file paths, and gets
+  // a sensitive value only by revealing it (GUI-ENV-RFC §6.7).
+  envVaults: {
+    list: () => ipcRenderer.invoke('env-vaults:list'),
+    open: () => ipcRenderer.invoke('env-vaults:open'),
+    create: (options, password) =>
+      ipcRenderer.invoke('env-vaults:create', options, password),
+    unlock: (id, password) =>
+      ipcRenderer.invoke('env-vault:unlock', id, password),
+    lock: (id) => ipcRenderer.invoke('env-vault:lock', id),
+    listEnvs: (id) => ipcRenderer.invoke('env:list', id),
+    createEnv: (id, name, expectedRevision) =>
+      ipcRenderer.invoke('env:create', id, name, expectedRevision),
+    view: (id, env) => ipcRenderer.invoke('env:view', id, env),
+    refresh: (id, viewId) => ipcRenderer.invoke('env:refresh', id, viewId),
+    reveal: (id, viewId, key) =>
+      ipcRenderer.invoke('env:reveal', id, viewId, key),
+    closeView: (id, viewId) => ipcRenderer.invoke('env:view-close', id, viewId),
+    commit: (id, changeset) => ipcRenderer.invoke('env:commit', id, changeset),
+    onLocked: (callback) => {
+      const listener = (event, payload) => {
+        try {
+          callback(payload);
+        } catch (error) {
+          console.error('Error in env-vault-locked handler:', error);
+        }
+      };
+      ipcRenderer.on('env-vault-locked', listener);
+      return () => ipcRenderer.removeListener('env-vault-locked', listener);
+    },
+  },
+
   // Remove listeners
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
 });
