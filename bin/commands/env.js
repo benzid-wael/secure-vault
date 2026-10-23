@@ -8,7 +8,11 @@ import fs from 'fs-extra';
 import password from '@inquirer/password';
 
 import { EnvironmentVaultService } from '../../src/electron/services/EnvironmentVaultService.js';
-import { EnvironmentVault } from '../../src/electron/models/EnvironmentVault.js';
+import {
+  EnvironmentVault,
+  ENV_KEY_PATTERN,
+  invalidKeyMessage,
+} from '../../src/electron/models/EnvironmentVault.js';
 import {
   INJECT_MODES,
   DEFAULT_ALLOWLIST_FILE,
@@ -603,6 +607,11 @@ export function registerEnvCommand(program) {
     .option('--description <text>', 'Set environment description')
     .action(async (key, value, options) => {
       try {
+        // A key a .env file can't hold is refused before any prompt (Task 9).
+        if (!ENV_KEY_PATTERN.test(key)) {
+          console.error(chalk.red(invalidKeyMessage(key)));
+          process.exit(1);
+        }
         // Validate --encode before touching the vault so a typo fails fast.
         if (options.encode && !ENCODERS.includes(options.encode)) {
           console.error(

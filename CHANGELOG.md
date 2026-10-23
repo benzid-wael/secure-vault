@@ -57,6 +57,12 @@ Design detail for the environment-vault (`vault env`) features lives in
   wins on a repeated key. If any file can't be read, nothing is imported
   (before, the files ahead of it were). Warnings name the file they're
   about.
+- **`vault env set` refuses a key a `.env` file can't hold.** A key must
+  be letters, digits and `_`, not starting with a digit (`API_KEY`, not
+  `api-key` or `a.b`); the command exits 1 and changes nothing, before
+  asking for a value. Such keys couldn't be exported to `.env`, imported,
+  or edited in the desktop app. `vault env rm` still removes one an older
+  vault holds, and so does the desktop app.
 - **`vault env import` keeps the flags of the keys it replaces.** A key
   still in the file stays public or required as it was; before, every
   import made all keys secret and dropped `required`. New keys are secret,

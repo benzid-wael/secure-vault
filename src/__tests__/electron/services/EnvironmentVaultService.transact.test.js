@@ -157,6 +157,21 @@ describe('EnvironmentVaultService read / transact', () => {
       expect(fs.readFileSync(`${vaultPath}.bak`).equals(before)).toBe(true);
     });
 
+    it('leaves no .bak when it creates the vault', async () => {
+      const fresh = path.join(dir, 'fresh.env.vault');
+
+      const result = await EnvironmentVaultService.transact(
+        fresh,
+        PW,
+        setVar('dev', 'A', '1'),
+        { create: true }
+      );
+
+      expect(result.success).toBe(true);
+      expect(fs.existsSync(fresh)).toBe(true);
+      expect(fs.existsSync(`${fresh}.bak`)).toBe(false);
+    });
+
     it('refuses with STALE when the file moved past expectedRevision', async () => {
       const { revision } = await EnvironmentVaultService.read(vaultPath, PW);
       await EnvironmentVaultService.transact(

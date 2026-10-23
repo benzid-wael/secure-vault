@@ -31,6 +31,10 @@ vault env history dev            # view version history
 vault env rollback 3 -e dev      # restore a previous version of "dev"
 ```
 
+A key is letters, digits and `_`, not starting with a digit (`API_KEY`, not
+`api-key`), so it survives a `.env` export and import. `vault env rm` still
+removes another key an older vault holds.
+
 `--value-stdin` keeps a secret out of `ps`, shell history and editor temp files.
 Since stdin carries the value, give the password with `--password-file` or
 `VAULT_ENV_PASSWORD`. One trailing newline is dropped; multi-line values are kept.

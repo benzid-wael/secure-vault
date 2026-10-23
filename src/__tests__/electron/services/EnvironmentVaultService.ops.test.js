@@ -54,6 +54,23 @@ describe('EnvironmentVaultService write operations', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('setEnv refuses a key a .env file could not hold, writing nothing (Task 9)', async () => {
+    await seed(populated(ENV, { K: 'v' }));
+    const before = fs.readFileSync(vaultPath);
+
+    const result = await EnvironmentVaultService.setEnv(
+      vaultPath,
+      PW,
+      ENV,
+      'my-key',
+      'x'
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/^Invalid key 'my-key'/);
+    expect(fs.readFileSync(vaultPath).equals(before)).toBe(true);
+  });
+
   it('every write returns the new revision and leaves no lock behind', async () => {
     await seed();
 
@@ -318,6 +335,20 @@ describe('EnvironmentVaultService write operations', () => {
         error: `Key 'GHOST' not found in environment '${ENV}'`,
       });
       expect(fs.readFileSync(vaultPath).equals(before)).toBe(true);
+    });
+
+    it('removes a key a .env file could not hold (Task 9)', async () => {
+      await seed(populated(ENV, { 'my-key': 'x', K: 'v' }));
+
+      const result = await EnvironmentVaultService.removeKey(
+        vaultPath,
+        PW,
+        ENV,
+        'my-key'
+      );
+
+      expect(result.success).toBe(true);
+      expect((await reload()).getActiveVersion(ENV).vars).toEqual({ K: 'v' });
     });
 
     it('fails on an environment without versions', async () => {
@@ -802,38 +833,18 @@ describe('EnvironmentVaultService write operations', () => {
 });
 
 describe('Every env vault write goes through transact (Task 6)', () => {
-  /** All .js/.mjs/.cjs files under `dir`, skipping tests and dependencies. */
-  const sources = (dir) =>
-    fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        return ['node_modules', '__tests__'].includes(entry.name)
-          ? []
-          : sources(full);
-      }
-      return /\.(c|m)?js$/.test(entry.name) ? [full] : [];
-    });
-
-  it('nothing outside the service calls EnvironmentVaultService.saveVault', () => {
-    const offenders = ['bin', 'public', 'src']
-      .flatMap((d) => sources(path.join(REPO, d)))
-      .filter((file) =>
-        /EnvironmentVaultService\.saveVault\s*\(/.test(
-          fs.readFileSync(file, 'utf8')
-        )
-      )
-      .map((file) => path.relative(REPO, file));
-
-    expect(offenders).toEqual([]);
-  });
-
-  it('the service itself only calls saveVault from its own definition', () => {
+  it('the service writes a file only from transact (New-14)', () => {
     const service = fs.readFileSync(
       path.join(REPO, 'src/electron/services/EnvironmentVaultService.js'),
       'utf8'
     );
 
-    expect(service.match(/\bthis\.saveVault\s*\(/g)).toBeNull();
+    expect(service.match(/\bthis\.#writeEncrypted\s*\(/g)).toHaveLength(1);
+    // The one call sits in transact's body, which #open follows.
+    const call = service.indexOf('this.#writeEncrypted(');
+    expect(call).toBeGreaterThan(service.indexOf('static async transact('));
+    expect(call).toBeLessThan(service.indexOf('static async #open('));
+    expect('saveVault' in EnvironmentVaultService).toBe(false);
   });
 });
 

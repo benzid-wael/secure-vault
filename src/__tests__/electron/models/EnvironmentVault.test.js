@@ -494,6 +494,34 @@ describe('applyVarChanges', () => {
     expect(version.nonSensitive).toEqual(['PORT']);
   });
 
+  it('marks or unmarks a key required; left out, the mark is kept (Task 9)', () => {
+    const vault = withEnv();
+    let version = vault.applyVarChanges('dev', [
+      { op: 'set', key: 'HOST', value: 'h', required: true },
+      { op: 'set', key: 'TOKEN', value: 't' },
+    ]);
+    expect(version.required.sort()).toEqual(['HOST', 'TOKEN']);
+    version = vault.applyVarChanges('dev', [
+      { op: 'set', key: 'TOKEN', value: 't', required: false },
+    ]);
+    expect(version.required).toEqual(['HOST']);
+  });
+
+  it('removes a key a .env file could not hold, set by an older version', () => {
+    const vault = withEnv();
+    vault.addVersion('dev', { 'my-key': 'x', HOST: 'h' });
+    const version = vault.applyVarChanges('dev', [{ op: 'rm', key: 'my-key' }]);
+    expect(version.vars).toEqual({ HOST: 'h' });
+  });
+
+  it('says what a set key may hold', () => {
+    expect(() =>
+      withEnv().applyVarChanges('dev', [{ op: 'set', key: 'a.b', value: '' }])
+    ).toThrow(
+      "Invalid key 'a.b': use letters, digits and _, not starting with a digit"
+    );
+  });
+
   it('refuses a missing env unless createEnv', () => {
     const vault = new EnvironmentVault();
     const ops = [{ op: 'set', key: 'A', value: '1' }];

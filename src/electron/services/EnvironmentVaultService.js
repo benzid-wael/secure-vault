@@ -255,8 +255,7 @@ export class EnvironmentVaultService {
       const payload = openEnvVault(vaultFile, key, vaultPath);
       const vault = EnvironmentVault.fromJSON(payload);
 
-      // The derived key and its salt header, for handing straight to
-      // saveVault: a load-modify-save then runs PBKDF2 once, not twice.
+      // The derived key and its salt header, as `read` returns them.
       const keyMaterial = {
         key,
         header: CryptographyService.keyHeaderOf(vaultFile),
@@ -271,62 +270,6 @@ export class EnvironmentVaultService {
         success: false,
         error: 'Failed to decrypt: wrong password or corrupted file',
       };
-    }
-  }
-
-  /**
-   * @param {string} vaultPath
-   * @param {string} password
-   * @param {EnvironmentVault} vault
-   * @param {{key: Buffer, header: {salt: string, kdf?: Object}}} [keyMaterial]
-   *   From the loadVault this save follows. When it is at the current work
-   *   factor, its key and salt are reused (each encryption still gets a fresh
-   *   random IV); otherwise, or when absent, a fresh salt is derived at the
-   *   current work factor — which is also how a legacy vault gets upgraded.
-   *   Never pass it when `password` differs from the one it was derived from.
-   */
-  static async saveVault(vaultPath, password, vault, keyMaterial = null) {
-    try {
-      const payload = vault.toJSON();
-      let key;
-      let header;
-      // A write under a new key (new password, or the 600k upgrade) must not
-      // leave the previous key's copy behind in `.bak`; see below.
-      let rekeyed = false;
-      if (
-        keyMaterial &&
-        !CryptographyService.needsKdfUpgrade(keyMaterial.header)
-      ) {
-        ({ key, header } = keyMaterial);
-      } else {
-        rekeyed = true;
-        const salt = CryptographyService.generateSalt();
-        key = await CryptographyService.deriveKeyAsync(
-          password,
-          salt,
-          CryptographyService.ITERATIONS
-        );
-        header = {
-          salt: salt.toString('hex'),
-          kdf: CryptographyService.kdfHeader(),
-        };
-      }
-      const bound = WRITE_BOUND || (await this.#boundOnDisk(vaultPath));
-      await this.#writeEncrypted(vaultPath, payload, key, header, rekeyed, {
-        bound,
-      });
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  }
-
-  /** Whether the file at `vaultPath` is in the bound format (New-37). */
-  static async #boundOnDisk(vaultPath) {
-    try {
-      return isBound(await fs.readJSON(vaultPath));
-    } catch {
-      return false;
     }
   }
 
@@ -768,43 +711,25 @@ export class EnvironmentVaultService {
       comment = undefined,
     } = {}
   ) {
+    // One `set` op (Task 9): a missing env is created (the CLI's `set` always
+    // has); `isPublic` left out keeps the key's flag, a new key is secret;
+    // `--required` is additive, so a later set without it keeps the mark;
+    // no `comment` keeps the key's comment, '' removes it.
     return this.#mutate(vaultPath, password, (vault) => {
-      if (!vault.listEnvironmentNames().includes(envName)) {
-        vault.addEnvironment(envName); // throws on a reserved name
-      }
-
-      const activeVersion = vault.getActiveVersion(envName);
-
-      const nonSensitive = activeVersion ? [...activeVersion.nonSensitive] : [];
-      const required = activeVersion ? [...activeVersion.required] : [];
-
-      // `isPublic` left out keeps the key's flag; a new key is secret.
-      if (isPublic === true && !nonSensitive.includes(key)) {
-        nonSensitive.push(key);
-      } else if (isPublic === false) {
-        const idx = nonSensitive.indexOf(key);
-        if (idx !== -1) nonSensitive.splice(idx, 1);
-      }
-
-      // --required is additive: marking a key required persists it, and updating
-      // the value later (without the flag) does not silently un-require it.
-      if (isRequired && !required.includes(key)) {
-        required.push(key);
-      }
-
-      const currentVars = activeVersion ? { ...activeVersion.vars } : {};
-      currentVars[key] = value;
-
-      // No `comment` keeps the key's comment; '' removes it.
-      const comments = { ...(activeVersion?.comments || {}) };
-      if (comment !== undefined) comments[key] = String(comment).trim();
-
-      vault.addVersion(envName, currentVars, {
-        nonSensitive,
-        required,
-        comments,
-        message,
-      });
+      vault.applyVarChanges(
+        envName,
+        [
+          {
+            op: 'set',
+            key,
+            value,
+            ...(isPublic !== undefined && { sensitive: !isPublic }),
+            ...(isRequired && { required: true }),
+            ...(comment !== undefined && { comment: String(comment) }),
+          },
+        ],
+        { message, createEnv: true }
+      );
     });
   }
 
@@ -894,25 +819,10 @@ export class EnvironmentVaultService {
 
   static async removeKey(vaultPath, password, envName, key) {
     return this.#mutate(vaultPath, password, (vault) => {
-      const activeVersion = vault.getActiveVersion(envName);
-
-      if (!activeVersion) {
+      if (!vault.getActiveVersion(envName)) {
         throw new Error(`Environment '${envName}' has no versions`);
       }
-
-      if (!(key in activeVersion.vars)) {
-        throw new Error(`Key '${key}' not found in environment '${envName}'`);
-      }
-
-      const newVars = { ...activeVersion.vars };
-      delete newVars[key];
-
-      const nonSensitive = activeVersion.nonSensitive.filter((k) => k !== key);
-      const required = activeVersion.required.filter((k) => k !== key);
-
-      vault.addVersion(envName, newVars, {
-        nonSensitive,
-        required,
+      vault.applyVarChanges(envName, [{ op: 'rm', key }], {
         message: `Remove ${key}`,
       });
     });

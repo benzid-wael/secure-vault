@@ -794,3 +794,20 @@ env init` writes; it's added to the remembered list.
 - **Verify after release:** start the installed app with
   `--remote-debugging-port=9222`: it quits, and nothing listens on 9222.
 - **Rollback:** reinstall the previous app.
+
+### Task 9: CLI `env set` refuses keys a `.env` file can't hold
+
+- **Runtime change (every CLI user, not gated):** `vault env set` refuses
+  a key outside `[A-Za-z_][A-Za-z0-9_]*` (`api-key`, `a.b`, `1ST`): exit 1,
+  nothing written, before any value prompt. It accepted them before.
+  `vault env rm` (and the app's delete) still removes one an older vault
+  holds. `setEnv` and `removeKey` now apply one changeset each, as the app
+  does; nothing else about them changes.
+- **Schema or config change:** none. Vaults holding such keys stay valid.
+- **Before it ships:** the CHANGELOG "Changed" entry and the CLI guide's
+  key rule (both written).
+- **Gated by:** nothing: such a key couldn't be exported to `.env`,
+  imported or edited in the app, so `set` was the only way to make one.
+- **Verify after release:** `vault env set my-key x -e dev` exits 1 with
+  the rule; `vault env set MY_KEY x -e dev` works.
+- **Rollback:** reinstall the previous CLI.

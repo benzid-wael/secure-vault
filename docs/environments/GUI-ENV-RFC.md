@@ -2,7 +2,7 @@
 
 | Field     | Value                                                                                                                          |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Status    | **Approved** (rev. 3, 2026-10-21): M0 and M1 can start                                                                         |
+| Status    | **Approved** (rev. 3, 2026-10-21): M0 and M1 can start. §6.5 revised 2026-10-23 to match the lock as built                     |
 | Date      | 2026-10-21                                                                                                                     |
 | Builds on | [`GUI-ENV-DISCOVERY.md`](GUI-ENV-DISCOVERY.md), [`SPEC.md`](SPEC.md), [`AGENT-DESIGN.md`](AGENT-DESIGN.md) (G23, G25, §8)      |
 | Touches   | `EnvironmentVaultService` write path (CLI behavior under concurrency), Electron main/preload/renderer, renderer hardening (M0) |
@@ -372,6 +372,13 @@ squash, change-password, init) are **not** rebased. They carry
 
 ### 6.5 The lock file
 
+> **Revised 2026-10-23** (GUI-ENV-BREAKDOWN New-11) to describe the lock as
+> built (`src/electron/services/VaultLock.js`; Corrections 6 and 7, New-10):
+> no `refreshedAt` field, the heartbeat touches the file's mtime, a `pidns`
+> field narrows "same machine" on Linux, and takeover verifies what it moved
+> and restores a live lock. The rev. 3 text said the holder rewrote
+> `refreshedAt` and that the takeover rename alone picked one winner.
+
 `<vault>.lock`, created with exclusive create (`fs.open(path, 'wx', 0o600)`):
 
 ```json
@@ -381,26 +388,30 @@ squash, change-password, init) are **not** rebased. They carry
   "host": "wael-mbp",
   "tool": "cli",
   "nonce": "9f2c…",
-  "boot": "2026-10-20T08:14Z",
-  "acquiredAt": "2026-10-21T17:02:11.410Z",
-  "refreshedAt": "2026-10-21T17:02:11.410Z"
+  "boot": "2026-10-20T08:14:03.120Z",
+  "pidns": "pid:[4026531836]",
+  "acquiredAt": "2026-10-21T17:02:11.410Z"
 }
 ```
 
-`boot` is the machine's boot time to the minute (`Date.now() - os.uptime()`).
-Together with `pid` it identifies a live process on **this** machine even when
-macOS renames the host on a network change. `host` is kept for messages only.
+`boot` is the machine's boot time (`Date.now() - os.uptime() * 1000`).
+`pidns` is the pid namespace (`/proc/self/ns/pid`), on Linux only; it is
+left out elsewhere. Together with `pid` they identify a live process on
+**this** machine even when macOS renames the host on a network change, and
+keep a container (same kernel, so same `boot`, but its own pids) from
+probing a pid that means something else. `host` is kept for messages only.
 
-| Rule       | Behavior                                                                                                                                                                                                                                                  |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Acquire    | `wx` create. On `EEXIST`, retry with backoff (50 → 100 → 200 → 400 ms, capped) for up to `lockTimeoutMs` (3 s)                                                                                                                                            |
-| Heartbeat  | While held, the holder rewrites `refreshedAt` every 5 s (the event loop is free because derivation is async, §6.2). A long `changePassword` (2 derivations per snapshot) keeps its lock                                                                   |
-| Stale      | **Same machine** (`boot` within ±1 min): stale **only** if `process.kill(pid, 0)` throws `ESRCH`. A live holder is never taken over, however long it runs. **Other machine** (synced folder): stale if `refreshedAt` is older than `STALE_LOCK_MS` (30 s) |
-| Takeover   | `rename(lock, lock + '.stale.' + ourNonce)` (atomic, so only one taker wins), delete the renamed file, retry `wx`                                                                                                                                         |
-| Release    | In `finally`: read the lock, unlink **only if the nonce is ours**. Read-then-unlink isn't atomic, but a live holder's lock is never taken over, so nothing can replace it in between                                                                      |
-| PID reuse  | A dead holder whose pid was reused keeps the lock looking live; callers get `BUSY` naming the pid, and `doctor` flags a lock whose pid isn't a `vault`/app process                                                                                        |
-| Give up    | `BUSY`: _"Vault is busy (held by cli pid 41237 since 17:02:11). Try again, or remove `<path>.lock` if no vault command is running."_                                                                                                                      |
-| Never held | Across user think time: the CLI's `$EDITOR` and `--value-stdin` waits happen **before** `setEnv`'s transaction; the GUI never holds the lock outside a single IPC call                                                                                    |
+| Rule       | Behavior                                                                                                                                                                                                                                                                            |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Acquire    | `wx` create. On `EEXIST`, retry with backoff (50 → 100 → 200 → 400 ms, capped) for up to `lockTimeoutMs` (3 s). A lock left half-written by our own failed create is removed                                                                                                        |
+| Heartbeat  | While held, the holder touches the lock's **mtime** (`utimes`) every 5 s (the event loop is free because derivation is async, §6.2); the timer is `unref`'d. `utimes` can't recreate a lock someone took over: `ENOENT` marks the lock **lost**, and `transact` then writes nothing |
+| Stale      | **Same machine** (`boot` within ±1 min **and** the same `pidns`): stale **only** if `process.kill(pid, 0)` throws `ESRCH`. A live holder is never taken over, however long it runs. **Other machine**, or an unreadable lock: stale once its mtime is older than 30 s               |
+| Takeover   | `rename(lock, lock + '.stale.' + random)`, then read what was moved. If it isn't the lock judged stale (another taker already replaced it with a live one), link it back and back off; otherwise delete it and retry `wx`                                                           |
+| Release    | In `finally`: read the lock, unlink **only if the nonce is ours**. Read-then-unlink isn't atomic, but a live holder's lock is never taken over, so nothing can replace it in between                                                                                                |
+| PID reuse  | A dead holder whose pid was reused keeps the lock looking live; callers get `BUSY` naming the pid, and `doctor` reports the lock (`held`/`stale`) and any `.stale.*` files left beside it                                                                                           |
+| Give up    | `BUSY`: _"Vault is busy (held by cli pid 41237 since 2026-10-21T17:02:11.410Z). Try again, or remove `<path>.lock` if no vault command is running."_                                                                                                                                |
+| Never held | Across user think time: the CLI's `$EDITOR` and `--value-stdin` waits happen **before** `setEnv`'s transaction; the GUI never holds the lock outside a single IPC call                                                                                                              |
+| Known gap  | Three writers racing on one dead lock in the same instant: the restore can fail because a third lock already exists, leaving two holders. The revision check (§6.2) still refuses the GUI's stale write                                                                             |
 
 ### 6.6 Main process
 
@@ -612,7 +623,7 @@ multi-process tests don't pay 600k-iteration PBKDF2.
 
 | Layer                    | What it proves                                                                                                                                                                                                                                                                           | Where                                                  |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `VaultLock` unit         | Acquire/backoff/`BUSY`; same-machine takeover **only** when the pid is dead; a live holder past 30 s is never taken over; foreign-`boot` lock taken after a stale `refreshedAt`; heartbeat; nonce-checked release; two takers race → one wins                                            | `src/__tests__/electron/services/VaultLock.test.js`    |
+| `VaultLock` unit         | Acquire/backoff/`BUSY`; same-machine takeover **only** when the pid is dead; a live holder past 30 s is never taken over; foreign-`boot` lock taken after a stale mtime; heartbeat; nonce-checked release; two takers race → one wins                                                    | `src/__tests__/electron/services/VaultLock.test.js`    |
 | No lost updates (goal 2) | 2 spawned CLI processes × 50 `set`s of distinct keys on one vault, plus an in-process `transact` loop → all 100+ keys present, history strictly increasing                                                                                                                               | `src/__tests__/cli/envConcurrency.integration.test.js` |
 | `transact` / `read`      | `STALE` on a mismatched revision; `REKEYED` on a re-salted header; returned `keyMaterial` reflects a KDF upgrade; `mutate` throwing writes nothing; snapshots (`.deleted`, `.squashed`) taken inside the lock and re-keyed by change-password                                            | `EnvironmentVaultService.test.js`                      |
 | Changeset rebase matrix  | Disjoint keys → rebased; same key changed → `CONFLICT changed`; flag-only change → conflict; key removed/added → conflict; env deleted → `env-gone`; env renamed → `env-gone`; env rolled back → per-key result; parent env changed → no conflict; text mode leaves untouched keys alone | `EnvironmentVaultService.changeset.test.js`            |
@@ -641,16 +652,16 @@ M0 and M1 can run in parallel. M2 depends on M1, M3 on M2, and M4 on M3 and M0.
 
 **Failure modes**
 
-| Risk                                                      | Likelihood | Impact | Mitigation                                                                                                                                                                                                                                                                                 |
-| --------------------------------------------------------- | ---------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Crash leaves `<vault>.lock`                               | Medium     | Low    | Same machine: taken over as soon as its pid is dead; `doctor` reports it; the `BUSY` message names the file                                                                                                                                                                                |
-| Vault in an iCloud/Dropbox/NFS folder                     | Medium     | Medium | `wx` isn't reliable on NFS; sync tools replicate `.lock` (different `boot` → taken over only after `refreshedAt` is 30 s stale; the heartbeat keeps a live remote holder's lock). The revision check still catches local races. Documented as unsupported for concurrent multi-machine use |
-| Windows `rename` `EPERM` while a reader has the file open | Low        | Low    | Bounded retry (3× / 50 ms) around the final rename                                                                                                                                                                                                                                         |
-| Env deleted or renamed while a GUI draft is open          | Low        | Medium | Env identity check → `CONFLICT env-gone`; `applyVarChanges` never auto-creates for changesets; the draft can be copied out (§6.4, §6.9)                                                                                                                                                    |
-| Long transaction (change-password, many snapshots)        | Low        | High   | Same-machine live holders are never taken over; the heartbeat covers remote holders; derivation is async (§6.2, §6.5)                                                                                                                                                                      |
-| Rebase loop under heavy concurrent writes                 | Very low   | Low    | One rebase attempt, then `STALE` back to the user                                                                                                                                                                                                                                          |
-| Old CLI without locking (mixed versions)                  | Medium     | High   | §8: release together, CHANGELOG callout; the GUI's revision check still guards its own writes                                                                                                                                                                                              |
-| Watcher misses an event (platform quirks)                 | Low        | Low    | Every commit carries a revision anyway; the view also refetches on window focus                                                                                                                                                                                                            |
+| Risk                                                      | Likelihood | Impact | Mitigation                                                                                                                                                                                                                                                                             |
+| --------------------------------------------------------- | ---------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Crash leaves `<vault>.lock`                               | Medium     | Low    | Same machine: taken over as soon as its pid is dead; `doctor` reports it; the `BUSY` message names the file                                                                                                                                                                            |
+| Vault in an iCloud/Dropbox/NFS folder                     | Medium     | Medium | `wx` isn't reliable on NFS; sync tools replicate `.lock` (different `boot` → taken over only after its mtime is 30 s stale; the heartbeat keeps a live remote holder's lock). The revision check still catches local races. Documented as unsupported for concurrent multi-machine use |
+| Windows `rename` `EPERM` while a reader has the file open | Low        | Low    | Bounded retry (3× / 50 ms) around the final rename                                                                                                                                                                                                                                     |
+| Env deleted or renamed while a GUI draft is open          | Low        | Medium | Env identity check → `CONFLICT env-gone`; `applyVarChanges` never auto-creates for changesets; the draft can be copied out (§6.4, §6.9)                                                                                                                                                |
+| Long transaction (change-password, many snapshots)        | Low        | High   | Same-machine live holders are never taken over; the heartbeat covers remote holders; derivation is async (§6.2, §6.5)                                                                                                                                                                  |
+| Rebase loop under heavy concurrent writes                 | Very low   | Low    | One rebase attempt, then `STALE` back to the user                                                                                                                                                                                                                                      |
+| Old CLI without locking (mixed versions)                  | Medium     | High   | §8: release together, CHANGELOG callout; the GUI's revision check still guards its own writes                                                                                                                                                                                          |
+| Watcher misses an event (platform quirks)                 | Low        | Low    | Every commit carries a revision anyway; the view also refetches on window focus                                                                                                                                                                                                        |
 
 **Security**
 

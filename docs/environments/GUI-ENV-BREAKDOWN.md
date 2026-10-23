@@ -20,15 +20,15 @@ updated as each task finishes, not in a batch at the end.
 | 6      | Port every env op onto `transact`; `saveVault` private             | M1  | P0  | ✅     | 5                                      |
 | 7      | `squash` snapshot, re-keyed by change-password                     | M1  | P1  | ✅     | 6                                      |
 | 8      | CLI docs, CHANGELOG, `doctor` reports stale locks                  | M1  | P1  | ✅     | 6                                      |
-| 9      | `applyVarChanges` model method                                     | M2  | P0  | 🟡     | 6                                      |
+| 9      | `applyVarChanges` model method                                     | M2  | P0  | ✅     | 6                                      |
 | 10     | Changeset apply + rebase in the service                            | M2  | P0  | ✅     | 9                                      |
 | 11     | Single-instance lock for the app                                   | M3  | P1  | ✅     | 0                                      |
 | 12     | Main-process `ClipboardService` + IPC                              | M3  | P1  | ✅     | 0, New-3                               |
 | 13     | Idle lock for password vaults                                      | M3  | P1  | ✅     | New-2                                  |
 | 14     | `EnvVaultRegistry` (ids, dialogs, recents)                         | M3  | P0  | ✅     | 6, 11, New-2                           |
-| 15     | `EnvVaultSession` (keys, commit/recover, idle)                     | M3  | P0  | 🟡     | 5, 14, New-2                           |
+| 15     | `EnvVaultSession` (keys, commit/recover, idle)                     | M3  | P0  | ✅     | 5, 14, New-2                           |
 | 16     | `EnvVaultWatcher`                                                  | M3  | P1  | ✅     | 15                                     |
-| 17     | IPC gate + core channels + preload                                 | M3  | P0  | 🟡     | 10, 12, 14, 15                         |
+| 17     | IPC gate + core channels + preload                                 | M3  | P0  | ✅     | 10, 12, 14, 15                         |
 | 18     | IPC: structure, history, diff, import/export channels              | M3  | P2  | ✅     | 17                                     |
 | 19     | Renderer: Environments switch, vault list, open/new/unlock         | M4  | P0  | ✅     | 2, 17, New-4                           |
 | 20     | Renderer: env view (masked, reveal, copy, inline edit)             | M4  | P0  | ✅     | 19                                     |
@@ -53,10 +53,10 @@ updated as each task finishes, not in a batch at the end.
 | New-8  | `npm run lint` fails locally on gitignored build output            | —   | P2  | ✅     | —                                      |
 | New-9  | Type-check gate: confirm "no new errors" as this plan's rule       | —   | P1  | ✅     | —                                      |
 | New-10 | Lock: a container sharing the kernel can look like this machine    | —   | P1  | 🟡     | 4 (blocks the release of 6)            |
-| New-11 | Bring RFC §6.5 in line with Corrections 6 and 7                    | —   | P2  | ⬜     | 4                                      |
+| New-11 | Bring RFC §6.5 in line with Corrections 6 and 7                    | —   | P2  | ✅     | 4                                      |
 | New-12 | Windows: retry the final rename on `EPERM`                         | M1  | P1  | ✅     | 5 (blocks the release of 6 on Windows) |
 | New-13 | CI runs the unit tests on Windows and macOS too                    | —   | P1  | 🟡     | — (verifies 4, New-12)                 |
-| New-14 | Remove the env `saveVault` and its mocked tests                    | —   | P2  | ⬜     | 6                                      |
+| New-14 | Remove the env `saveVault` and its mocked tests                    | —   | P2  | ✅     | 6                                      |
 | New-15 | Type `window.electronAPI` once for the type check                  | —   | P2  | ✅     | —                                      |
 | New-16 | ESLint flags MUI components used only in JSX as unused             | —   | P2  | ✅     | —                                      |
 | New-17 | Shared test mock lacks `removeAllListeners` / `onVaultLocked`      | —   | P2  | ✅     | —                                      |
@@ -588,15 +588,30 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 9: `applyVarChanges` model method
 
-- **Status:** 🟡 partial 2026-10-22. On `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-23: its own validation is met. On
+  `feat/vault-env-gui`; not merged, not released.
 - **Built:** `EnvironmentVault.applyVarChanges(env, ops, { message, createEnv })`:
   `set`/`rm` ops as one version; `set` keeps a key's sensitivity unless
   the op sets it, new keys are secret; keys must match `ENV_KEY_PATTERN`
   (what survives a dotenv round trip); refuses a missing env without
   `createEnv`. The version cap now throws with `code: 'LIMIT'`, and
   `transact` passes `LIMIT` through. 13 model tests.
-- **Not done (MVP cut):** `setEnv`, `removeKey` and `importEnvFile` are not
-  re-implemented on it; `meta` ops (required) aren't supported.
+- **Finished 2026-10-23:** `setEnv` and `removeKey` are one `set` / `rm`
+  op each (`setEnv` with `createEnv: true`). `required` is a field of
+  `set` (true adds, false removes, left out keeps), not a separate `meta`
+  op: `--required` stays additive. `rm` takes any key that is there, so an
+  older vault's odd key can still be removed (CLI and app).
+- **Decided (author, 2026-10-23):**
+  - `vault env set` refuses a key outside `ENV_KEY_PATTERN`, exit 1, before
+    asking for a value, with the rule in the message (CHANGELOG "Changed",
+    CLI guide). It accepted any key before.
+  - `importEnvFile` stays as it is: it replaces an env's variables with a
+    file's (file order kept, an empty file allowed), which a changeset
+    can't express without changing both.
+- **Checked:** model tests for `required` and `rm` of an odd key; service
+  tests (`setEnv` refuses, writes nothing; `removeKey` of an odd key);
+  `src/__tests__/cli/envKeyRule.integration.test.js`; every CLI `set`/`rm`/
+  `import` integration test passes unchanged.
 - **Goal:** `EnvironmentVault.applyVarChanges(env, ops, { message, createEnv })`
   applies set/rm/meta ops as one version. `setEnv`, `removeKey` and
   `importEnvFile` are re-implemented on it.
@@ -801,7 +816,8 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 15: `EnvVaultSession`
 
-- **Status:** 🟡 partial 2026-10-22. On `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-23: the leftovers below were built by later
+  tasks. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** `EnvVaultSession`: `unlock`, `run` (every op gets the key
   **and** the password, keeps the key the op returns, maps `AUTH` to
   `LOCKED`), `touch`, `lock`/`lockAll` (keys zeroed, views dropped,
@@ -810,8 +826,10 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 - **Decision:** `recover` isn't a separate step. Since Task 5 the service
   opens a re-keyed file with the password, so `REKEYED` can't happen while
   the session holds it.
-- **Not done:** the idle timeout is a constant (5 min; configurable needs
-  New-2); replacing the stored password after a GUI change-password (Task 28).
+- **Leftovers, done since:** the idle timeout follows the app setting
+  (`setIdleMs`, from `AppSettingsIpc`, New-2); a GUI change-password
+  replaces the stored password (`setPassword`, from `env-vault:change-password`,
+  Task 28).
 - **Goal:** Per-id key custody with `commit` / `recover` / user-only idle reset
   / `lockAll`, as RFC §6.6 describes.
 - **Constraints:** Key buffers are zeroed on lock. `REKEYED` never reaches the
@@ -850,7 +868,8 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 17: IPC gate + core channels + preload
 
-- **Status:** 🟡 partial 2026-10-22. On `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-23: the leftovers below were built by later
+  tasks. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** `createEnvVaultHandlers` (`EnvVaultIpc.js`), registered by main
   through the trusted-sender `handle`, only when the New-4 gate is on:
   `env-vaults:list/open/create`, `env-vault:unlock/lock`, `env:list`,
@@ -862,9 +881,9 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 - **Added after testing (2026-10-22):** `env:copy`, `env:transfer`,
   `env:export` (preload: `copy`, `transfer`, `exportEnv`). `transact`
   now keeps `CONFLICT` from `mutate`, as it does `LIMIT`.
-- **Not done:** `env:bulk-load` (Task 21),
-  `env-vault-changed` (Task 16), and the M5 channels (Task 18).
-  `env-vaults:create` supports `mode: 'appdata'` only.
+- **Leftovers, done since:** `env:edit-text` (the planned `env:bulk-load`,
+  Task 21), the `env-vault-changed` event (Task 16), the M5 channels
+  (Task 18), and `env-vaults:create` with `mode: 'dialog'`.
 - **Goal:** `handleEnvVault` and the M4 channels (`env-vaults:*`,
   `env-vault:unlock/lock`, `env:list/view/refresh/reveal/copy/bulk-load/view-close/commit`),
   plus their preload methods and events.
@@ -1470,7 +1489,15 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-11: Bring RFC §6.5 in line with Corrections 6 and 7
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-23: its own validation is met. On
+  `feat/vault-env-gui`; not merged, not released. Documentation only.
+- **Built:** RFC §6.5 rewritten to match `VaultLock.js`, with a dated
+  revision note at its top and in the RFC's status row: no `refreshedAt`,
+  the mtime heartbeat (and the lost-lock rule), `pidns` in the lock and in
+  "same machine", verify-and-restore takeover, the half-written-lock
+  cleanup, what `doctor` reports, and the three-writer gap. §9's test row
+  and §11's synced-folder risk now say "mtime". New-10's schema is in, so
+  the schema changes once; only its CI check is pending.
 - **Found:** Task 4, 2026-10-21.
 - **Goal:** The approved RFC describes the lock that was actually built.
 - **Constraints:** Documentation only. Mark it as a revision with a date; don't
@@ -1580,7 +1607,15 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-14: Remove the env `saveVault` and its mocked tests
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-23: its own validation is met. On
+  `feat/vault-env-gui`; not merged, not released.
+- **Built:** `saveVault` and its helper `#boundOnDisk` are gone. Its
+  mocked tests are dropped: their behaviors already had real-file tests
+  through `transact` (`.bak` kept, `.bak` refreshed after a re-key, a
+  failed rename leaves the vault and no `.tmp`), plus a new one: creating
+  a vault leaves no `.bak`. `KdfUpgrade.test.js` and the integration test
+  write through `transact`. The guard test now checks that the service
+  calls `#writeEncrypted` once, inside `transact`, and has no `saveVault`.
 - **Found:** Task 6, 2026-10-21.
 - **Goal:** `EnvironmentVaultService.saveVault` is gone; the only write path
   is `transact`.

@@ -267,7 +267,7 @@ describe('CLI environment vaults', () => {
     const loaded = await EnvironmentVaultService.loadVault(vaultPath, PW);
     expect(loaded.success).toBe(true);
 
-    await EnvironmentVaultService.saveVault(vaultPath, PW, loaded.data);
+    await EnvironmentVaultService.transact(vaultPath, PW, () => {});
     expect(fs.readJSONSync(vaultPath).kdf).toEqual(
       CryptographyService.kdfHeader()
     );

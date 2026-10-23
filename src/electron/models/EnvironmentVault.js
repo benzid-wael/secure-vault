@@ -24,6 +24,10 @@ const ENV_REF_RE = /(\{\{\s*env:)([A-Za-z0-9._-]+)(\/[A-Za-z0-9._-]+\s*\}\})/g;
 /** A key that survives a dotenv export and re-import (see `parseEnvFile`). */
 export const ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+/** Why `key` is refused: it doesn't match `ENV_KEY_PATTERN`. */
+export const invalidKeyMessage = (key) =>
+  `Invalid key '${key}': use letters, digits and _, not starting with a digit`;
+
 /**
  * A version's comments, keeping only non-empty ones for keys in `vars`.
  * Returns undefined when none are left, so files without comments keep
@@ -309,11 +313,13 @@ export class EnvironmentVault {
    *
    * @param {string} name
    * @param {Array<{op: string, key: string, value?: string,
-   *   sensitive?: boolean, comment?: string}>} ops
-   *   `{op: 'set', key, value, sensitive?, comment?}` or `{op: 'rm', key}`.
-   *   `set` without `sensitive` keeps the key's current flag; a new key is
-   *   sensitive. `set` without `comment` keeps the key's comment; `''`
-   *   removes it. `rm` of a key that isn't there throws.
+   *   sensitive?: boolean, required?: boolean, comment?: string}>} ops
+   *   `{op: 'set', key, value, sensitive?, required?, comment?}` or
+   *   `{op: 'rm', key}`. `set` without `sensitive` or `required` keeps the
+   *   key's current flag; a new key is sensitive and not required. `set`
+   *   without `comment` keeps the key's comment; `''` removes it. A `set`
+   *   key must match `ENV_KEY_PATTERN`; `rm` takes any key that is there
+   *   (older vaults may hold others) and throws for one that isn't.
    * @param {Object} [options]
    * @param {string|null} [options.message]
    * @param {boolean} [options.createEnv] Create a missing env instead of
@@ -337,16 +343,17 @@ export class EnvironmentVault {
 
     for (const change of ops) {
       const { op, key } = change ?? {};
-      if (typeof key !== 'string' || !ENV_KEY_PATTERN.test(key)) {
-        throw new Error(`Invalid key '${key}'`);
-      }
+      if (typeof key !== 'string') throw new Error(`Invalid key '${key}'`);
       if (op === 'set') {
+        if (!ENV_KEY_PATTERN.test(key)) throw new Error(invalidKeyMessage(key));
         if (typeof change.value !== 'string') {
           throw new Error(`The value for '${key}' must be a string`);
         }
         vars[key] = change.value;
         if (change.sensitive === false) nonSensitive.add(key);
         if (change.sensitive === true) nonSensitive.delete(key);
+        if (change.required === true) required.add(key);
+        if (change.required === false) required.delete(key);
         if (change.comment !== undefined) {
           if (typeof change.comment !== 'string') {
             throw new Error(`The comment for '${key}' must be a string`);

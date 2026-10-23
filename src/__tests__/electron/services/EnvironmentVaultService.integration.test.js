@@ -319,21 +319,17 @@ describe('EnvironmentVaultService Integration', () => {
       );
 
       // Manually set required via adding a version with required list
-      const loadResult = await EnvironmentVaultService.loadVault(
-        vaultPath,
-        testPassword
+      await EnvironmentVaultService.transact(vaultPath, testPassword, (vault) =>
+        vault.addVersion(
+          'app',
+          { DB_HOST: 'localhost', DB_PASS: 'secret' },
+          {
+            required: ['DB_HOST'],
+            nonSensitive: ['DB_HOST'],
+            message: 'Add required marker',
+          }
+        )
       );
-      const vault = loadResult.data;
-      vault.addVersion(
-        'app',
-        { DB_HOST: 'localhost', DB_PASS: 'secret' },
-        {
-          required: ['DB_HOST'],
-          nonSensitive: ['DB_HOST'],
-          message: 'Add required marker',
-        }
-      );
-      await EnvironmentVaultService.saveVault(vaultPath, testPassword, vault);
 
       const templateResult = await EnvironmentVaultService.templateEnv(
         vaultPath,
