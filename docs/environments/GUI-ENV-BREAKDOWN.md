@@ -60,7 +60,7 @@ updated as each task finishes, not in a batch at the end.
 | New-15 | Type `window.electronAPI` once for the type check                  | —   | P2  | ⬜     | —                                      |
 | New-16 | ESLint flags MUI components used only in JSX as unused             | —   | P2  | ⬜     | —                                      |
 | New-17 | Shared test mock lacks `removeAllListeners` / `onVaultLocked`      | —   | P2  | ⬜     | —                                      |
-| New-18 | Dev-mode Content-Security-Policy                                   | M0  | P2  | ⬜     | 2                                      |
+| New-18 | Dev-mode Content-Security-Policy                                   | M0  | P2  | ✅     | 2                                      |
 | New-19 | Verify the CSP and sandbox in packaged builds (asar)               | M0  | P1  | 🟡     | 2 (blocks the next tag)                |
 | New-20 | Fix: reveal/edit fail with "Unknown view" in dev                   | M4  | P0  | ✅     | 15, 20                                 |
 | New-21 | Move or duplicate keys between environments                        | M4  | P0  | ✅     | 9, 17, 20                              |
@@ -253,7 +253,8 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
   `frame-ancestors` is left out: browsers ignore it in a `<meta>` policy.
 - **Decision:** dev mode (`vite` on :3000) gets **no** CSP, because
   plugin-react's inline refresh preamble needs one with `'unsafe-inline'`
-  scripts. A dev policy is New-18.
+  scripts. A dev policy is New-18 (done 2026-10-23: hashes, not
+  `'unsafe-inline'`).
 - **Proof (e2e `env-vault`):** an injected inline `<script>` doesn't run,
   and it's the only CSP violation in the whole scenario.
 - **Goal:** The packaged app's renderer runs under the RFC §6.10 CSP, so an
@@ -1615,7 +1616,24 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-18: Dev-mode Content-Security-Policy
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-23. On `feat/vault-env-gui`; not merged, not
+  released. Dev only: nothing ships.
+- **Built:** `src/electron/utils/rendererCsp.js` (moved out of
+  `vite.config.js` with `RENDERER_CSP`, so tests can import it without
+  pulling the config into the type check): `devRendererCsp(html, port,
+source)`; `vite.config.js` adds a serve-only plugin (`renderer-csp-dev`, `order: 'post'`) that puts it
+  first in `<head>` of the dev page. It is the build's policy with two
+  differences: the inline scripts the dev server adds (React Refresh's
+  preamble) are allowed by `sha256-` hash, and `connect-src` adds
+  `ws://` and `http://localhost:<port>` for HMR, with the port the server
+  actually started on. Inline scripts already in `index.html` get no hash,
+  so one added there by mistake fails in dev as in the build.
+- **Validation done:** unit (`rendererCsp.test.js`, `rendererCsp.js` 100% lines: the exact policy; a
+  stray `index.html` script unhashed; no inline script, no hash; the
+  port). The dev server's page: one inline script, covered, policy first
+  in `<head>`. `npm run dev:electron` driven over CDP: renders, a hot
+  update applies, no violation (page events, console, log). `vite build`'s
+  policy is unchanged (no hash, no localhost).
 - **Found:** Task 2, 2026-10-22.
 - **Goal:** `npm run dev:electron` runs under a CSP close to production's.
 - **Constraints:** Vite HMR needs `ws://localhost:3000`; plugin-react's

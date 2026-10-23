@@ -3,27 +3,36 @@ import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'module';
+import { readFileSync } from 'node:fs';
+import {
+  DEV_PORT,
+  RENDERER_CSP,
+  devRendererCsp,
+} from './src/electron/utils/rendererCsp.js';
 
 const require = createRequire(import.meta.url);
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const isDev = process.env.NODE_ENV === 'development';
 
-// The renderer's Content-Security-Policy (GUI-ENV-RFC §6.10). Build only: in
-// dev, @vitejs/plugin-react injects an inline React Refresh script that a
-// strict `script-src` would block. emotion/MUI need inline styles.
-// `frame-ancestors` is left out: browsers ignore it in a <meta> policy.
-export const RENDERER_CSP = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data:",
-  "font-src 'self' data:",
-  "connect-src 'self'",
-  "object-src 'none'",
-  "base-uri 'none'",
-  "form-action 'none'",
-].join('; ');
+/** Serve only: the dev policy, first in <head>, over the final HTML. */
+const devCspMeta = () => ({
+  name: 'renderer-csp-dev',
+  apply: 'serve',
+  transformIndexHtml: {
+    order: 'post',
+    // The port the server was started on (`--port` included).
+    handler: (html, ctx) =>
+      html.replace(
+        /<head>/,
+        `<head>\n    <meta http-equiv="Content-Security-Policy" content="${devRendererCsp(
+          html,
+          ctx.server?.config.server.port ?? DEV_PORT,
+          readFileSync(resolve(root, 'index.html'), 'utf8')
+        )}" />`
+      ),
+  },
+});
 
 const cspMeta = () => ({
   name: 'renderer-csp',
@@ -40,7 +49,7 @@ const cspMeta = () => ({
 export default defineConfig({
   root: '.',
   base: './',
-  plugins: [react(), cspMeta()],
+  plugins: [react(), cspMeta(), devCspMeta()],
   build: {
     outDir: 'build',
     emptyOutDir: true,
@@ -78,7 +87,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 600, // Adjust limit to account for initial bundle
   },
   server: {
-    port: 3000,
+    port: DEV_PORT,
   },
   resolve: {
     alias: {
