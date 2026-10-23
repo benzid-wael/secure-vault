@@ -75,12 +75,18 @@ describe('checkVaultFormat', () => {
   });
 
   it('refuses even reading a newer format version', () => {
-    const check = checkVaultFormat({ version: 2 }, 'password', 'work');
+    const check = checkVaultFormat({ version: 3 }, 'password', 'work');
     expect(check).toMatchObject({ readable: false, writable: false });
     expect(check.message).toMatch(
-      /^work uses vault format 2; this version of SecureVault reads format 1 only/
+      /^work uses vault format 3; this version of SecureVault reads format 2 only/
     );
     expect(check.message).toContain('npm install -g');
+  });
+
+  it('reads and writes password vault format 2 with a key file (New-54)', () => {
+    expect(
+      checkVaultFormat({ version: 2, features: ['keyfile'] }, 'password')
+    ).toMatchObject({ readable: true, writable: true, unknown: [] });
   });
 
   it('knows comments for env vaults only', () => {

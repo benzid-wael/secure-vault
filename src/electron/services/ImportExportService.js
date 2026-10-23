@@ -3,6 +3,8 @@ import os from 'os';
 
 import { VaultFileService } from './VaultFileService.js';
 import { CryptographyService } from './CryptographyService.js';
+import { openVaultPayload } from '../utils/passwordVaultPayload.js';
+import { isFormat2 } from '../utils/passwordVaultEnvelope.js';
 import path from 'path';
 
 export class ImportExportService {
@@ -28,15 +30,15 @@ export class ImportExportService {
       }
 
       const vaultFile = await this.fileService.readVaultFile(vaultName);
-      const key = CryptographyService.deriveKeyFor(password, vaultFile);
 
       try {
-        const encryptedData = {
-          encrypted: vaultFile.encrypted,
-          authTag: vaultFile.authTag,
-          iv: vaultFile.iv,
-        };
-        const decryptedData = CryptographyService.decrypt(encryptedData, key);
+        // `password`: the session's credential, the data key for format 2.
+        const decryptedData = openVaultPayload(
+          vaultFile,
+          password,
+          (pw, salt, iterations) =>
+            CryptographyService.deriveKey(pw, salt, iterations)
+        );
 
         const exportData = {
           exportVersion: '1.0',
@@ -81,6 +83,15 @@ export class ImportExportService {
       }
 
       const originalVaultData = importData.originalVaultData;
+      // It needs the key file too: importing one comes with New-54's later
+      // steps.
+      if (isFormat2(originalVaultData)) {
+        return {
+          success: false,
+          code: 'UNSUPPORTED',
+          error: "Importing a vault that uses a key file isn't supported yet.",
+        };
+      }
 
       try {
         // The export carries the original file, `kdf` header included.

@@ -18,7 +18,9 @@ import path from 'path';
 export const VAULT_FORMATS = {
   // Format 2 binds the header to the payload (New-37).
   env: { version: 2, features: { comments: 'key comments' } },
-  password: { version: 1, features: {} },
+  // Format 2: a key file as second factor, the payload under a data key
+  // (New-54).
+  password: { version: 2, features: { keyfile: 'a key file' } },
 };
 
 export const UPGRADE_HINT =

@@ -30,12 +30,13 @@ export const KEY_FILE_TYPE = 'secure-vault-key-file';
 
 /**
  * A failure to open: `AUTH` (wrong password), `KEY_FILE` (not this vault's
- * key file), `INVALID_KEY_FILE` (not a key file), `TAMPERED` (the header
- * was changed, or the file is damaged).
+ * key file), `INVALID_KEY_FILE` (not a key file), `KEY_FILE_REQUIRED` (a
+ * password alone for a vault that needs its key file too), `TAMPERED` (the
+ * header was changed, or the file is damaged).
  */
 export class PasswordEnvelopeError extends Error {
   /**
-   * @param {'AUTH'|'KEY_FILE'|'INVALID_KEY_FILE'|'TAMPERED'} code
+   * @param {'AUTH'|'KEY_FILE'|'INVALID_KEY_FILE'|'KEY_FILE_REQUIRED'|'TAMPERED'} code
    * @param {string} message
    */
   constructor(code, message) {

@@ -115,7 +115,9 @@ What each operation costs:
 ## 6. The app
 
 - **Session custody.** A format-2 vault's session holds the **DEK**
-  (zeroed on lock), not the password. `withPassword(name, fn)` callers get
+  (zeroed on lock), not the password. Each operation gets its own copy,
+  zeroed when it ends, so a lock in the middle of a save can't make it
+  encrypt with a zeroed key (step 2). `withPassword(name, fn)` callers get
   `withKey`; `VaultService` load/save take `{password}` (format 1) or
   `{dek}` (format 2). The page never sees either, as today.
 - **Turn on** (Settings → Security → "Require a key file"): re-enter the

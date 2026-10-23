@@ -1,6 +1,16 @@
 import { VaultFileService } from './VaultFileService.js';
 import { CryptographyService } from './CryptographyService.js';
 import { Vault } from '../models/Vault.js';
+import {
+  openVaultPayload,
+  resealVaultPayload,
+} from '../utils/passwordVaultPayload.js';
+
+/** A failure to open the payload, as a result: coded ones keep their code. */
+const openFailure = (error) =>
+  error.code
+    ? { success: false, code: error.code, error: error.message }
+    : { success: false, error: 'Invalid password' };
 
 export class VaultSettingsService {
   /**
@@ -16,14 +26,6 @@ export class VaultSettingsService {
         CryptographyService.deriveKey(password, salt, iterations));
   }
 
-  deriveKeyFor(password, record) {
-    return this.deriveKey(
-      password,
-      Buffer.from(record.salt, 'hex'),
-      CryptographyService.iterationsOf(record)
-    );
-  }
-
   async updateVaultSettings(vaultName, vaultPassword, newSettings) {
     try {
       if (!(await this.fileService.vaultExists(vaultName))) {
@@ -31,32 +33,27 @@ export class VaultSettingsService {
       }
 
       const vaultFile = await this.fileService.readVaultFile(vaultName);
-      const key = this.deriveKeyFor(vaultPassword, vaultFile);
 
       let vaultData;
       try {
-        const encryptedData = {
-          encrypted: vaultFile.encrypted,
-          authTag: vaultFile.authTag,
-          iv: vaultFile.iv,
-        };
-        vaultData = CryptographyService.decrypt(encryptedData, key);
+        vaultData = openVaultPayload(vaultFile, vaultPassword, this.deriveKey);
       } catch (error) {
-        return { success: false, error: 'Invalid password' };
+        return openFailure(error);
       }
 
       const vault = Vault.fromJSON(vaultData, vaultName);
       vault.updateSettings(newSettings);
 
-      const newEncryptedData = CryptographyService.encrypt(vault.toJSON(), key);
-      // Same key, so the same salt and `kdf` header go back on.
-      const finalData = {
-        ...newEncryptedData,
-        ...CryptographyService.keyHeaderOf(vaultFile),
-        recoveryMetadata: vaultFile.recoveryMetadata || {},
-      };
-
-      await this.fileService.writeVaultFile(vaultName, finalData);
+      // Same keys: the same header (and format-2 slots) go back on.
+      await this.fileService.writeVaultFile(
+        vaultName,
+        resealVaultPayload(
+          vaultFile,
+          vault.toJSON(),
+          vaultPassword,
+          this.deriveKey
+        )
+      );
       return { success: true };
     } catch (error) {
       console.error('Error updating vault settings:', error);
@@ -71,20 +68,18 @@ export class VaultSettingsService {
       }
 
       const vaultFile = await this.fileService.readVaultFile(vaultName);
-      const key = this.deriveKeyFor(vaultPassword, vaultFile);
 
       try {
-        const encryptedData = {
-          encrypted: vaultFile.encrypted,
-          authTag: vaultFile.authTag,
-          iv: vaultFile.iv,
-        };
-        const vaultData = CryptographyService.decrypt(encryptedData, key);
+        const vaultData = openVaultPayload(
+          vaultFile,
+          vaultPassword,
+          this.deriveKey
+        );
         const vault = Vault.fromJSON(vaultData, vaultName);
 
         return { success: true, settings: vault.settings };
       } catch (error) {
-        return { success: false, error: 'Invalid password' };
+        return openFailure(error);
       }
     } catch (error) {
       console.error('Error getting vault settings:', error);

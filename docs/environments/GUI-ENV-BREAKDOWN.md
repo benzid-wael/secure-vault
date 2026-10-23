@@ -2867,10 +2867,10 @@ import` says it "creates a new version with all vars from the file(s)"
 
 ### New-54: Password vaults: a key file as second factor
 
-- **Status:** 🟡 step 1 of 6 done 2026-10-23. Design approved
+- **Status:** 🟡 steps 1 and 2 of 6 done 2026-10-23. Design approved
   ([`PASSWORD-VAULT-2FA-RFC.md`](PASSWORD-VAULT-2FA-RFC.md) rev. 2, Q1 and
   Q2 as proposed). On `feat/vault-env-gui`; not merged, not released.
-  Nothing reads or writes format 2 yet: no user-visible change.
+  Nothing creates a format-2 vault yet (step 3): no user-visible change.
 - **Step 1, built:** `src/electron/utils/passwordVaultEnvelope.js`, pure
   functions: key file (`createKeyFile`, `parseKeyFile`, `keyFileIdOf`),
   keys (`newDataKey`, `mainKekOf` = HKDF-SHA256 of PBKDF2 ‖ key file,
@@ -2885,8 +2885,42 @@ import` says it "creates a new version with all vars from the file(s)"
   slot and the payload that cover it; swapped, missing and short slots;
   wrong password, recovery key and key file named as such; key file
   parsing.
-- **Next:** step 2, `VaultService` (and siblings) read and write format 2,
-  and `VaultSession` holds the DEK.
+- **Step 2, built:**
+  - The password vault format table knows format 2 and `keyfile`, so this
+    build reads and writes it; older builds refuse it (New-29's message).
+  - `src/electron/utils/passwordVaultPayload.js`: `openVaultPayload` and
+    `resealVaultPayload` take the session's credential, the password
+    (format 1) or `{dek}` (format 2), so `VaultService.loadVault`/
+    `saveVault`, `VaultSettingsService` and `ImportExportService.exportVault`
+    handle both formats the same way. A save keeps a format-2 header and
+    slots and re-seals the payload; no PBKDF2.
+  - `VaultService.openWithKeyFile(name, password, keyFileKey)` checks the
+    key file id, derives the main key, unwraps the DEK and opens the payload;
+    resolves to `{credential: {dek}}`, never the password. Errors:
+    `KEY_FILE`, `AUTH`, `TAMPERED`, `NO_KEY_FILE`, `NOT_FOUND`,
+    `NEWER_FORMAT`. `verifyPassword` and every service given a password
+    alone for a format-2 vault answer `KEY_FILE_REQUIRED`.
+  - `generateRecoveryKey` on format 2 re-wraps only the recovery slot with
+    the DEK (a new salt, the main slot untouched). Not stored: the new
+    key's creation time (format 1 keeps it in its recovery metadata).
+  - `VaultSession` holds `{dek}` (its own copy, zeroed on lock) or the
+    password, and hands each `withPassword` call a **copy** of the DEK,
+    zeroed when the call settles: a lock mid-save can't make the save
+    encrypt with a zeroed key. No derived-key caching with a DEK.
+  - Refused for format 2 with `UNSUPPORTED` until their step: password
+    change, delete (3), recovery with the key or an old password (5),
+    importing an export (later); KDF upgrade is skipped.
+- **Step 2, checked:** 25 tests on real files with a format-2 vault built
+  by a test helper (`src/__tests__/helpers/format2Vault.js`): open with
+  password + key file (and each refusal), load, save (header and slots
+  kept), settings, export, new recovery key (old one refused), every
+  `UNSUPPORTED` refusal changing nothing, the session's DEK copies, and a
+  lock mid-save. Lines: `VaultSession.js` 100%, `passwordVaultPayload.js`
+  100%, `VaultService.js` 90%, `VaultSettingsService.js` 79%,
+  `ImportExportService.js` 95%. Suite 1552 passed; e2e 10/10 (format 1
+  unchanged).
+- **Next:** step 3, turning a key file on and off, changing it, and
+  deleting a format-2 vault, in main and in Settings.
 
 - **Found:** the author, 2026-10-23: "for security reason I would like to
   support 2fa".
