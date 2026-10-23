@@ -40,6 +40,7 @@
     "test:coverage": "vitest run --coverage",
     "test:coverage:ui": "vitest --ui --coverage",
     "test:coverage:check": "node scripts/coverage-check.js",
+    "coverage:files": "node scripts/coverage-files.mjs",
     "lint": "cross-env ESLINT_USE_FLAT_CONFIG=true eslint .",
     "lint:fix": "cross-env ESLINT_USE_FLAT_CONFIG=true eslint . --fix",
     "typecheck": "tsc --noEmit",

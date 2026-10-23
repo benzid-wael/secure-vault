@@ -49,17 +49,17 @@ updated as each task finishes, not in a batch at the end.
 | New-4  | Feature gate for the Environments UI                               | M4  | P0  | ✅     | 0                                      |
 | New-5  | Verify async PBKDF2 in the Bun-compiled CLI binary                 | M1  | P1  | ✅     | 3                                      |
 | New-6  | Decide whether project coverage should include `src/electron/**`   | —   | P2  | ⬜     | New-1                                  |
-| New-7  | Commit a way to measure coverage of excluded files                 | —   | P1  | ⬜     | New-1                                  |
-| New-8  | `npm run lint` fails locally on gitignored build output            | —   | P2  | ⬜     | —                                      |
+| New-7  | Commit a way to measure coverage of excluded files                 | —   | P1  | ✅     | New-1                                  |
+| New-8  | `npm run lint` fails locally on gitignored build output            | —   | P2  | ✅     | —                                      |
 | New-9  | Type-check gate: confirm "no new errors" as this plan's rule       | —   | P1  | ✅     | —                                      |
 | New-10 | Lock: a container sharing the kernel can look like this machine    | —   | P1  | 🟡     | 4 (blocks the release of 6)            |
 | New-11 | Bring RFC §6.5 in line with Corrections 6 and 7                    | —   | P2  | ⬜     | 4                                      |
 | New-12 | Windows: retry the final rename on `EPERM`                         | M1  | P1  | ✅     | 5 (blocks the release of 6 on Windows) |
 | New-13 | CI runs the unit tests on Windows and macOS too                    | —   | P1  | 🟡     | — (verifies 4, New-12)                 |
 | New-14 | Remove the env `saveVault` and its mocked tests                    | —   | P2  | ⬜     | 6                                      |
-| New-15 | Type `window.electronAPI` once for the type check                  | —   | P2  | ⬜     | —                                      |
-| New-16 | ESLint flags MUI components used only in JSX as unused             | —   | P2  | ⬜     | —                                      |
-| New-17 | Shared test mock lacks `removeAllListeners` / `onVaultLocked`      | —   | P2  | ⬜     | —                                      |
+| New-15 | Type `window.electronAPI` once for the type check                  | —   | P2  | ✅     | —                                      |
+| New-16 | ESLint flags MUI components used only in JSX as unused             | —   | P2  | ✅     | —                                      |
+| New-17 | Shared test mock lacks `removeAllListeners` / `onVaultLocked`      | —   | P2  | ✅     | —                                      |
 | New-18 | Dev-mode Content-Security-Policy                                   | M0  | P2  | ✅     | 2                                      |
 | New-19 | Verify the CSP and sandbox in packaged builds (asar)               | M0  | P1  | 🟡     | 2 (blocks the next tag)                |
 | New-20 | Fix: reveal/edit fail with "Unknown view" in dev                   | M4  | P0  | ✅     | 15, 20                                 |
@@ -85,7 +85,7 @@ updated as each task finishes, not in a batch at the end.
 | New-40 | Refuse `--remote-debugging-port` in packaged builds                | M0  | P2  | ✅     | New-38                                 |
 | New-41 | Find the unit test that failed once in ten full runs               | —   | P2  | ✅     | —                                      |
 | New-42 | Decide whether input in the window keeps env vaults unlocked       | —   | P2  | ✅     | 13                                     |
-| New-43 | `npm run lint` lints the docs site's ignored build output          | —   | P3  | ⬜     | —                                      |
+| New-43 | `npm run lint` lints the docs site's ignored build output          | —   | P3  | ✅     | —                                      |
 | New-44 | CLI `env rename` leaves `extends` and references on the old name   | —   | P1  | ✅     | New-30                                 |
 | New-45 | `env import` of several files keeps only the last one              | M1  | P1  | ✅     | —                                      |
 | New-46 | The "Lock Vault" menu item doesn't lock env vaults                 | M3  | P1  | ✅     | —                                      |
@@ -93,6 +93,7 @@ updated as each task finishes, not in a batch at the end.
 | New-48 | "Open…" won't select a project's `.env.vault`                      | M3  | P1  | ✅     | 14                                     |
 | New-49 | Escape doesn't cancel a grid-card cell edit                        | —   | P3  | ✅     | —                                      |
 | New-50 | Start writing env vaults in format 2                               | M1  | P2  | ⬜     | New-37 (and a release in between)      |
+| New-51 | Coverage config uses `coverage.all`, gone in Vitest 4              | —   | P3  | ✅     | —                                      |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -1336,6 +1337,10 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
   exclusion removed; nobody recorded why it was added. A drop below the gate
   means either tests for unrelated code or a new threshold, and both need a
   decision, not a quiet edit.
+- **Note (2026-10-23, New-51):** Vitest 4 dropped `coverage.all`; today
+  the report holds only the files tests load (44). Setting
+  `coverage.include` brings back unloaded files at 0% (seen with
+  `coverage:files`), so deciding this also means choosing an `include`.
 - **Validation:** The decision and the measured totals are recorded here.
 - **Cost of leaving it:** The per-task measurement (New-1) covers new work, but
   existing services stay unmeasured, and a regression in them doesn't move the
@@ -1343,7 +1348,17 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-7: Commit a way to measure coverage of excluded files
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-23: its own validation is met. On
+  `feat/vault-env-gui`; not merged, not released.
+- **Built:** `npm run coverage:files -- <file> [<file> …] [--related]`
+  (`scripts/coverage-files.mjs`). It runs the suite (or, with `--related`,
+  only the tests that import the files) with `--coverage.exclude` replaced
+  by `**/node_modules/**`, `--coverage.include` set to the files, the
+  `json-summary` reporter and thresholds at 0, into a temp directory that
+  it removes; it prints one row per file (lines, functions, branches) and
+  exits with Vitest's status. A file no test loads shows as 0%.
+- **Checked:** `CryptographyService.js` prints 100% lines (43/43), as at
+  Task 3; `npm run test:coverage` gives the same totals as before.
 - **Found:** Task 3, 2026-10-21 (Correction 5).
 - **Goal:** Anyone can measure line coverage for a chosen set of files,
   including excluded paths, with one committed command, e.g.
@@ -1368,7 +1383,8 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-8: `npm run lint` fails locally on gitignored build output
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-23 with New-43 (the same problem, logged
+  twice). On `feat/vault-env-gui`; not merged, not released.
 - **Found:** Task 3, 2026-10-21.
 - **Goal:** `npm run lint` on a developer machine reports the same as CI.
 - **Constraints:** Don't disable rules or lower severities; only stop scanning
@@ -1585,7 +1601,12 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-15: Type `window.electronAPI` once for the type check
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-23: its own validation is met. On
+  `feat/vault-env-gui`; not merged, not released.
+- **Built:** `src/types/window.d.ts` declares `Window.electronAPI` as
+  `any`, and `tsconfig.json` includes `src/**/*.d.ts`. The type check goes
+  from 287 to 209 errors: the 78 `electronAPI` ones, and no new one.
+  `envApi.js` keeps its typed accessor for the env vault part.
 - **Found:** Task 19, 2026-10-22.
 - **Goal:** `tsc` knows `window.electronAPI`, so renderer files stop
   reporting it as missing.
@@ -1601,7 +1622,12 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-16: ESLint flags MUI components used only in JSX as unused
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-23: its own validation is met. On
+  `feat/vault-env-gui`; not merged, not released.
+- **Built:** `eslint.config.js` loads `eslint-plugin-react` (already a
+  dev dependency) and turns on `react/jsx-uses-vars`. Warnings go from 502
+  to 82 (`no-unused-vars` 497 → 77); 0 errors. `jsx-uses-react` isn't
+  needed: the JSX runtime is automatic.
 - **Found:** Tasks 19–20, 2026-10-22.
 - **Goal:** `no-unused-vars` stops reporting imports used only in JSX.
 - **Constraints:** no new errors; warnings only go down.
@@ -1614,7 +1640,11 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-17: Shared test mock lacks `removeAllListeners` / `onVaultLocked`
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-23: its own validation is met. On
+  `feat/vault-env-gui`; not merged, not released.
+- **Built:** `src/setupTests.js`'s mock has `onVaultLocked`,
+  `removeAllListeners` and `getFeatures` (gate off). `AppEnvGate.test.jsx`
+  drops its local patches and still passes, unmounting `App` each test.
 - **Found:** Task 19 tests, 2026-10-22.
 - **Goal:** unmounting `App` under `src/setupTests.js`'s mock doesn't throw.
 - **Constraints:** existing tests keep passing.
@@ -2468,7 +2498,11 @@ unknown format is `INVALID`. Preload passes `format`. The env ⋮ menu has
 
 ### New-43: `npm run lint` lints the docs site's ignored build output
 
-- **Status:** ⬜ found 2026-10-22 during Task 13.
+- **Status:** ✅ done 2026-10-23: its own validation is met. On
+  `feat/vault-env-gui`; not merged, not released.
+- **Built:** `docs/.vitepress/cache/**` and `docs/.vitepress/dist/**` are in
+  the ESLint ignores. With the docs built, `npm run lint` reports 0 errors
+  (was 467).
 - **Found:** after a local docs build, `npm run lint` reports 460 errors,
   all in `docs/.vitepress/cache` and `docs/.vitepress/dist`. Git ignores
   both; the ESLint config doesn't. A clean checkout and CI are unaffected.
@@ -2660,3 +2694,16 @@ import` says it "creates a new version with all vars from the file(s)"
   format 2; the earlier release's CLI reports "format 2, upgrade".
 - **Cost of leaving it:** vault headers stay unauthenticated (New-37's
   exposure).
+
+### New-51: Coverage config uses `coverage.all`, gone in Vitest 4
+
+- **Status:** ✅ done 2026-10-23. On `feat/vault-env-gui`; not merged, not
+  released. Dev only.
+- **Found:** New-18, 2026-10-23: a test importing `vite.config.js` pulled
+  it into the type check, which reported `coverage.all` and the `test` key.
+- **Built:** `all: true` removed (Vitest 4 ignores it); `defineConfig` now
+  comes from `vitest/config`, so the `test` key is typed. The config
+  type-checks with no error.
+- **Validation:** `npm run test:coverage` gives the same files and totals as
+  before (one branch in `EnvVaultsPanel.jsx` varies by one between runs, with
+  or without the change); `vite build` still builds.

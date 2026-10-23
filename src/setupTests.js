@@ -33,6 +33,11 @@ const mockElectronAPI = {
   onMenuImportVault: vi.fn(),
   onMenuLockVault: vi.fn(),
   onMenuConfiguration: vi.fn(),
+  onVaultLocked: vi.fn(),
+  removeAllListeners: vi.fn(),
+
+  // Feature gates main decides (New-4); the Environments UI is off.
+  getFeatures: vi.fn().mockResolvedValue({ success: true, envVaults: false }),
 
   // Import/Export
   importVault: vi.fn().mockResolvedValue({ success: true }),

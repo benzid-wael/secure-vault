@@ -1,5 +1,6 @@
 import js from '@eslint/js';
 import globals from 'globals';
+import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 
@@ -18,6 +19,9 @@ export default [
       'coverage/**',
       'node_modules/**',
       'public/**',
+      // The docs site's build output (gitignored, New-43).
+      'docs/.vitepress/cache/**',
+      'docs/.vitepress/dist/**',
       '**/*.min.js',
       // Quarantined: known pre-existing bugs (undefined variables — real
       // runtime crashes) in WIP recovery/auth code. Linting these would make
@@ -53,6 +57,7 @@ export default [
       },
     },
     plugins: {
+      react,
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
     },
@@ -69,6 +74,8 @@ export default [
         { allowConstantExport: true },
       ],
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      // A component used only in JSX counts as used (New-16).
+      'react/jsx-uses-vars': 'error',
     },
   },
   {

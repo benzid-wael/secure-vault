@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -145,7 +145,6 @@ export default defineConfig({
         'lcov',
       ],
       reportsDirectory: './coverage',
-      all: true,
       clean: true,
       skipFull: false,
       reportOnFailure: true,

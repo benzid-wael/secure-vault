@@ -18,9 +18,6 @@ describe('App: Environments gate', () => {
   const original = { ...win.electronAPI };
 
   beforeEach(() => {
-    // The real preload has these; the shared test mock doesn't.
-    win.electronAPI.removeAllListeners = vi.fn();
-    win.electronAPI.onVaultLocked = vi.fn();
     win.electronAPI.getVaults = vi
       .fn()
       .mockResolvedValue({ success: true, data: ['personal'] });
