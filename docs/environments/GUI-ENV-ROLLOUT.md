@@ -724,3 +724,16 @@ env init` writes; it's added to the remembered list.
 - **Gated by:** the Environments UI gate.
 - **Verify after release:** not visible to the user; covered by tests.
 - **Rollback:** reinstall the previous app.
+
+### New-41: the vault list never shows a just-locked vault as unlocked
+
+- **Runtime change (gated by the Environments UI gate):** when the open env
+  vault locks while the screen is loading, the list is re-read before it
+  shows; opening a vault that turned out locked tries its saved password
+  first. Also fixes the unit test that failed about once in ten runs.
+- **Schema or config change:** none.
+- **Before it ships:** nothing beyond the gate's own criteria.
+- **Gated by:** the Environments UI gate.
+- **Verify after release:** not reliably reproducible by hand (a race);
+  covered by tests.
+- **Rollback:** reinstall the previous app.

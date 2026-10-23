@@ -2266,7 +2266,8 @@ unknown format is `INVALID`. Preload passes `format`. The env ⋮ menu has
 
 ### New-41: Find the unit test that failed once in ten full runs
 
-- **Status:** ⬜ found 2026-10-22 during Task 23.
+- **Status:** ✅ done 2026-10-23: `EnvVaultsReal.test.jsx` 0 failures in
+  40 runs on its own (before: about 1 in 10–30), and three full runs green.
 - **Found:** `npx vitest run` reported "1 failed | 1287 passed" once; a
   re-run to see which test printed no failure, and the next nine full runs
   were green. Which test, and why, is unknown.
@@ -2292,6 +2293,17 @@ unknown format is `INVALID`. Preload passes `format`. The env ⋮ menu has
   earlier test in the file. Next: log `select`/`unlockSaved` in that test
   and bisect which earlier test leaves state behind (module-level
   `present`, `safeStore`, the keychain file, StrictMode double effects).
+- **Fixed 2026-10-23 (root cause, from a call trace):** a real race in the
+  panel. The vault screen's `env:list` was still in flight when the user
+  pressed Lock; it came back LOCKED, and `onLocked` showed the list at once,
+  before the list was re-read, so the vault still looked unlocked. A click
+  in that window took the "unlocked" path; New-35's check then found it
+  locked and asked for the password, skipping the saved password a fresh
+  click uses. Now `onLocked` re-reads the list before leaving the screen
+  (as Lock already did), and a vault found locked on open is selected
+  afresh: its saved password first, then the dialog. Panel test: listed
+  unlocked, locked meanwhile, saved password tried (fails on the previous
+  code).
 
 ### New-42: Decide whether input in the window keeps env vaults unlocked
 

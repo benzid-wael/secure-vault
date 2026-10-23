@@ -661,12 +661,14 @@ const EnvVaultsPanel = ({ header = null }) => {
 
   // `info` is the lock event or a LOCKED result: it may say why (New-47).
   // A lock the user asked for needs no notice.
+  // The list is re-read before it shows, so it never offers a vault as
+  // unlocked that just locked (New-41).
   const onLocked = useCallback(
-    (info = {}) => {
+    async (info = {}) => {
       const label = openVaultRef.current?.label ?? 'The vault';
+      await refresh();
       setOpenVault(null);
       if (info.reason !== 'user') setNotice(lockedNotice(label, info));
-      refresh();
     },
     [refresh]
   );
@@ -684,14 +686,15 @@ const EnvVaultsPanel = ({ header = null }) => {
   );
 
   // `notice` shows on the vault screen once it opens. A vault locked
-  // meanwhile (the list was older than the click) asks for its password.
+  // meanwhile (the list was older than the click) is selected afresh: its
+  // saved password first, if any, else the password dialog.
   const enter = async (id, notice = '') => {
     const listed = await refresh();
     const vault = listed.find((v) => v.id === id);
     setNotice('');
     if (vault && !vault.unlocked) {
       setOpenVault(null);
-      return setDialog({ kind: 'unlock', vault });
+      return select(vault);
     }
     setOpenVault(vault ? { ...vault, notice } : null);
     setDialog(null);

@@ -129,6 +129,28 @@ describe('EnvVaultsPanel', () => {
     expect(screen.queryByText('New environment')).toBeNull();
   });
 
+  it('tries the saved password when a vault listed unlocked was locked meanwhile (New-41)', async () => {
+    api.list
+      .mockResolvedValueOnce({
+        success: true,
+        vaults: [{ ...APP, unlocked: true, remembered: true }, GONE],
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        vaults: [{ ...APP, remembered: true }, GONE],
+      })
+      .mockResolvedValue({
+        success: true,
+        vaults: [{ ...APP, unlocked: true, remembered: true }, GONE],
+      });
+    api.unlockSaved = vi.fn().mockResolvedValue({ success: true });
+    render(<EnvVaultsPanel />);
+    fireEvent.click(await screen.findByText('app'));
+    expect(await screen.findByText('New environment')).toBeInTheDocument();
+    expect(api.unlockSaved).toHaveBeenCalledWith('id-app');
+    expect(screen.queryByLabelText('Vault Password')).toBeNull();
+  });
+
   it('lists vaults with their location and state', async () => {
     api.list.mockResolvedValue({
       success: true,
