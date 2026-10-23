@@ -1,16 +1,18 @@
 // Smoke check of the packaged desktop app. New-19: the installed binary,
 // loading its renderer from inside app.asar, starts with the
 // Content-Security-Policy and a sandboxed renderer, and unlocks a vault with
-// no CSP violation. New-38: its Electron fuses are set and hold.
+// no CSP violation. New-38: its Electron fuses are set and hold. New-40: the
+// shipped build refuses --remote-debugging-port, so the driven checks run
+// on a twin packaged from the same build with one flag that allows it.
 // `npm run test:e2e` runs the built app from the repo, where `file://` and
 // 'self' behave differently from inside an asar.
 //
-//   npm run package:<os> (or electron-builder --dir), then:
-//   node e2e/packaged.mjs [path to the app's executable]
+//   npm run package:<os> && npm run package:twin, then:
+//   node e2e/packaged.mjs [shipped executable] [twin executable]
 //
-// It runs the binary with an empty home directory and drives it over the
-// DevTools protocol, so it never sees (or touches) real vaults. On Linux it
-// needs a display (xvfb-run on CI).
+// It runs the binaries with an empty home directory and drives the twin
+// over the DevTools protocol, so it never sees (or touches) real vaults. On
+// Linux it needs a display (xvfb-run on CI).
 import { spawn, execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
@@ -27,9 +29,9 @@ const PASSWORD = 'Packaged-Smoke-7&q';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** The unpacked app's executable electron-builder leaves in dist/. */
-function defaultExecutable() {
-  const dist = path.join(REPO, 'dist');
+/** The unpacked app's executable electron-builder leaves in `out`. */
+function defaultExecutable(out) {
+  const dist = path.join(REPO, out);
   const product = pkg.build.productName;
   const dirs = fs.existsSync(dist) ? fs.readdirSync(dist) : [];
   if (process.platform === 'darwin') {
@@ -96,13 +98,19 @@ async function connect(url) {
   };
 }
 
-const executable = process.argv[2] ?? defaultExecutable();
-if (!executable || !fs.existsSync(executable)) {
-  console.error(
-    `No packaged app at ${executable ?? 'dist/'}: run \`npm run package:<os>\` ` +
-      'first, or pass the executable path.'
-  );
-  process.exit(1);
+const shipped = process.argv[2] ?? defaultExecutable('dist');
+const twin = process.argv[3] ?? defaultExecutable('dist-twin');
+for (const [exe, out, how] of [
+  [shipped, 'dist/', 'npm run package:<os>'],
+  [twin, 'dist-twin/', 'npm run package:twin'],
+]) {
+  if (!exe || !fs.existsSync(exe)) {
+    console.error(
+      `No packaged app at ${exe ?? out}: run \`${how}\` first, or pass the ` +
+        'executable paths.'
+    );
+    process.exit(1);
+  }
 }
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-packaged-'));
@@ -120,7 +128,7 @@ for (const name of ['NODE_ENV', 'ELECTRON_IS_DEV', 'ELECTRON_RUN_AS_NODE']) {
 }
 
 const child = spawn(
-  executable,
+  twin,
   [
     '--enable-logging=stderr',
     '--remote-debugging-port=0',
@@ -288,7 +296,7 @@ async function run() {
  * Start the app with extra arguments and environment, and return what it
  * printed by the time its main script ran (or it exited, or 20 s passed).
  */
-function launchBriefly(name, args, extraEnv = {}) {
+function launchBriefly(executable, name, args, extraEnv = {}) {
   return new Promise((resolve) => {
     const proc = spawn(
       executable,
@@ -316,7 +324,7 @@ function launchBriefly(name, args, extraEnv = {}) {
 // a debugger into main, and it loads code only from its checked app.asar.
 async function checkFuses() {
   const { getCurrentFuseWire, FuseV1Options } = await import('@electron/fuses');
-  const wire = await getCurrentFuseWire(executable);
+  const wire = await getCurrentFuseWire(shipped);
   const ON = 49; // FuseState.ENABLE
   const OFF = 48; // FuseState.DISABLE
   const want = {
@@ -341,13 +349,25 @@ async function checkFuses() {
   // it in a packaged app's main process, fuse or not.)
   const script = path.join(tmp, 'run-as-node.cjs');
   fs.writeFileSync(script, "process.stdout.write('RAN-AS-NODE')");
-  const asNode = await launchBriefly('run-as-node', [script], {
+  const asNode = await launchBriefly(shipped, 'run-as-node', [script], {
     ELECTRON_RUN_AS_NODE: '1',
   });
   check('ELECTRON_RUN_AS_NODE is ignored', !asNode.includes('RAN-AS-NODE'));
 
-  const inspected = await launchBriefly('inspect', ['--inspect=0']);
+  const inspected = await launchBriefly(shipped, 'inspect', ['--inspect=0']);
   check('--inspect is ignored', !/Debugger listening/.test(inspected));
+
+  // New-40: no fuse covers this Chromium switch; main quits before any
+  // window opens. (The twin, which allows it, is what the checks above drove.)
+  const debugged = await launchBriefly(shipped, 'debug-port', [
+    '--enable-logging=stderr',
+    '--remote-debugging-port=0',
+  ]);
+  check(
+    '--remote-debugging-port is refused',
+    debugged.includes('--remote-debugging-port is refused in this build') &&
+      !debugged.includes('Creating main browser window')
+  );
 }
 
 const killTimer = setTimeout(() => {

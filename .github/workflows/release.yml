@@ -55,6 +55,13 @@ jobs:
           # SmartScreen per the README.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
+      - name: Package the smoke test's twin (allows --remote-debugging-port)
+        # The shipped build refuses the switch (New-40); the driven checks
+        # run on this twin from the same build, one packaged flag apart.
+        run: npm run package:twin
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
       - name: Smoke-test the packaged app (CSP, sandbox, unlock)
         # The installed app loads its renderer from inside app.asar, which
         # `npm run test:e2e` never does (GUI-ENV-BREAKDOWN New-19).

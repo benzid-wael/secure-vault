@@ -59,6 +59,7 @@
     "package:win": "npm run build:all && electron-builder --win",
     "package:linux": "npm run build:all && electron-builder --linux",
     "package:cli": "node scripts/build-cli.js",
+    "package:twin": "electron-builder --dir --publish never --config.directories.output=dist-twin --config.extraMetadata.allowDebugPort=true",
     "release:tag": "bash scripts/release-tag.sh",
     "release:promote": "bash scripts/npm-dist-tag.sh",
     "electron": "npm run start:prod",

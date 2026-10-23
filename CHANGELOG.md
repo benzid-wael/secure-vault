@@ -108,6 +108,10 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Security
 
+- **The desktop app refuses `--remote-debugging-port` and
+  `--remote-debugging-pipe`.** Started with either, it quits before opening
+  a window, so whoever launches it can't read or drive the page of an
+  unlocked vault through Chromium's debugger.
 - **No more built-in `default` vault.** The desktop app created a `default`
   vault with the password `changeme123` on every launch where it was missing,
   so every install had a vault anyone could open. First launch now asks you to

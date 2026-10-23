@@ -82,7 +82,7 @@ updated as each task finishes, not in a batch at the end.
 | New-37 | Authenticate the envelope header (GCM additional data)             | M5  | P2  | ✅     | New-29                                 |
 | New-38 | Set Electron fuses in packaged builds                              | M0  | P1  | 🟡     | New-19                                 |
 | New-39 | Fix: a failed page load loops instead of showing the error page    | —   | P2  | ✅     | —                                      |
-| New-40 | Refuse `--remote-debugging-port` in packaged builds                | M0  | P2  | ⬜     | New-38                                 |
+| New-40 | Refuse `--remote-debugging-port` in packaged builds                | M0  | P2  | ✅     | New-38                                 |
 | New-41 | Find the unit test that failed once in ten full runs               | —   | P2  | ✅     | —                                      |
 | New-42 | Decide whether input in the window keeps env vaults unlocked       | —   | P2  | ✅     | 13                                     |
 | New-43 | `npm run lint` lints the docs site's ignored build output          | —   | P3  | ⬜     | —                                      |
@@ -2318,7 +2318,31 @@ unknown format is `INVALID`. Preload passes `format`. The env ⋮ menu has
 
 ### New-40: Refuse `--remote-debugging-port` in packaged builds
 
-- **Status:** ⬜ found 2026-10-22 with New-38 (author: later).
+- **Status:** ✅ done 2026-10-23 on macOS; Windows and Linux are checked
+  by the release workflow's smoke step, like New-38. On
+  `feat/vault-env-gui`; not merged, not released.
+- **Decided (author, 2026-10-23):** refuse the switch, and run the driven
+  smoke checks on a twin build. An environment variable or token that
+  re-allowed it would be just as available to a same-user process, the
+  attacker this narrows.
+- **Built:** `src/electron/utils/debugSwitches.js`: `refusedDebugSwitch`
+  (`--remote-debugging-port`, `--remote-debugging-pipe`, packaged builds
+  only) and `readAllowDebugPort` (the packaged `package.json`'s
+  `allowDebugPort`). `public/main.js` checks it first and `app.exit(1)`s
+  before the single-instance lock or any window. `npm run package:twin`
+  packages the same build into `dist-twin/` with
+  `extraMetadata.allowDebugPort=true`; asar integrity (New-38) keeps that
+  flag from being added to a shipped build. The release workflow packages
+  the twin after the installers and smoke-tests both:
+  `e2e/packaged.mjs [shipped] [twin]` drives the twin (CSP, sandbox,
+  unlock) and checks the shipped build's fuses and refusal. Chromium may
+  open its port for the moment before main runs; there are no pages then.
+- **Validation done:** unit tests (each switch refused when packaged; dev
+  runs and the twin keep it; the flag read as `true`/`"true"` only, a
+  missing or broken file is false). macOS: `npm run test:packaged` 14/14 on
+  the shipped and twin builds; the refusal check fails (13/14) when the
+  twin is passed as the shipped build; the shipped `app.asar`'s
+  `package.json` has no `allowDebugPort`, the twin's has it.
 - **Goal:** a packaged build started with `--remote-debugging-port` (or
   `--remote-debugging-pipe`) quits instead of exposing its pages.
 - **Why it's separate:** it's a Chromium switch no fuse controls. Through

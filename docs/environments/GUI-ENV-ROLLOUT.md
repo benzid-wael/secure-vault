@@ -780,3 +780,17 @@ env init` writes; it's added to the remembered list.
   1, unchanged; nothing about existing vaults changes.
 - **Rollback:** reinstall the previous version. No vault was written in
   format 2, so nothing is locked out.
+
+### New-40: packaged builds refuse the remote-debugging switches
+
+- **Runtime change (every desktop user, not gated):** a packaged app
+  started with `--remote-debugging-port` or `--remote-debugging-pipe`
+  quits at once. Dev runs are unchanged.
+- **Schema or config change:** none. The release workflow also packages a
+  twin (`dist-twin/`, not attached to the release) that allows the switch,
+  for the smoke test.
+- **Before it ships:** the CHANGELOG "Security" entry (written); the
+  release workflow's smoke step green on Windows and Linux.
+- **Verify after release:** start the installed app with
+  `--remote-debugging-port=9222`: it quits, and nothing listens on 9222.
+- **Rollback:** reinstall the previous app.

@@ -66,6 +66,10 @@ import {
   applyAppSettings,
 } from '../src/electron/services/AppSettingsIpc.js';
 import { claimSingleInstance } from '../src/electron/utils/singleInstance.js';
+import {
+  readAllowDebugPort,
+  refusedDebugSwitch,
+} from '../src/electron/utils/debugSwitches.js';
 
 class ElectronApp {
   constructor() {
@@ -589,9 +593,20 @@ class ElectronApp {
   }
 }
 
+// A packaged build started with a debugging switch quits before it opens
+// any window: it would expose the pages of unlocked vaults (New-40).
+const refusedSwitch = refusedDebugSwitch({
+  isPackaged: app.isPackaged,
+  allowDebugPort: app.isPackaged && readAllowDebugPort(app.getAppPath()),
+  hasSwitch: (name) => app.commandLine.hasSwitch(name),
+});
+
 // One process per user: a second launch shows this one's window (Task 11).
 let electronApp = null;
-if (claimSingleInstance(app, () => electronApp?.showWindow())) {
+if (refusedSwitch) {
+  console.error(`--${refusedSwitch} is refused in this build; quitting.`);
+  app.exit(1);
+} else if (claimSingleInstance(app, () => electronApp?.showWindow())) {
   startApp();
 }
 

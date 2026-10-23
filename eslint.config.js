@@ -14,6 +14,7 @@ export default [
     ignores: [
       'build/**',
       'dist/**',
+      'dist-twin/**',
       'coverage/**',
       'node_modules/**',
       'public/**',
