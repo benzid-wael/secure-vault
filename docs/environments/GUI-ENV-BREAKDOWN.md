@@ -1091,7 +1091,21 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 31: User guide `docs/guide/gui/env-vaults.md`
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+  merged, not released.
+- **Built:** `docs/guide/gui/env-vaults.md`: the list, open/new, unlock and
+  saved passwords, variables (secret/public, inherited, comments, copy,
+  edit, `.env` text), copy/move between envs, env structure, history,
+  compare/validate, import/export/template, changes made by the CLI, change
+  password, settings, read-only vaults, and what only the CLI does. Labels
+  were taken from the components, not from memory. It opens with a
+  **Preview** note: release builds hide the screens unless the app starts
+  with `SECURE_VAULT_ENV_UI=1`; drop that note when the gate flips
+  (rollout Gates). Sidebar entry under Desktop app; linked from the GUI
+  index and the CLI env guide's Next.
+- **Validation done:** `npm run docs:build` succeeds (it fails on dead
+  links, so the cross-links resolve); the page is in the sidebar of the
+  guide pages.
 - **Goal:** Users can find and use env vaults in the app; the CLI guide links
   to it.
 - **Dependencies:** 21.
@@ -2332,3 +2346,29 @@ import` says it "creates a new version with all vars from the file(s)"
   in one new version.
 - **Cost of leaving it:** the documented multi-file import silently drops
   every file but the last.
+
+### New-46: The "Lock Vault" menu item doesn't lock env vaults
+
+- **Status:** ⬜ found 2026-10-23 while writing Task 31.
+- **Found:** File → "Lock Vault" (Cmd/Ctrl+L) only locks the password vault
+  (`App.jsx`); an unlocked env vault stays unlocked.
+- **Goal:** the menu item, and its shortcut, lock the env vault on screen
+  too (or every unlocked env vault; to decide).
+- **Validation:** a component or e2e test: Cmd/Ctrl+L on an env vault's
+  screen leaves it locked.
+- **Cost of leaving it:** the shortcut a user reaches for to lock before
+  stepping away silently doesn't.
+
+### New-47: Say why an env vault locked
+
+- **Status:** ⬜ found 2026-10-23 while writing Task 31.
+- **Found:** a password vault that idles out says "Vault locked after N
+  minutes without activity."; an env vault only says "The vault was
+  locked.", whether it was idle, sleep, or a password changed by the CLI
+  (`EnvVaultSession` has the reason: "The vault password was changed
+  elsewhere; unlock it again").
+- **Goal:** the list says why: idle (with the time), sleep or screen lock,
+  or the password changed elsewhere.
+- **Validation:** component tests for each reason's message.
+- **Cost of leaving it:** a user can't tell an idle lock from a password
+  changed under them.

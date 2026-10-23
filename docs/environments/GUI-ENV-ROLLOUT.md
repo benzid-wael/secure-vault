@@ -634,3 +634,15 @@ history dev` shows one new version.
   vault asks for its password.
 - **Rollback:** reinstall the previous app. Forgotten passwords stay
   forgotten; the user types them again.
+
+### Task 31: user guide for env vaults in the app
+
+- **Runtime change:** none; a docs page (`/guide/gui/env-vaults`), published
+  with the docs site.
+- **Before it ships:** the page says the screens are a preview, hidden
+  unless the app starts with `SECURE_VAULT_ENV_UI=1`. **When the
+  Environments UI gate flips, remove that note** in the same release.
+- **Gated by:** nothing; the note covers the gate.
+- **Verify after release:** the page is in the Desktop app sidebar, and the
+  CLI env guide's Next links to it.
+- **Rollback:** revert the page.

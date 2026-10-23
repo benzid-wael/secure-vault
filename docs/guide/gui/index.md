@@ -66,4 +66,5 @@ when your computer sleeps or its screen locks.
 ## Next
 
 - [**Managing passwords**](/guide/gui/managing-passwords) — add, search, copy, edit, delete.
+- [**Environment vaults**](/guide/gui/env-vaults) — the `.env` vaults the CLI uses, in the app.
 - [**Security & best practices**](/guide/gui/security) — how encryption works and how to stay safe.

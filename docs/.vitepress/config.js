@@ -98,6 +98,7 @@ export default defineConfig({
               text: 'Managing passwords',
               link: '/guide/gui/managing-passwords',
             },
+            { text: 'Environment vaults', link: '/guide/gui/env-vaults' },
             { text: 'Security & best practices', link: '/guide/gui/security' },
           ],
         },

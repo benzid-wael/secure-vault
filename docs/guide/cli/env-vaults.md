@@ -182,5 +182,6 @@ Other commands: `rm`, `delete`, `rename`, `copy`, `squash`, `extends`,
 
 ## Next
 
+- Prefer a window? The desktop app opens the same vaults — [**Environment vaults in the app →**](/guide/gui/env-vaults)
 - Native mobile builds need real files on disk — [**Delivering secrets to files →**](/guide/cli/delivering-secrets)
 - Keep a vault unlocked across a session — [**The agent →**](/guide/cli/agent)
