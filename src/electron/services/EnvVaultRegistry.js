@@ -38,6 +38,7 @@ export class EnvVaultRegistry {
   /** @type {import('./EnvVaultRecents.js').EnvVaultRecents | null} */
   #recents;
   #remember;
+  #extensions;
   #recentsLoaded = null;
 
   /**
@@ -49,6 +50,8 @@ export class EnvVaultRegistry {
    *   Where opened vaults are kept across runs; none: this run only.
    * @param {() => Promise<boolean>} [options.remember] Whether to keep them
    *   (the D5 setting), asked at each use.
+   * @param {() => Promise<string[]>} [options.extensions] The file
+   *   extensions the Open… dialog offers first (a setting), asked each time.
    */
   constructor({
     envsDir = getEnvsDir(),
@@ -56,12 +59,14 @@ export class EnvVaultRegistry {
     newId = () => crypto.randomBytes(16).toString('hex'),
     recents = null,
     remember = async () => true,
+    extensions = async () => ['vault'],
   } = {}) {
     this.#envsDir = envsDir;
     this.#dialog = dialog;
     this.#newId = newId;
     this.#recents = recents;
     this.#remember = remember;
+    this.#extensions = extensions;
   }
 
   /** Once per run: add the remembered vaults to this run's list. */
@@ -129,7 +134,10 @@ export class EnvVaultRegistry {
   }
 
   /**
-   * Let the user pick an env vault in the native dialog.
+   * Let the user pick an env vault in the native dialog. It offers the
+   * configured extensions first, and "All files": the native filter can
+   * refuse a name it should take (New-48), and the content check below is
+   * what decides anyway.
    * @returns {Promise<{success: boolean, id?: string, canceled?: boolean,
    *   code?: string, error?: string}>}
    */
@@ -137,7 +145,10 @@ export class EnvVaultRegistry {
     const picked = await this.#dialog.showOpenDialog(win, {
       title: 'Open Environment Vault',
       properties: ['openFile', 'showHiddenFiles'],
-      filters: [{ name: 'Environment vault', extensions: ['vault'] }],
+      filters: [
+        { name: 'Environment vault', extensions: await this.#extensions() },
+        { name: 'All files', extensions: ['*'] },
+      ],
     });
     if (picked.canceled || picked.filePaths.length === 0) {
       return { success: false, canceled: true };

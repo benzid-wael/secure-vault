@@ -646,3 +646,17 @@ history dev` shows one new version.
 - **Verify after release:** the page is in the Desktop app sidebar, and the
   CLI env guide's Next links to it.
 - **Rollback:** revert the page.
+
+### New-48: Open… lists configurable extensions, then All files
+
+- **Runtime change (gated by the Environments UI gate):** the Open… dialog
+  for env vaults offers the extensions in a new setting (`.vault` by
+  default), then "All files".
+- **Schema or config change:** `app-settings.json` may hold
+  `envVaultExtensions`. Older versions ignore it; a bad value falls back to
+  the default on its own.
+- **Before it ships:** nothing beyond the gate's own criteria.
+- **Gated by:** the Environments UI gate (the setting is shown only with it).
+- **Verify after release:** on macOS, Open… a repo's `.env.vault`; if it's
+  greyed out, All files lets you pick it and it opens.
+- **Rollback:** reinstall the previous app; the extra setting is ignored.

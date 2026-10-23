@@ -14,7 +14,11 @@ let envApi;
 
 beforeEach(() => {
   saved = win.electronAPI;
-  let current = { idleMinutes: 5, rememberRecents: true };
+  let current = {
+    idleMinutes: 5,
+    rememberRecents: true,
+    envVaultExtensions: ['vault'],
+  };
   api = {
     get: vi.fn(async () => ({ success: true, settings: current, warning: '' })),
     update: vi.fn(async (patch) => {
@@ -295,6 +299,62 @@ describe('AppSettingsSection: saved env vault passwords (New-36)', () => {
     expect(envApi.list).not.toHaveBeenCalled();
     expect(
       screen.queryByRole('button', { name: 'Forget all saved passwords' })
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('AppSettingsSection: env vault file extensions (New-48)', () => {
+  const field = () =>
+    screen.findByLabelText('Environment vault file extensions');
+
+  it('saves the list typed, on leaving the field', async () => {
+    render(<AppSettingsSection envVaults />);
+    const input = await field();
+    expect(input).toHaveValue('.vault');
+    fireEvent.change(input, { target: { value: '.vault, envvault  env' } });
+    fireEvent.blur(input);
+    expect(api.update).toHaveBeenCalledWith({
+      envVaultExtensions: ['vault', 'envvault', 'env'],
+    });
+    expect(
+      await screen.findByText(
+        'Open… now offers .vault, .envvault, .env files first.'
+      )
+    ).toBeInTheDocument();
+    expect(input).toHaveValue('.vault, .envvault, .env');
+  });
+
+  it('saves on Enter, and not at all when nothing changed', async () => {
+    render(<AppSettingsSection envVaults />);
+    const input = await field();
+    fireEvent.change(input, { target: { value: 'vault' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(api.update).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: 'env' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(api.update).toHaveBeenCalledWith({ envVaultExtensions: ['env'] });
+  });
+
+  it('shows the refusal for a bad list', async () => {
+    api.update.mockResolvedValueOnce({
+      success: false,
+      error: 'List 1 to 10 file extensions',
+    });
+    render(<AppSettingsSection envVaults />);
+    const input = await field();
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.blur(input);
+    expect(
+      await screen.findByText('List 1 to 10 file extensions')
+    ).toBeInTheDocument();
+    expect(input).toHaveValue('.vault');
+  });
+
+  it('is not shown without env vaults', async () => {
+    render(<AppSettingsSection />);
+    await screen.findByText('App settings');
+    expect(
+      screen.queryByLabelText('Environment vault file extensions')
     ).not.toBeInTheDocument();
   });
 });

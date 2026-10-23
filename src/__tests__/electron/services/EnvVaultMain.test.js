@@ -143,6 +143,25 @@ describe('EnvVaultRegistry', () => {
     expect((await registry.list())[0].exists).toBe(false);
   });
 
+  it('offers the configured extensions, then All files (New-48)', async () => {
+    const project = path.join(dir, 'project', 'secrets.env');
+    await seed(project); // an env vault under any name opens: content decides
+    const dialog = pick(project);
+    const registry = new EnvVaultRegistry({
+      envsDir,
+      dialog,
+      extensions: async () => ['vault', 'envvault'],
+    });
+    expect((await registry.openFromDialog(null)).success).toBe(true);
+    const [, options] = /** @type {any[]} */ (
+      dialog.showOpenDialog.mock.calls[0]
+    );
+    expect(options.filters).toEqual([
+      { name: 'Environment vault', extensions: ['vault', 'envvault'] },
+      { name: 'All files', extensions: ['*'] },
+    ]);
+  });
+
   it('does not list an opened app-folder vault twice', async () => {
     const filePath = await seed();
     const registry = new EnvVaultRegistry({ envsDir, dialog: pick(filePath) });

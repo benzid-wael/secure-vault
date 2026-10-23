@@ -2372,3 +2372,30 @@ import` says it "creates a new version with all vars from the file(s)"
 - **Validation:** component tests for each reason's message.
 - **Cost of leaving it:** a user can't tell an idle lock from a password
   changed under them.
+
+### New-48: "Open…" won't select a project's `.env.vault`
+
+- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+  merged, not released.
+- **Found:** reported by the author: in "Open…", a repo's `.env.vault` (a
+  valid env vault, format 1) was greyed out. The dialog allowed only the
+  `vault` extension. macOS gives `.env.vault` the same type and extension
+  as `app.env.vault`, so why the panel refused it isn't known; it couldn't
+  be reproduced headless. "Open folder…" opened it.
+- **Decided (author):** the extensions are configurable, `vault` by
+  default. The dialog also offers "All files": the content check
+  (`type: environment-vault`, ≤ 64 MB) is what decides, so the native
+  filter is only a convenience and must never be the only way in.
+- **Built:** app setting `envVaultExtensions` (1–10 names of letters,
+  digits, `-`, `_`, up to 16 characters, no repeats; default `['vault']`);
+  `EnvVaultRegistry` takes `extensions()` and passes
+  `[{Environment vault, extensions}, {All files, ['*']}]`; main wires it to
+  the setting. Configuration → App settings: "Environment vault file
+  extensions", saved on leaving the field or Enter. The guide says so.
+- **Validation done:** store (kept, copied, refused when empty, dotted,
+  repeated, spaced or not a list), registry (the filters passed; a vault
+  named `secrets.env` opens), UI (saves the parsed list, Enter, nothing when
+  unchanged, the refusal, hidden without env vaults). `AppSettingsStore.js`
+  and `EnvVaultRegistry.js` 100%, `AppSettingsSection.jsx` 98.7% lines.
+  **Not verified:** that the macOS panel now lets you pick that file; it
+  needs a person at the dialog (All files at least lifts the filter).

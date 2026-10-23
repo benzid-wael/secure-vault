@@ -9,6 +9,7 @@ const FORMAT = 1;
  * @typedef {Object} AppSettings
  * @property {number} idleMinutes
  * @property {boolean} rememberRecents
+ * @property {string[]} envVaultExtensions
  */
 
 /**
@@ -20,16 +21,28 @@ export const APP_SETTINGS_DEFAULTS = Object.freeze({
   idleMinutes: 5,
   /** Remember env vaults opened from a file or folder across restarts. */
   rememberRecents: true,
+  /** File extensions the Open… dialog offers first for env vaults. */
+  envVaultExtensions: ['vault'],
 });
+
+const EXTENSION = /^[A-Za-z0-9][A-Za-z0-9_-]{0,15}$/;
 
 const VALID = {
   idleMinutes: (v) => Number.isInteger(v) && v >= 1 && v <= 240,
   rememberRecents: (v) => typeof v === 'boolean',
+  envVaultExtensions: (v) =>
+    Array.isArray(v) &&
+    v.length >= 1 &&
+    v.length <= 10 &&
+    new Set(v).size === v.length &&
+    v.every((ext) => typeof ext === 'string' && EXTENSION.test(ext)),
 };
 
 const INVALID_MESSAGE = {
   idleMinutes: 'The idle timeout must be a whole number of minutes, 1 to 240',
   rememberRecents: 'Remembering vaults is either on or off',
+  envVaultExtensions:
+    'List 1 to 10 file extensions, each up to 16 letters, digits, "-" or "_" (like vault), without repeats',
 };
 
 /**
@@ -61,7 +74,10 @@ export class AppSettingsStore {
   async get() {
     this.#loading ??= this.#read();
     await this.#loading;
-    return { ...this.#settings };
+    return {
+      ...this.#settings,
+      envVaultExtensions: [...this.#settings.envVaultExtensions],
+    };
   }
 
   async #read() {
@@ -72,7 +88,10 @@ export class AppSettingsStore {
         "The settings file couldn't be read; using the default settings.";
     }
     // Each setting falls back on its own, so one bad value keeps the rest.
-    this.#settings = { ...APP_SETTINGS_DEFAULTS };
+    this.#settings = {
+      ...APP_SETTINGS_DEFAULTS,
+      envVaultExtensions: [...APP_SETTINGS_DEFAULTS.envVaultExtensions],
+    };
     for (const [key, valid] of Object.entries(VALID)) {
       if (stored && valid(stored[key])) this.#settings[key] = stored[key];
     }
@@ -124,6 +143,12 @@ export class AppSettingsStore {
       };
     }
     this.#warning = '';
-    return { success: true, settings: { ...settings } };
+    return {
+      success: true,
+      settings: {
+        ...settings,
+        envVaultExtensions: [...settings.envVaultExtensions],
+      },
+    };
   }
 }

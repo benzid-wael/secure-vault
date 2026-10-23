@@ -114,6 +114,7 @@ class ElectronApp {
         dialog,
         recents: new EnvVaultRecents(),
         remember: async () => (await this.settings.get()).rememberRecents,
+        extensions: async () => (await this.settings.get()).envVaultExtensions,
       });
       // Tells the page about changes made outside the app (Task 16).
       this.envWatcher = new EnvVaultWatcher({

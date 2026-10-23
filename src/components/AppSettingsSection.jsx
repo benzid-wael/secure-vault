@@ -9,6 +9,7 @@ import {
   MenuItem,
   Select,
   Switch,
+  TextField,
   Typography,
 } from '@mui/material';
 
@@ -20,13 +21,22 @@ const minutes = (n) => (n === 1 ? '1 minute' : `${n} minutes`);
 const settingsApi = () => /** @type {any} */ (window).electronAPI?.appSettings;
 const envVaultsApi = () => /** @type {any} */ (window).electronAPI?.envVaults;
 
+/** "vault, .env-vault" → ['vault', 'env-vault'] */
+const parseExtensions = (text) =>
+  text
+    .split(/[\s,]+/)
+    .map((ext) => ext.replace(/^\.+/, ''))
+    .filter(Boolean);
+const showExtensions = (list) => list.map((ext) => `.${ext}`).join(', ');
+
 const passwords = (n) =>
   n === 1 ? '1 saved password' : `${n} saved passwords`;
 
 /**
  * App-wide settings (GUI-ENV-BREAKDOWN Tasks 13, 23): the idle timeout of
  * every vault (D1) and, with env vaults on, whether opened env vaults are
- * remembered (D5), and forgetting every saved env vault password (New-36).
+ * remembered (D5), the file extensions the Open… dialog offers for env
+ * vaults (New-48), and forgetting every saved env vault password (New-36).
  * Each change is saved, and takes effect, at once.
  *
  * @param {{envVaults?: boolean}} props
@@ -36,6 +46,8 @@ const AppSettingsSection = ({ envVaults = false }) => {
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
   const [saved, setSaved] = useState('');
+  /** The extensions field while it's being typed; null: not editing. */
+  const [extensionsDraft, setExtensionsDraft] = useState(null);
   /** @type {[number|null, Function]} null: unknown or not offered */
   const [savedPasswords, setSavedPasswords] = useState(null);
 
@@ -103,6 +115,17 @@ const AppSettingsSection = ({ envVaults = false }) => {
     setSettings(result.settings);
     setWarning('');
     setSaved(message);
+  };
+
+  const saveExtensions = async () => {
+    if (extensionsDraft === null) return;
+    const list = parseExtensions(extensionsDraft);
+    setExtensionsDraft(null);
+    if (list.join() === settings.envVaultExtensions.join()) return;
+    await change(
+      { envVaultExtensions: list },
+      `Open… now offers ${showExtensions(list)} files first.`
+    );
   };
 
   if (!settings) {
@@ -187,6 +210,22 @@ const AppSettingsSection = ({ envVaults = false }) => {
             restart. Turning this off clears that list; the vault files stay
             where they are.
           </Typography>
+          {settings.envVaultExtensions && (
+            <TextField
+              size="small"
+              label="Environment vault file extensions"
+              sx={{ mt: 2, minWidth: 260 }}
+              value={
+                extensionsDraft ?? showExtensions(settings.envVaultExtensions)
+              }
+              onChange={(event) => setExtensionsDraft(event.target.value)}
+              onBlur={saveExtensions}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') saveExtensions();
+              }}
+              helperText="Open… lists these files first, separated by commas. Choose All files there to pick any other file."
+            />
+          )}
           {savedPasswords !== null && (
             <Box sx={{ mt: 2 }}>
               <Button

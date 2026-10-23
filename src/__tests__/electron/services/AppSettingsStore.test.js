@@ -37,6 +37,7 @@ describe('AppSettingsStore', () => {
     expect(await store.get()).toEqual({
       idleMinutes: 5,
       rememberRecents: true,
+      envVaultExtensions: ['vault'],
     });
     expect(store.warning).toBe('');
     expect(await fs.pathExists(file)).toBe(false);
@@ -46,12 +47,17 @@ describe('AppSettingsStore', () => {
     const store = new AppSettingsStore({ file });
     expect(await store.update({ idleMinutes: 15 })).toEqual({
       success: true,
-      settings: { idleMinutes: 15, rememberRecents: true },
+      settings: {
+        idleMinutes: 15,
+        rememberRecents: true,
+        envVaultExtensions: ['vault'],
+      },
     });
     if (process.platform !== 'win32') expect(await mode(file)).toBe(0o600);
     expect(await new AppSettingsStore({ file }).get()).toEqual({
       idleMinutes: 15,
       rememberRecents: true,
+      envVaultExtensions: ['vault'],
     });
   });
 
@@ -80,7 +86,20 @@ describe('AppSettingsStore', () => {
     expect(await new AppSettingsStore({ file }).get()).toEqual({
       idleMinutes: 5,
       rememberRecents: false,
+      envVaultExtensions: ['vault'],
     });
+  });
+
+  it('keeps a list of env vault extensions (New-48)', async () => {
+    const store = new AppSettingsStore({ file });
+    const saved = await store.update({ envVaultExtensions: ['vault', 'env'] });
+    expect(saved.settings.envVaultExtensions).toEqual(['vault', 'env']);
+    // A copy: changing what was returned doesn't change the store.
+    saved.settings.envVaultExtensions.push('x');
+    expect((await store.get()).envVaultExtensions).toEqual(['vault', 'env']);
+    expect(
+      (await new AppSettingsStore({ file }).get()).envVaultExtensions
+    ).toEqual(['vault', 'env']);
   });
 
   it.each([
@@ -88,6 +107,11 @@ describe('AppSettingsStore', () => {
     [{ idleMinutes: 241 }, /1 to 240/],
     [{ idleMinutes: 2.5 }, /whole number/],
     [{ rememberRecents: 'yes' }, /on or off/],
+    [{ envVaultExtensions: [] }, /1 to 10 file extensions/],
+    [{ envVaultExtensions: ['.vault'] }, /1 to 10 file extensions/],
+    [{ envVaultExtensions: ['vault', 'vault'] }, /without repeats/],
+    [{ envVaultExtensions: ['a b'] }, /1 to 10 file extensions/],
+    [{ envVaultExtensions: 'vault' }, /1 to 10 file extensions/],
     [{ theme: 'dark' }, /Unknown setting: theme/],
     [null, /Nothing to change/],
   ])('refuses %j and writes nothing', async (patch, message) => {
@@ -107,6 +131,7 @@ describe('AppSettingsStore', () => {
     expect(await new AppSettingsStore({ file }).get()).toEqual({
       idleMinutes: 30,
       rememberRecents: false,
+      envVaultExtensions: ['vault'],
     });
   });
 
@@ -235,7 +260,11 @@ describe('app settings IPC (Task 23)', () => {
     });
     expect(await h['app-settings:get']()).toEqual({
       success: true,
-      settings: { idleMinutes: 5, rememberRecents: true },
+      settings: {
+        idleMinutes: 5,
+        rememberRecents: true,
+        envVaultExtensions: ['vault'],
+      },
       warning: expect.stringMatching(/couldn't be read/),
     });
   });
@@ -249,8 +278,8 @@ describe('app settings IPC (Task 23)', () => {
     const result = await h['app-settings:update']({}, { idleMinutes: 10 });
     expect(result.success).toBe(true);
     expect(apply).toHaveBeenCalledWith(
-      { idleMinutes: 10, rememberRecents: true },
-      { idleMinutes: 5, rememberRecents: true }
+      { idleMinutes: 10, rememberRecents: true, envVaultExtensions: ['vault'] },
+      { idleMinutes: 5, rememberRecents: true, envVaultExtensions: ['vault'] }
     );
   });
 
@@ -268,7 +297,10 @@ describe('app settings IPC (Task 23)', () => {
 
   it('sets the idle time of every vault in milliseconds', async () => {
     const t = targets();
-    await applyAppSettings(t, { idleMinutes: 15, rememberRecents: true });
+    await applyAppSettings(t, {
+      ...APP_SETTINGS_DEFAULTS,
+      idleMinutes: 15,
+    });
     expect(t.vaultSession.setIdleMs).toHaveBeenCalledWith(15 * 60 * 1000);
     expect(t.envSession.setIdleMs).toHaveBeenCalledWith(15 * 60 * 1000);
     expect(t.registry.clearRecents).not.toHaveBeenCalled();

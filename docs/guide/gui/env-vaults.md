@@ -40,7 +40,10 @@ forgets its saved password. The file isn't touched.
   CLI would use there. It looks for `.env.vault` in the folder and its
   parents up to the git root, then `config/.env.vault`, then a vault named
   after the folder in the app folder.
-- **Open…**: pick a vault file directly.
+- **Open…**: pick a vault file directly. The dialog lists `.vault` files
+  first; if yours is named differently, or greyed out, choose **All
+  files** in the dialog. Any file that is an environment vault opens. The
+  extensions listed first are a setting.
 - **New…**: create a vault in the app folder. Give it a name (letters,
   digits, `-`, `_`) and a password of at least 8 characters with upper and
   lower case letters, a digit and a symbol. To create a vault inside a
@@ -189,6 +192,8 @@ Open **Configuration** (Ctrl/Cmd+S). Under **App settings**:
   screen.
 - **Remember environment vaults I open**: lists opened vaults again after a
   restart. Turning it off clears that list; the files stay where they are.
+- **Environment vault file extensions**: what **Open…** lists first,
+  separated by commas (`.vault` by default).
 - **Forget all saved passwords**: drops every password kept on this
   computer. The vaults don't change; you type each password next time.
 
