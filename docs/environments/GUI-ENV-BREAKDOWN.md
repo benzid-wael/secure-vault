@@ -79,7 +79,7 @@ updated as each task finishes, not in a batch at the end.
 | New-34 | Drop a pending import as soon as the vault locks                   | M5  | P2  | ✅     | 27                                     |
 | New-35 | JSON export from the app                                           | M5  | P2  | ✅     | 27                                     |
 | New-36 | Prune saved passwords of gone vaults; "forget all"                 | M5  | P2  | ✅     | New-24                                 |
-| New-37 | Authenticate the envelope header (GCM additional data)             | M5  | P2  | ⬜     | New-29                                 |
+| New-37 | Authenticate the envelope header (GCM additional data)             | M5  | P2  | ✅     | New-29                                 |
 | New-38 | Set Electron fuses in packaged builds                              | M0  | P1  | 🟡     | New-19                                 |
 | New-39 | Fix: a failed page load loops instead of showing the error page    | —   | P2  | ✅     | —                                      |
 | New-40 | Refuse `--remote-debugging-port` in packaged builds                | M0  | P2  | ⬜     | New-38                                 |
@@ -92,6 +92,7 @@ updated as each task finishes, not in a batch at the end.
 | New-47 | Say why an env vault locked                                        | M4  | P2  | ✅     | 15                                     |
 | New-48 | "Open…" won't select a project's `.env.vault`                      | M3  | P1  | ✅     | 14                                     |
 | New-49 | Escape doesn't cancel a grid-card cell edit                        | —   | P3  | ✅     | —                                      |
+| New-50 | Start writing env vaults in format 2                               | M1  | P2  | ⬜     | New-37 (and a release in between)      |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -2178,7 +2179,44 @@ unknown format is `INVALID`. Preload passes `format`. The env ⋮ menu has
 
 ### New-37: Authenticate the envelope header (GCM additional data)
 
-- **Status:** ⬜ found 2026-10-22 while building New-29.
+- **Status:** ✅ done 2026-10-23 (reading; writing is New-50). On
+  `feat/vault-env-gui`; not merged, not released.
+- **Decided (author, 2026-10-23):** read now, write later (every tool
+  released before this can't open format 2, and the CLI is on many
+  machines); env vaults only (password vaults later, separately); a key
+  check in the header so a wrong password and a changed header get
+  different messages.
+- **Built:** `src/electron/utils/envVaultEnvelope.js`: `sealEnvVault`,
+  `openEnvVault`, `keyCheckOf`, `isBound`, `WRITE_BOUND = false`. Format 2:
+  `version: 2` plus `keyCheck` (128-bit HMAC of the key); the header array
+  `[type, version, features, salt, kdf, keyCheck]` is GCM additional data
+  (`CryptographyService.encrypt/decrypt` take `{aad}`). Opening: a matching
+  key check and a failing tag, or a failing key check whose recomputed value
+  decrypts, is `TAMPERED` with "…'s header was changed after it was written,
+  or the file is damaged … Restore it from <file>.bak"; anything else is
+  `AUTH`. Every env read and write goes through it: `createVault`,
+  `loadVault`, `read`/`transact` (`#open`, `#writeEncrypted`), `saveVault`,
+  snapshot re-keying. A format-2 file is written back as format 2 (a
+  snapshot keeps its own format); new and format-1 vaults stay format 1.
+  `VAULT_FORMATS.env.version` is 2, so New-29's check reads it. The CLI
+  exits 6 with the new message; the app shows it on unlock. SPEC §4.1 and
+  Appendix B, CHANGELOG "Added".
+- **Limits, by design:** a format-2 file relabelled as format 1 fails as a
+  wrong password (nothing in a format-1 file can tell); editing `salt` or
+  `kdf` changes the derived key, so it reads as a wrong password too.
+- **Validation done:** envelope unit tests (format 1 as before; format 2
+  round-trip; wrong password AUTH; features added or removed, key check
+  edited or removed, tag changed → TAMPERED with the message; relabelled to
+  format 1 → AUTH). Service: a format-2 vault opens, stays format 2 after a
+  write and after a password change with its snapshot; format 1 stays 1; a
+  changed header is refused by `read`, `loadVault` and writes (file
+  untouched), a wrong password is still AUTH. CLI: reads and writes format
+  2; a changed header exits 6 with the message and writes nothing. IPC:
+  unlock says the header was changed. Format-3 fixtures replace format 2
+  in the "newer format" tests. `envVaultEnvelope.js`,
+  `CryptographyService.js`, `vaultFormat.js` 100%,
+  `EnvironmentVaultService.js` 96% lines. Type check 287 (typing the GCM
+  cipher also removed two existing errors).
 - **Goal:** a change to a vault's plaintext header (`type`, `version`,
   `features`, `kdf`) is detected on decrypt, not just trusted.
 - **Constraints:** files written before it must still open (a header flag
@@ -2556,3 +2594,17 @@ import` says it "creates a new version with all vars from the file(s)"
   `onChange`.
 - **Cost of leaving it:** Escape does nothing; blurring the field saves
   whatever was typed.
+
+### New-50: Start writing env vaults in format 2
+
+- **Status:** ⬜ found 2026-10-23 (New-37, writing deferred by decision).
+- **Goal:** new and format-1 env vaults are written in format 2.
+- **Flip criterion:** the release carrying New-37 has been `latest` for
+  both the CLI (npm) and the desktop app long enough that machines sharing
+  vaults have it (proposed: one more release in between).
+- **Constraints:** turn `WRITE_BOUND` on; CHANGELOG "Changed" that names
+  the minimum version able to open the vaults.
+- **Validation:** a new vault and a written format-1 vault come out as
+  format 2; the earlier release's CLI reports "format 2, upgrade".
+- **Cost of leaving it:** vault headers stay unauthenticated (New-37's
+  exposure).

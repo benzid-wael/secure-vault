@@ -12,6 +12,13 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Added
 
+- **Environment vaults can bind their header to their contents** (vault
+  format 2). Changing the file's plaintext header (its format version,
+  features or key settings) then makes it refuse to open with "…'s header was
+  changed after it was written", instead of being trusted. This version
+  reads format 2 and keeps such a vault in format 2, but still writes format
+  1: a later release starts writing format 2, and earlier versions can't
+  open it at all, so upgrade every machine that uses a vault before then.
 - **Key comments in env vaults.** `vault env set KEY value --comment "…"`
   stores a note about a key (`--comment ""` removes it); `vault env show`
   prints it under the key. Later writes keep it. An older CLI or app that

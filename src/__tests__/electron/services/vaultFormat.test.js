@@ -17,6 +17,11 @@ import {
 import { EnvironmentVaultService } from '../../../electron/services/EnvironmentVaultService.js';
 import { EnvironmentVault } from '../../../electron/models/EnvironmentVault.js';
 import { VaultService } from '../../../electron/services/VaultService.js';
+import { CryptographyService } from '../../../electron/services/CryptographyService.js';
+import {
+  openEnvVault,
+  sealEnvVault,
+} from '../../../electron/utils/envVaultEnvelope.js';
 
 const PW = 'Format-Pass-7&x';
 
@@ -163,7 +168,7 @@ describe('env vaults', () => {
   });
 
   it('does not read a newer format version', async () => {
-    await patchEnvelope(file, { version: 2 });
+    await patchEnvelope(file, { version: 3 });
     const read = await EnvironmentVaultService.read(file, PW);
     expect(read).toMatchObject({ success: false, code: 'NEWER_FORMAT' });
     const loaded = await EnvironmentVaultService.loadVault(file, PW);
@@ -215,10 +220,10 @@ describe('password vaults', () => {
   });
 
   it('does not open a newer format version, and says why', async () => {
-    await patchEnvelope(file, { version: 2 });
+    await patchEnvelope(file, { version: 3 });
     const verified = await vs.verifyPassword('work', PW);
     expect(verified).toMatchObject({ success: false, code: 'NEWER_FORMAT' });
-    expect(verified.error).toMatch(/format 2/);
+    expect(verified.error).toMatch(/format 3/);
     expect((await vs.loadVault('work', PW)).code).toBe('NEWER_FORMAT');
   });
 
@@ -227,5 +232,91 @@ describe('password vaults', () => {
     await expect(
       vs.fileService.atomicWriteVaultFile('work', { x: 1 })
     ).resolves.toBeUndefined();
+  });
+});
+
+// New-37: format 2 binds the header. Nothing writes it yet (WRITE_BOUND is
+// off), so these tests turn a format-1 vault into format 2 by hand, as a
+// later release will.
+describe('env vaults: the bound header (New-37)', () => {
+  const bind = async (file, password = PW) => {
+    const envelope = await fs.readJSON(file);
+    const key = await CryptographyService.deriveKeyForAsync(password, envelope);
+    await fs.writeJSON(
+      file,
+      sealEnvVault(
+        openEnvVault(envelope, key),
+        key,
+        { salt: envelope.salt, kdf: envelope.kdf },
+        { bound: true, features: envelope.features ?? [] }
+      )
+    );
+  };
+  const make = async () => {
+    const file = path.join(dir, 'app.env.vault');
+    await EnvironmentVaultService.createVault(file, PW);
+    await EnvironmentVaultService.setEnv(file, PW, 'dev', 'A', '1');
+    return file;
+  };
+
+  it('opens a format-2 vault and keeps it format 2 when it writes', async () => {
+    const file = await make();
+    await bind(file);
+    expect((await EnvironmentVaultService.read(file, PW)).format.version).toBe(
+      2
+    );
+    expect(
+      (await EnvironmentVaultService.setEnv(file, PW, 'dev', 'B', '2')).success
+    ).toBe(true);
+    const after = await fs.readJSON(file);
+    expect(after.version).toBe(2);
+    expect(after.keyCheck).toMatch(/^[0-9a-f]{32}$/);
+    expect(
+      (await EnvironmentVaultService.read(file, PW)).vault.getActiveVersion(
+        'dev'
+      ).vars
+    ).toEqual({ A: '1', B: '2' });
+  });
+
+  it('still writes a format-1 vault as format 1 (read now, write later)', async () => {
+    const file = await make();
+    const written = await fs.readJSON(file);
+    expect(written.version).toBe(1);
+    expect(written).not.toHaveProperty('keyCheck');
+  });
+
+  it('keeps format 2 through a password change, snapshots included', async () => {
+    const file = await make();
+    await bind(file);
+    await EnvironmentVaultService.squashEnv(file, PW, 'dev', 1);
+    const NEW = 'Other-Pass-9!x';
+    const changed = await EnvironmentVaultService.changePassword(file, PW, NEW);
+    expect(changed.success).toBe(true);
+    expect(changed.rekeyedSnapshots).toHaveLength(1);
+    expect((await fs.readJSON(file)).version).toBe(2);
+    const snapshot = path.join(dir, changed.rekeyedSnapshots[0]);
+    expect((await fs.readJSON(snapshot)).version).toBe(2);
+    expect((await EnvironmentVaultService.read(snapshot, NEW)).success).toBe(
+      true
+    );
+  });
+
+  it('refuses a changed header everywhere, saying so', async () => {
+    const file = await make();
+    await bind(file);
+    await patchEnvelope(file, { features: ['comments'] });
+    const read = await EnvironmentVaultService.read(file, PW);
+    expect(read).toMatchObject({ success: false, code: 'TAMPERED' });
+    expect(read.error).toMatch(/^app\.env\.vault's header was changed/);
+    const loaded = await EnvironmentVaultService.loadVault(file, PW);
+    expect(loaded).toMatchObject({ success: false, code: 'TAMPERED' });
+    const before = await fs.readFile(file);
+    const set = await EnvironmentVaultService.setEnv(file, PW, 'dev', 'C', '3');
+    expect(set).toMatchObject({ success: false, code: 'TAMPERED' });
+    expect((await fs.readFile(file)).equals(before)).toBe(true);
+    // A wrong password is still just that.
+    expect(
+      (await EnvironmentVaultService.read(file, 'Wrong-Pass-1!')).code
+    ).toBe('AUTH');
   });
 });

@@ -16,6 +16,13 @@ const SUSPICIOUS_VALUE_RE =
 import { validatePasswordStrength } from '../../utils/passwordValidation.js';
 import { getAppDataPath, getEnvsDir } from '../utils/appPaths.js';
 import { checkVaultFormat, envVaultFeatures } from '../utils/vaultFormat.js';
+import {
+  EnvelopeError,
+  WRITE_BOUND,
+  isBound,
+  openEnvVault,
+  sealEnvVault,
+} from '../utils/envVaultEnvelope.js';
 import { moveWithRetry } from '../utils/moveWithRetry.js';
 import { parseDotenv, toDotenv } from '../../utils/dotenv.js';
 
@@ -60,15 +67,6 @@ function fail(code, error) {
 /** `auth` as `{ password?, keyMaterial? }`; a bare string is a password. */
 function normalizeAuth(auth) {
   return typeof auth === 'string' ? { password: auth } : auth || {};
-}
-
-/**
- * The envelope's `features` (New-29), present only when the payload uses
- * one, so a vault without them keeps the shape every tool can write.
- */
-function featuresField(payload) {
-  const features = envVaultFeatures(payload);
-  return features.length ? { features } : {};
 }
 
 /** True when a key derived for header `a` decrypts a file with header `b`. */
@@ -215,18 +213,12 @@ export class EnvironmentVaultService {
         salt,
         CryptographyService.ITERATIONS
       );
-      const encrypted = CryptographyService.encrypt(payload, key);
-
-      const vaultFile = {
-        type: 'environment-vault',
-        version: 1,
-        ...featuresField(payload),
-        salt: salt.toString('hex'),
-        kdf: CryptographyService.kdfHeader(),
-        iv: encrypted.iv,
-        authTag: encrypted.authTag,
-        encrypted: encrypted.encrypted,
-      };
+      const vaultFile = sealEnvVault(
+        payload,
+        key,
+        { salt: salt.toString('hex'), kdf: CryptographyService.kdfHeader() },
+        { bound: WRITE_BOUND, features: envVaultFeatures(payload) }
+      );
 
       await fs.ensureDir(path.dirname(vaultPath));
       await fs.writeJSON(vaultPath, vaultFile, { spaces: 2 });
@@ -260,13 +252,7 @@ export class EnvironmentVaultService {
         password,
         vaultFile
       );
-      const encryptedData = {
-        encrypted: vaultFile.encrypted,
-        authTag: vaultFile.authTag,
-        iv: vaultFile.iv,
-      };
-
-      const payload = CryptographyService.decrypt(encryptedData, key);
+      const payload = openEnvVault(vaultFile, key, vaultPath);
       const vault = EnvironmentVault.fromJSON(payload);
 
       // The derived key and its salt header, for handing straight to
@@ -277,6 +263,10 @@ export class EnvironmentVaultService {
       };
       return { success: true, data: vault, keyMaterial, format };
     } catch (error) {
+      // A changed header (New-37) says so; anything else is the old message.
+      if (error instanceof EnvelopeError && error.code === 'TAMPERED') {
+        return { success: false, code: 'TAMPERED', error: error.message };
+      }
       return {
         success: false,
         error: 'Failed to decrypt: wrong password or corrupted file',
@@ -321,29 +311,42 @@ export class EnvironmentVaultService {
           kdf: CryptographyService.kdfHeader(),
         };
       }
-      await this.#writeEncrypted(vaultPath, payload, key, header, rekeyed);
+      const bound = WRITE_BOUND || (await this.#boundOnDisk(vaultPath));
+      await this.#writeEncrypted(vaultPath, payload, key, header, rekeyed, {
+        bound,
+      });
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
     }
   }
 
+  /** Whether the file at `vaultPath` is in the bound format (New-37). */
+  static async #boundOnDisk(vaultPath) {
+    try {
+      return isBound(await fs.readJSON(vaultPath));
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Encrypt `payload` under `key` and write it over `vaultPath` atomically,
-   * keeping `.bak` in step.
+   * keeping `.bak` in step. `bound`: write the format that binds the header
+   * (New-37); a bound file is never written back unbound.
    */
-  static async #writeEncrypted(vaultPath, payload, key, header, rekeyed) {
-    const encrypted = CryptographyService.encrypt(payload, key);
-
-    const vaultFile = {
-      type: 'environment-vault',
-      version: 1,
-      ...featuresField(payload),
-      ...header,
-      iv: encrypted.iv,
-      authTag: encrypted.authTag,
-      encrypted: encrypted.encrypted,
-    };
+  static async #writeEncrypted(
+    vaultPath,
+    payload,
+    key,
+    header,
+    rekeyed,
+    { bound = WRITE_BOUND } = {}
+  ) {
+    const vaultFile = sealEnvVault(payload, key, header, {
+      bound,
+      features: envVaultFeatures(payload),
+    });
     await fs.ensureDir(path.dirname(vaultPath));
 
     // Preserve the previous good state, then write atomically: the new
@@ -493,6 +496,7 @@ export class EnvironmentVaultService {
 
       let vault = new EnvironmentVault();
       let keyMaterial = null;
+      let bound = WRITE_BOUND;
       if (bytes) {
         const opened = await this.#open(
           bytes,
@@ -505,6 +509,7 @@ export class EnvironmentVaultService {
           return fail('NEWER_FORMAT', opened.format.message);
         }
         ({ vault, keyMaterial } = opened);
+        bound ||= opened.bound;
       }
 
       let result;
@@ -559,7 +564,8 @@ export class EnvironmentVaultService {
         vault.toJSON(),
         key,
         header,
-        rekeyed
+        rekeyed,
+        { bound }
       );
       // Still under the lock: nobody else can have written since.
       const written = await fs.readFile(vaultPath);
@@ -613,23 +619,22 @@ export class EnvironmentVaultService {
       }
     }
 
+    let payload;
     try {
-      const payload = CryptographyService.decrypt(
-        { encrypted: file.encrypted, authTag: file.authTag, iv: file.iv },
-        key
-      );
-      return {
-        success: true,
-        vault: EnvironmentVault.fromJSON(payload),
-        keyMaterial: { key, header },
-        format,
-      };
-    } catch {
+      payload = openEnvVault(file, key, name);
+    } catch (error) {
       return fail(
-        'AUTH',
-        'Failed to decrypt: wrong password or corrupted file'
+        error instanceof EnvelopeError ? error.code : 'AUTH',
+        error.message
       );
     }
+    return {
+      success: true,
+      vault: EnvironmentVault.fromJSON(payload),
+      keyMaterial: { key, header },
+      format,
+      bound: isBound(file),
+    };
   }
 
   static async changePassword(vaultPath, currentPassword, newPassword) {
@@ -689,9 +694,10 @@ export class EnvironmentVaultService {
       try {
         const file = await fs.readJSON(snapshotPath);
         if (file.type !== 'environment-vault') throw new Error('not a vault');
-        const payload = CryptographyService.decrypt(
-          { encrypted: file.encrypted, authTag: file.authTag, iv: file.iv },
-          await CryptographyService.deriveKeyForAsync(currentPassword, file)
+        const payload = openEnvVault(
+          file,
+          await CryptographyService.deriveKeyForAsync(currentPassword, file),
+          snapshotPath
         );
 
         const salt = CryptographyService.generateSalt();
@@ -700,12 +706,13 @@ export class EnvironmentVaultService {
           salt,
           CryptographyService.ITERATIONS
         );
-        const rekeyed = {
-          ...file,
-          salt: salt.toString('hex'),
-          kdf: CryptographyService.kdfHeader(),
-          ...CryptographyService.encrypt(payload, key),
-        };
+        // The snapshot keeps its own format and features (New-37).
+        const rekeyed = sealEnvVault(
+          payload,
+          key,
+          { salt: salt.toString('hex'), kdf: CryptographyService.kdfHeader() },
+          { bound: isBound(file), features: file.features ?? [] }
+        );
 
         const tmpPath = `${snapshotPath}.tmp`;
         await fs.writeJSON(tmpPath, rekeyed, { spaces: 2 });

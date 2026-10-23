@@ -763,3 +763,20 @@ env init` writes; it's added to the remembered list.
 - **Verify after release:** edit a grid cell, type, press Escape: the old
   code stays.
 - **Rollback:** reinstall the previous app.
+
+### New-37: env vaults can bind their header (format 2): read now
+
+- **Runtime change (every CLI and app user, not gated):** both read env
+  vault format 2 (header bound to the contents) and keep such a vault in
+  format 2; a changed header is refused with its own message (CLI exit 6).
+  Nothing writes format 2 yet.
+- **Schema or config change:** a new vault format, readable only; format 1
+  is still what every tool writes.
+- **Before it ships:** the CHANGELOG "Added" entry (written), telling users
+  to upgrade every machine before a later release writes format 2.
+- **Gated by:** `WRITE_BOUND` (code, off). Turning it on is New-50, after
+  this release has been `latest` long enough (its flip criterion).
+- **Verify after release:** `vault env doctor` on an existing vault: format
+  1, unchanged; nothing about existing vaults changes.
+- **Rollback:** reinstall the previous version. No vault was written in
+  format 2, so nothing is locked out.

@@ -176,6 +176,22 @@ outputs of `CryptographyService.encrypt()`:
 | `authTag`   | hex string | 16-byte GCM authentication tag                 |
 | `encrypted` | hex string | AES-256-GCM ciphertext of the payload          |
 
+Also in the header: `kdf` (`{name, iterations}`, the key derivation used),
+and `features` (New-29: optional parts of the format the payload uses, e.g.
+`["comments"]`; absent when none).
+
+**Format 2 (bound header, New-37).** `version: 2` adds `keyCheck`, the first
+128 bits of HMAC-SHA256(key, `"secure-vault env-vault key check"`), hex. The
+GCM tag then also covers the header: the JSON array `[type, version,
+features ?? [], salt, kdf ?? null, keyCheck]` is passed as additional data.
+Changing any of those fields makes the file fail to open with "…'s header
+was changed after it was written, or the file is damaged" (a wrong password
+still says wrong password: `keyCheck` tells them apart). Tools from the
+release that introduced it read both formats and keep a format-2 file
+format 2; they still write new and format-1 vaults as format 1 until a later
+release turns writing on (`WRITE_BOUND`, New-50), because earlier tools
+can't open format 2 at all.
+
 ### 4.2 Decrypted Payload
 
 ```json
@@ -2170,24 +2186,24 @@ test). The write now aborts on an existing target unless `--force` is given.
 
 ## Appendix B: Error Codes
 
-| Exit | Code                       | Message Pattern                                                         |
-| ---- | -------------------------- | ----------------------------------------------------------------------- |
-| 2    | `PASSWORD_SOURCE_CONFLICT` | `choose only one of --password, --password-file, --password-stdin`      |
-| 3    | `PASSWORD_FILE_UNREADABLE` | `cannot read password file "<path>": <detail>`                          |
-| 4    | `PASSWORD_STDIN_FAILED`    | `cannot read password from stdin: <detail>`                             |
-| 5    | `ENV_VAULT_NOT_FOUND`      | `Environment vault not found at <path>`                                 |
-| 6    | `ENV_VAULT_DECRYPT_FAILED` | `Failed to decrypt environment vault: wrong password or corrupted file` |
-| 7    | `ENV_NOT_FOUND`            | `Environment '<name>' not found`                                        |
-| 8    | `ENV_ALREADY_EXISTS`       | `Environment '<name>' already exists`                                   |
-| 9    | `KEY_NOT_FOUND`            | `Key '<key>' not found in environment '<env>'`                          |
-| 10   | `REFERENCE_CYCLE`          | `Circular reference detected: <path>`                                   |
-| 11   | `REFERENCE_NOT_FOUND`      | `Reference '{{<ref>}}' could not be resolved: <details>`                |
-| 12   | `VALIDATION_ERROR`         | `Validation failed: <details>`                                          |
-| 13   | `MAX_DEPTH_EXCEEDED`       | `Template reference resolution exceeded max depth of 5`                 |
-| 14   | `INJECTION_FAILED`         | `Failed to spawn child process: <details>`                              |
-| 15   | `ENV_VAULT_NEWER_FORMAT`   | `<vault> uses features this version … doesn't support (<names>). …`     |
-| -    | `FILE_WRITE_FAILED`        | `Failed to write env file at <path>: <details>`                         |
-| -    | `VAULT_LOCKED`             | `Environment vault is locked. Run 'vault env unlock' first.`            |
+| Exit | Code                       | Message Pattern                                                                                                                                                        |
+| ---- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2    | `PASSWORD_SOURCE_CONFLICT` | `choose only one of --password, --password-file, --password-stdin`                                                                                                     |
+| 3    | `PASSWORD_FILE_UNREADABLE` | `cannot read password file "<path>": <detail>`                                                                                                                         |
+| 4    | `PASSWORD_STDIN_FAILED`    | `cannot read password from stdin: <detail>`                                                                                                                            |
+| 5    | `ENV_VAULT_NOT_FOUND`      | `Environment vault not found at <path>`                                                                                                                                |
+| 6    | `ENV_VAULT_DECRYPT_FAILED` | `Failed to decrypt environment vault: wrong password or corrupted file`, or for format 2 `<vault>'s header was changed after it was written, or the file is damaged …` |
+| 7    | `ENV_NOT_FOUND`            | `Environment '<name>' not found`                                                                                                                                       |
+| 8    | `ENV_ALREADY_EXISTS`       | `Environment '<name>' already exists`                                                                                                                                  |
+| 9    | `KEY_NOT_FOUND`            | `Key '<key>' not found in environment '<env>'`                                                                                                                         |
+| 10   | `REFERENCE_CYCLE`          | `Circular reference detected: <path>`                                                                                                                                  |
+| 11   | `REFERENCE_NOT_FOUND`      | `Reference '{{<ref>}}' could not be resolved: <details>`                                                                                                               |
+| 12   | `VALIDATION_ERROR`         | `Validation failed: <details>`                                                                                                                                         |
+| 13   | `MAX_DEPTH_EXCEEDED`       | `Template reference resolution exceeded max depth of 5`                                                                                                                |
+| 14   | `INJECTION_FAILED`         | `Failed to spawn child process: <details>`                                                                                                                             |
+| 15   | `ENV_VAULT_NEWER_FORMAT`   | `<vault> uses features this version … doesn't support (<names>). …`                                                                                                    |
+| -    | `FILE_WRITE_FAILED`        | `Failed to write env file at <path>: <details>`                                                                                                                        |
+| -    | `VAULT_LOCKED`             | `Environment vault is locked. Run 'vault env unlock' first.`                                                                                                           |
 
 > **Status:** exit codes 2–15 are wired and emit the symbolic code on stderr
 > (e.g. `[ENV_VAULT_NOT_FOUND] No vault found...`). `FILE_WRITE_FAILED` and

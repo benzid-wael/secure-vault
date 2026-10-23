@@ -16,7 +16,8 @@ import path from 'path';
  * check before, never after, the release that writes it.
  */
 export const VAULT_FORMATS = {
-  env: { version: 1, features: { comments: 'key comments' } },
+  // Format 2 binds the header to the payload (New-37).
+  env: { version: 2, features: { comments: 'key comments' } },
   password: { version: 1, features: {} },
 };
 

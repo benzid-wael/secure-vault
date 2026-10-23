@@ -117,9 +117,18 @@ export class CryptographyService {
     );
   }
 
-  static encrypt(data, key) {
+  /**
+   * @param {any} data
+   * @param {Buffer} key
+   * @param {{aad?: Buffer}} [options] Additional data the tag also covers
+   *   (an env vault's header, New-37); `decrypt` must get the same bytes.
+   */
+  static encrypt(data, key, { aad } = {}) {
     const iv = crypto.randomBytes(this.IV_LENGTH);
-    const cipher = crypto.createCipheriv(this.ALGORITHM, key, iv);
+    const cipher = /** @type {crypto.CipherGCM} */ (
+      crypto.createCipheriv(this.ALGORITHM, key, iv)
+    );
+    if (aad) cipher.setAAD(aad);
 
     let encrypted = cipher.update(JSON.stringify(data), 'utf8', 'hex');
     encrypted += cipher.final('hex');
@@ -133,9 +142,17 @@ export class CryptographyService {
     };
   }
 
-  static decrypt(encryptedData, key) {
+  /**
+   * @param {{encrypted: string, authTag: string, iv: string}} encryptedData
+   * @param {Buffer} key
+   * @param {{aad?: Buffer}} [options] As given to `encrypt`.
+   */
+  static decrypt(encryptedData, key, { aad } = {}) {
     const iv = Buffer.from(encryptedData.iv, 'hex');
-    const decipher = crypto.createDecipheriv(this.ALGORITHM, key, iv);
+    const decipher = /** @type {crypto.DecipherGCM} */ (
+      crypto.createDecipheriv(this.ALGORITHM, key, iv)
+    );
+    if (aad) decipher.setAAD(aad);
     decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
 
     let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');

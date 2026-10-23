@@ -8,6 +8,12 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 
+import { CryptographyService } from '../../electron/services/CryptographyService.js';
+import {
+  openEnvVault,
+  sealEnvVault,
+} from '../../electron/utils/envVaultEnvelope.js';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.resolve(__dirname, '../../../bin/cli.js');
 const PASSWORD = 'TestVault123!@#';
@@ -83,12 +89,12 @@ describe('a vault using a feature this CLI does not know', () => {
 });
 
 describe('a vault in a newer format', () => {
-  beforeEach(() => patchEnvelope({ version: 2 }));
+  beforeEach(() => patchEnvelope({ version: 3 }));
 
   it('stops reads and writes with exit 15', () => {
     const show = cli(['show', 'dev', '-v', vaultPath]);
     expect(show.status).toBe(15);
-    expect(show.stderr).toMatch(/uses vault format 2/);
+    expect(show.stderr).toMatch(/uses vault format 3/);
     expect(cli(['set', 'B', '1', '-e', 'dev', '-v', vaultPath]).status).toBe(
       15
     );
@@ -97,7 +103,7 @@ describe('a vault in a newer format', () => {
   it('makes doctor fail', () => {
     const r = cli(['doctor', '-v', vaultPath]);
     expect(r.status).toBe(1);
-    expect(r.stdout).toMatch(/Vault format 2 is newer than this version reads/);
+    expect(r.stdout).toMatch(/Vault format 3 is newer than this version reads/);
   });
 });
 
@@ -110,5 +116,45 @@ describe('doctor on a current vault', () => {
     expect(cli(['doctor', '-v', vaultPath]).stdout).toContain(
       'Vault format 1 (uses key comments)'
     );
+  });
+});
+
+// New-37: this CLI reads the bound format a later release will write.
+describe('a vault in the bound format 2', () => {
+  beforeEach(async () => {
+    const envelope = JSON.parse(fs.readFileSync(vaultPath, 'utf8'));
+    const key = await CryptographyService.deriveKeyForAsync(PASSWORD, envelope);
+    fs.writeFileSync(
+      vaultPath,
+      JSON.stringify(
+        sealEnvVault(
+          openEnvVault(envelope, key),
+          key,
+          { salt: envelope.salt, kdf: envelope.kdf },
+          { bound: true }
+        )
+      )
+    );
+  });
+  const version = () => JSON.parse(fs.readFileSync(vaultPath, 'utf8')).version;
+
+  it('reads and writes it, keeping format 2', () => {
+    const get = cli(['get', 'API', '-e', 'dev', '-v', vaultPath]);
+    expect(get.status, get.stderr).toBe(0);
+    expect(get.stdout.trim()).toBe('x');
+    expect(cli(['set', 'B', 'y', '-e', 'dev', '-v', vaultPath]).status).toBe(0);
+    expect(version()).toBe(2);
+  });
+
+  it('refuses a changed header with exit 6 and says so', () => {
+    patchEnvelope({ features: ['comments'] });
+    const before = fs.readFileSync(vaultPath);
+    const get = cli(['get', 'API', '-e', 'dev', '-v', vaultPath]);
+    expect(get.status).toBe(6);
+    expect(get.stderr).toContain("test.env.vault's header was changed");
+    const set = cli(['set', 'B', 'y', '-e', 'dev', '-v', vaultPath]);
+    expect(set.status).not.toBe(0);
+    expect(set.stderr + set.stdout).toContain('header was changed');
+    expect(fs.readFileSync(vaultPath)).toEqual(before);
   });
 });

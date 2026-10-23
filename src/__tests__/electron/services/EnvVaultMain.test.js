@@ -18,6 +18,11 @@ import {
 } from '../../../electron/services/EnvVaultSession.js';
 import { createEnvVaultHandlers } from '../../../electron/services/EnvVaultIpc.js';
 import { readFeatures } from '../../../electron/utils/features.js';
+import {
+  openEnvVault,
+  sealEnvVault,
+} from '../../../electron/utils/envVaultEnvelope.js';
+import { CryptographyService } from '../../../electron/services/CryptographyService.js';
 import { EnvVaultKeychain } from '../../../electron/services/EnvVaultKeychain.js';
 import { EnvVaultRecents } from '../../../electron/services/EnvVaultRecents.js';
 import { fakeSafeStorage } from '../../helpers/fakeSafeStorage.js';
@@ -2240,11 +2245,38 @@ describe('env vault IPC: a vault from a newer SecureVault (New-29)', () => {
     session.lockAll();
   });
 
+  it('says a bound vault\'s header was changed, not "wrong password" (New-37)', async () => {
+    const filePath = await seed();
+    const envelope = await fs.readJSON(filePath);
+    const key = await CryptographyService.deriveKeyForAsync(PW, envelope);
+    await fs.writeJSON(filePath, {
+      ...sealEnvVault(
+        openEnvVault(envelope, key),
+        key,
+        { salt: envelope.salt, kdf: envelope.kdf },
+        { bound: true }
+      ),
+      features: ['comments'], // edited after it was written
+    });
+    const session = new EnvVaultSession();
+    const h = createEnvVaultHandlers({
+      registry: new EnvVaultRegistry({ envsDir }),
+      session,
+    });
+    const id = (await h['env-vaults:list']()).vaults[0].id;
+    const result = await h['env-vault:unlock']({}, id, PW);
+    expect(result).toMatchObject({ success: false, code: 'TAMPERED' });
+    expect(result.error).toMatch(
+      /^app\.env\.vault's header was changed after it was written/
+    );
+    expect(session.isUnlocked(id)).toBe(false);
+  });
+
   it('does not unlock a newer format version', async () => {
     const filePath = await seed();
     await fs.writeJSON(filePath, {
       ...(await fs.readJSON(filePath)),
-      version: 2,
+      version: 3,
     });
     const session = new EnvVaultSession();
     const h = createEnvVaultHandlers({
@@ -2254,7 +2286,7 @@ describe('env vault IPC: a vault from a newer SecureVault (New-29)', () => {
     const id = (await h['env-vaults:list']()).vaults[0].id;
     const result = await h['env-vault:unlock']({}, id, PW);
     expect(result).toMatchObject({ success: false, code: 'NEWER_FORMAT' });
-    expect(result.error).toMatch(/uses vault format 2/);
+    expect(result.error).toMatch(/uses vault format 3/);
     expect(session.isUnlocked(id)).toBe(false);
   });
 });
