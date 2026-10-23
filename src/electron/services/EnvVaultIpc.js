@@ -4,6 +4,7 @@ import path from 'path';
 import { EnvironmentVaultService } from './EnvironmentVaultService.js';
 import { EnvironmentResolver } from './EnvironmentResolver.js';
 import { parseDotenv, quoteDotenvValue, toDotenv } from '../../utils/dotenv.js';
+import { validatePasswordStrength } from '../../utils/passwordValidation.js';
 
 const invalid = (error) => ({ success: false, code: 'INVALID', error });
 
@@ -371,11 +372,28 @@ export function createEnvVaultHandlers({
       return { success: true };
     },
 
+    /**
+     * A new vault: `appdata` (named, in the app folder) or `dialog` (where
+     * the user picks, e.g. a project's `.env.vault`; Task 14). For `dialog`
+     * the password is checked before asking where, so a weak one doesn't
+     * waste the pick.
+     */
     'env-vaults:create': async (event, options, password) => {
-      if (options?.mode !== 'appdata') {
-        return invalid('Only new vaults in the app folder are supported');
+      const mode = options?.mode;
+      if (!['appdata', 'dialog'].includes(mode)) {
+        return invalid('Unknown place for a new vault');
       }
-      const reserved = await registry.createInAppData(options.name);
+      if (mode === 'dialog') {
+        const weak =
+          typeof password === 'string'
+            ? validatePasswordStrength(password)[0]
+            : 'Enter a password';
+        if (weak) return invalid(weak);
+      }
+      const reserved =
+        mode === 'dialog'
+          ? await registry.createFromDialog(getWindow())
+          : await registry.createInAppData(options.name);
       if (!reserved.success) return reserved;
       const created = await service.createVault(reserved.path, password);
       if (!created.success) return { ...created, code: 'INVALID' };
@@ -385,6 +403,7 @@ export function createEnvVaultHandlers({
         password
       );
       if (!unlocked.success) return unlocked;
+      if (mode === 'dialog') await registry.noteCreated(reserved.id);
       watcher?.start(reserved.id, reserved.path, unlocked.revision);
       return { success: true, id: reserved.id };
     },

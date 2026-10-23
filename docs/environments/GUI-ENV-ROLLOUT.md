@@ -699,3 +699,17 @@ history dev` shows one new version.
 - **Verify after release:** set "Lock vaults after" to 1 minute, open an
   env vault, wait: "… locked after 1 minute without activity."
 - **Rollback:** reinstall the previous app.
+
+### Task 14: create an env vault in a project
+
+- **Runtime change (gated by the Environments UI gate):** "New…" can save
+  the new vault where the user picks (`.env.vault` by default), not just
+  in the app folder. An existing file is never replaced.
+- **Schema or config change:** none. The vault is the same format `vault
+env init` writes; it's added to the remembered list.
+- **Before it ships:** nothing beyond the gate's own criteria.
+- **Gated by:** the Environments UI gate.
+- **Verify after release:** New… → In a project → Create → save as
+  `.env.vault` in a repo; `vault env list` in that repo opens it with the
+  same password.
+- **Rollback:** reinstall the previous app; vaults it created stay valid.

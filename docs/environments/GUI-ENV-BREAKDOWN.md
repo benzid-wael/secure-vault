@@ -732,7 +732,21 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 14: `EnvVaultRegistry`
 
-- **Status:** 🟡 partial 2026-10-22. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-23: `createFromDialog` added. Uncommitted on
+  `feat/vault-env-gui`; not merged, not released.
+- **Built 2026-10-23 (`createFromDialog`):** a native save dialog ("New
+  Environment Vault", `.env.vault`, Create); an existing file is refused,
+  never replaced (`… already exists. Open it with Open… instead, or choose
+another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
+  first (a weak one doesn't waste the pick), creates, unlocks, and lists it
+  as opened (recents). "New…" offers "In the app folder" (name) or "In a
+  project: choose where to save it next"; closing the save dialog leaves
+  the form as it was, without an error. Guide updated. Validation:
+  contract (created there, unlocked, listed as `Superxpense/.env.vault`;
+  existing file kept byte for byte; weak or missing password refused
+  before the dialog; canceled) and panel (the choice, cancel, then
+  create). `EnvVaultRegistry.js` 100%, `EnvVaultIpc.js` 98.2%,
+  `EnvVaultsPanel.jsx` 93.9% lines.
 - **Built:** `EnvVaultRegistry` (`list`, `openFromDialog`,
   `createInAppData`, `resolve`). Ids are random 128-bit hex per run, one per
   path; a picked file must parse with `type: 'environment-vault'` before it
@@ -751,8 +765,8 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
     list shows **Remove from list** on opened vaults that aren't unlocked.
   - `clearRecents()` deletes the kept list (for the toggle, Task 23);
     vaults opened this run stay listed until the app quits.
-- **Not done:** `createFromDialog` (a new vault at a chosen path, e.g. a
-  project's `.env.vault`); the toggle's UI (Task 23).
+- **Not done (2026-10-22):** `createFromDialog` (done 2026-10-23, above);
+  the toggle's UI (done in Task 23).
 - **Validation done (recents):** `EnvVaultMain.test.js`: listed in a later
   run under a new id; newest first; missing file; remove now and later;
   only opened vaults can be removed; app-folder vault not recorded; toggle
@@ -885,7 +899,13 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 20: Renderer: env view
 
-- **Status:** 🟡 partial 2026-10-22. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-23. The one open item, refresh on file change,
+  came with Task 16 (the watcher reloads the view, or shows the banner when
+  the user is busy); refresh on window focus isn't needed with it. Its
+  validation is met: masked by default and the secret not in the DOM
+  (`EnvView.test`), revealed values dropped on unmount and LOCKED leaves
+  the screen, a CONFLICT keeps the edit with Overwrite
+  (`EnvVaultsReal.test`).
 - **Built:** `EnvView`: masked table, Reveal/Hide per row, inherited keys
   dimmed with "from <parent>" (edit = override, no delete), Add / Edit /
   Delete as one-op changesets, a "changed elsewhere" banner on `STALE` that

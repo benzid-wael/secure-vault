@@ -225,6 +225,50 @@ describe('EnvVaultsPanel', () => {
     expect(api.create).not.toHaveBeenCalled();
   });
 
+  it('creates a vault in a project, asking where next (Task 14)', async () => {
+    render(<EnvVaultsPanel />);
+    fireEvent.click(await screen.findByText('New…'));
+    fireEvent.click(
+      await screen.findByLabelText('In a project: choose where to save it next')
+    );
+    expect(screen.queryByLabelText('Vault Name')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Vault Password'), {
+      target: { value: 'Pw-1234567!' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirm Password'), {
+      target: { value: 'Pw-1234567!' },
+    });
+    // The save dialog closed without a choice: stay, no error.
+    api.create.mockResolvedValueOnce({ success: false, canceled: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() =>
+      expect(api.create).toHaveBeenCalledWith({ mode: 'dialog' }, 'Pw-1234567!')
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled()
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    api.create.mockResolvedValueOnce({ success: true, id: 'id-new' });
+    api.list.mockResolvedValue({
+      success: true,
+      vaults: [
+        {
+          ...APP,
+          id: 'id-new',
+          label: 'Superxpense/.env.vault',
+          source: 'opened',
+          unlocked: true,
+        },
+      ],
+    });
+    api.listEnvs.mockResolvedValue({ success: true, revision: 'r', envs: [] });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    expect(
+      await screen.findByText(/This vault has no environments yet/)
+    ).toBeInTheDocument();
+  });
+
   it('creates a vault in the app folder and opens it', async () => {
     render(<EnvVaultsPanel />);
     fireEvent.click(await screen.findByText('New…'));

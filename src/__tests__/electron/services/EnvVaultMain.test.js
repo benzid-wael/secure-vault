@@ -990,14 +990,78 @@ describe('env vault IPC handlers (contract)', () => {
     expect(registry.resolve(made.id)).toBe(
       path.join(envsDir, 'fresh.env.vault')
     );
-    expect(
-      (await h['env-vaults:create'](ev, { mode: 'dialog' }, PW)).code
-    ).toBe('INVALID');
+    expect((await h['env-vaults:create'](ev, { mode: 'cloud' }, PW)).code).toBe(
+      'INVALID'
+    );
     expect(
       (await h['env-vaults:create'](ev, { mode: 'appdata', name: 'w' }, 'weak'))
         .code
     ).toBe('INVALID');
     expect(await fs.pathExists(path.join(envsDir, 'w.env.vault'))).toBe(false);
+  });
+
+  describe('create where the user picks (Task 14)', () => {
+    let saveTo;
+    let dialog;
+    let handlers;
+    let reg;
+    beforeEach(() => {
+      saveTo = path.join(dir, 'Superxpense', '.env.vault');
+      dialog = {
+        showOpenDialog: vi.fn(),
+        showSaveDialog: vi.fn(async () =>
+          saveTo ? { canceled: false, filePath: saveTo } : { canceled: true }
+        ),
+      };
+      reg = new EnvVaultRegistry({ envsDir, dialog });
+      handlers = createEnvVaultHandlers({
+        registry: reg,
+        session,
+        getWindow: () => 'main-window',
+      });
+    });
+    const create = (password = PW) =>
+      handlers['env-vaults:create'](ev, { mode: 'dialog' }, password);
+
+    it('creates it there, unlocked, and lists it as opened', async () => {
+      const made = await create();
+      expect(made.success).toBe(true);
+      expect(dialog.showSaveDialog).toHaveBeenCalledWith(
+        'main-window',
+        expect.objectContaining({ defaultPath: '.env.vault' })
+      );
+      expect(reg.resolve(made.id)).toBe(saveTo);
+      expect(session.isUnlocked(made.id)).toBe(true);
+      expect((await fs.readJSON(saveTo)).type).toBe('environment-vault');
+      expect(await reg.list()).toContainEqual(
+        expect.objectContaining({
+          id: made.id,
+          label: 'Superxpense/.env.vault',
+          source: 'opened',
+        })
+      );
+    });
+
+    it('never replaces an existing file', async () => {
+      await fs.outputFile(saveTo, 'keep me');
+      const result = await create();
+      expect(result).toMatchObject({ success: false, code: 'INVALID' });
+      expect(result.error).toContain('already exists. Open it with Open…');
+      expect(await fs.readFile(saveTo, 'utf8')).toBe('keep me');
+    });
+
+    it('checks the password before asking where', async () => {
+      expect((await create('weak')).code).toBe('INVALID');
+      expect((await create(/** @type {any} */ (null))).error).toBe(
+        'Enter a password'
+      );
+      expect(dialog.showSaveDialog).not.toHaveBeenCalled();
+    });
+
+    it('reports a canceled dialog and writes nothing', async () => {
+      saveTo = null;
+      expect(await create()).toEqual({ success: false, canceled: true });
+    });
   });
 
   it('opens through the registry dialog with the window as parent', async () => {

@@ -20,6 +20,8 @@ import {
   Menu,
   MenuItem,
   Paper,
+  Radio,
+  RadioGroup,
   TextField,
   Typography,
 } from '@mui/material';
@@ -114,6 +116,8 @@ function ChangePasswordDialog({ change, onClose }) {
  * is `{ initial }`: the box starts ticked for a vault whose password is
  * already kept, and unticking it forgets that password. `onUseSaved`
  * offers the kept password again, e.g. after a canceled Touch ID.
+ * Creating (`withName`), the vault goes in the app folder under a name, or
+ * in a place the user picks next (`where: 'project'`, Task 14).
  */
 function PasswordDialog({
   title,
@@ -129,11 +133,13 @@ function PasswordDialog({
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [keep, setKeep] = useState(remember?.initial ?? false);
+  const [where, setWhere] = useState('appdata');
   const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
 
   const finish = (result) => {
     setBusy(false);
+    if (result.canceled) return; // the save dialog was closed: try again
     if (!result.success) setError(result.error || 'Something went wrong');
   };
 
@@ -144,8 +150,14 @@ function PasswordDialog({
       return;
     }
     setBusy(true);
+    setError('');
     finish(
-      await onSubmit({ name, password, remember: remember ? keep : undefined })
+      await onSubmit({
+        name,
+        password,
+        where,
+        remember: remember ? keep : undefined,
+      })
     );
   };
 
@@ -176,6 +188,23 @@ function PasswordDialog({
             </Alert>
           )}
           {withName && (
+            <RadioGroup
+              value={where}
+              onChange={(e) => setWhere(e.target.value)}
+            >
+              <FormControlLabel
+                value="appdata"
+                control={<Radio size="small" />}
+                label="In the app folder"
+              />
+              <FormControlLabel
+                value="project"
+                control={<Radio size="small" />}
+                label="In a project: choose where to save it next"
+              />
+            </RadioGroup>
+          )}
+          {withName && where === 'appdata' && (
             <TextField
               id="env-vault-name"
               label="Vault Name"
@@ -733,8 +762,11 @@ const EnvVaultsPanel = ({ header = null }) => {
     return result;
   };
 
-  const create = async ({ name, password }) => {
-    const result = await api.create({ mode: 'appdata', name }, password);
+  const create = async ({ name, password, where }) => {
+    const result = await api.create(
+      where === 'project' ? { mode: 'dialog' } : { mode: 'appdata', name },
+      password
+    );
     if (result.success) await enter(result.id);
     return result;
   };

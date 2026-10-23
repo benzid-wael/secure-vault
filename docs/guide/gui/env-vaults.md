@@ -44,10 +44,12 @@ forgets its saved password. The file isn't touched.
   first; if yours is named differently, or greyed out, choose **All
   files** in the dialog. Any file that is an environment vault opens. The
   extensions listed first are a setting.
-- **New…**: create a vault in the app folder. Give it a name (letters,
-  digits, `-`, `_`) and a password of at least 8 characters with upper and
-  lower case letters, a digit and a symbol. To create a vault inside a
-  project, use `vault env init` in a terminal.
+- **New…**: create a vault, with a password of at least 8 characters with
+  upper and lower case letters, a digit and a symbol. Either **In the app
+  folder**, under a name (letters, digits, `-`, `_`), or **In a project**:
+  after you click **Create**, choose where to save it. `.env.vault` in the
+  project's root is where the CLI looks. The app never replaces an existing
+  file.
 
 ### Unlock and lock
 
@@ -214,7 +216,6 @@ edit it.
 
 - Mark a key as required: `vault env set KEY value --required -e <env>`.
 - Run a command with an environment injected: `vault env run`.
-- Create a vault inside a project: `vault env init`.
 
 ## Next
 

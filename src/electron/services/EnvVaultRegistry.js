@@ -44,7 +44,8 @@ export class EnvVaultRegistry {
   /**
    * @param {Object} [options]
    * @param {string} [options.envsDir]
-   * @param {{showOpenDialog: Function}} [options.dialog] Electron's `dialog`.
+   * @param {{showOpenDialog: Function, showSaveDialog?: Function}}
+   *   [options.dialog] Electron's `dialog`.
    * @param {() => string} [options.newId]
    * @param {import('./EnvVaultRecents.js').EnvVaultRecents} [options.recents]
    *   Where opened vaults are kept across runs; none: this run only.
@@ -190,6 +191,41 @@ export class EnvVaultRegistry {
       };
     }
     return this.#openFile(filePath);
+  }
+
+  /**
+   * Ask where to save a new env vault (Task 14), `.env.vault` by default so
+   * a project's vault is where the CLI looks. An existing file is refused,
+   * never replaced, even if the dialog asked "Replace?" and got yes.
+   * @returns {Promise<{success: boolean, id?: string, path?: string,
+   *   canceled?: boolean, code?: string, error?: string}>}
+   */
+  async createFromDialog(win) {
+    const picked = await this.#dialog.showSaveDialog(win, {
+      title: 'New Environment Vault',
+      defaultPath: '.env.vault',
+      buttonLabel: 'Create',
+      properties: ['showHiddenFiles', 'createDirectory'],
+      showsTagField: false,
+    });
+    if (picked.canceled || !picked.filePath) {
+      return { success: false, canceled: true };
+    }
+    const filePath = path.resolve(picked.filePath);
+    if (await fs.pathExists(filePath)) {
+      return {
+        success: false,
+        code: 'INVALID',
+        error: `${filePath} already exists. Open it with Open… instead, or choose another name.`,
+      };
+    }
+    return { success: true, id: this.#idFor(filePath), path: filePath };
+  }
+
+  /** A vault was just created at `id`'s path: list it, as if opened. */
+  async noteCreated(id) {
+    const filePath = this.resolve(id);
+    if (filePath) await this.#noteOpened(filePath);
   }
 
   async #openFile(filePath) {
