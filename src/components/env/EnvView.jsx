@@ -181,7 +181,7 @@ const EnvView = ({
 
   const handleFailure = useCallback(
     (result) => {
-      if (result.code === 'LOCKED') onLocked();
+      if (result.code === 'LOCKED') onLocked(result);
       else if (result.code === 'STALE') setStale(true);
       else setError(result.error || 'Something went wrong');
     },

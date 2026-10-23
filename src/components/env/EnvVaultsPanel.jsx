@@ -243,6 +243,26 @@ function PasswordDialog({
 }
 
 /** One unlocked vault: its environments on the left, the selected one right. */
+/**
+ * What the list says when the open vault locked, by why (New-47).
+ * @param {string} label
+ * @param {{reason?: string, minutes?: number}} [info]
+ */
+function lockedNotice(label, { reason, minutes } = {}) {
+  switch (reason) {
+    case 'idle':
+      return `${label} locked after ${minutes === 1 ? '1 minute' : `${minutes} minutes`} without activity.`;
+    case 'sleep':
+      return `${label} locked when the computer went to sleep.`;
+    case 'screen-lock':
+      return `${label} locked when the screen locked.`;
+    case 'password-changed':
+      return `${label} locked: its password was changed elsewhere. Unlock it with the new one.`;
+    default:
+      return 'The vault was locked.';
+  }
+}
+
 function EnvVaultScreen({ vault, onBack, onLock, onLocked, onForget }) {
   const api = envApi();
   const [envs, setEnvs] = useState(null);
@@ -273,7 +293,7 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked, onForget }) {
   const load = useCallback(async () => {
     const result = await api.listEnvs(vault.id);
     if (!result.success) {
-      if (result.code === 'LOCKED') onLocked();
+      if (result.code === 'LOCKED') onLocked(result);
       else setError(result.error);
       return;
     }
@@ -308,7 +328,7 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked, onForget }) {
       expectedRevision: revision,
     });
     if (!result.success) {
-      if (result.code === 'LOCKED') onLocked();
+      if (result.code === 'LOCKED') onLocked(result);
       if (result.code === 'STALE') {
         load();
         return {
@@ -374,7 +394,7 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked, onForget }) {
     event.preventDefault();
     const result = await api.createEnv(vault.id, newEnv.trim(), revision);
     if (!result.success) {
-      if (result.code === 'LOCKED') return onLocked();
+      if (result.code === 'LOCKED') return onLocked(result);
       setError(
         result.code === 'STALE'
           ? 'This vault was changed elsewhere; the list is reloaded, try again'
@@ -508,7 +528,7 @@ function EnvVaultScreen({ vault, onBack, onLock, onLocked, onForget }) {
         <ChangePasswordDialog
           change={async (current, next) => {
             const result = await api.changePassword(vault.id, current, next);
-            if (result.code === 'LOCKED') onLocked();
+            if (result.code === 'LOCKED') onLocked(result);
             if (!result.success) return result;
             setChangingPassword(false);
             setQuietReload((n) => n + 1);
@@ -594,6 +614,8 @@ const EnvVaultsPanel = ({ header = null }) => {
   const [dialog, setDialog] = useState(null); // { kind: 'unlock', vault, error? } | { kind: 'create' }
   const [openVault, setOpenVault] = useState(null);
   const [notice, setNotice] = useState('');
+  const openVaultRef = useRef(null);
+  openVaultRef.current = openVault;
 
   const refresh = useCallback(async () => {
     const result = await api.list();
@@ -608,19 +630,25 @@ const EnvVaultsPanel = ({ header = null }) => {
     refresh();
   }, [refresh]);
 
-  const onLocked = useCallback(() => {
-    setOpenVault(null);
-    setNotice('The vault was locked.');
-    refresh();
-  }, [refresh]);
+  // `info` is the lock event or a LOCKED result: it may say why (New-47).
+  // A lock the user asked for needs no notice.
+  const onLocked = useCallback(
+    (info = {}) => {
+      const label = openVaultRef.current?.label ?? 'The vault';
+      setOpenVault(null);
+      if (info.reason !== 'user') setNotice(lockedNotice(label, info));
+      refresh();
+    },
+    [refresh]
+  );
 
   // Main locked a vault (idle, sleep, screen lock): drop everything for it.
   const openIdRef = useRef(null);
   openIdRef.current = openVault?.id ?? null;
   useEffect(
     () =>
-      api.onLocked(({ id }) => {
-        if (openIdRef.current === id) onLocked();
+      api.onLocked((info) => {
+        if (openIdRef.current === info.id) onLocked(info);
         else refresh();
       }),
     [api, onLocked, refresh]

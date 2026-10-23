@@ -306,6 +306,52 @@ describe('EnvVaultsPanel', () => {
     expect(screen.queryByText('New environment')).toBeNull();
   });
 
+  it.each([
+    [
+      { reason: 'idle', minutes: 5 },
+      'app locked after 5 minutes without activity.',
+    ],
+    [
+      { reason: 'idle', minutes: 1 },
+      'app locked after 1 minute without activity.',
+    ],
+    [{ reason: 'sleep' }, 'app locked when the computer went to sleep.'],
+    [{ reason: 'screen-lock' }, 'app locked when the screen locked.'],
+    [
+      { reason: 'password-changed' },
+      'app locked: its password was changed elsewhere. Unlock it with the new one.',
+    ],
+  ])('says why main locked the open vault: %j (New-47)', async (info, text) => {
+    await unlockApp();
+    await act(async () => lockedListener({ id: 'id-app', ...info }));
+    expect(await screen.findByText(text)).toBeInTheDocument();
+    expect(screen.queryByText('New environment')).toBeNull();
+  });
+
+  it('says nothing when the user locked it (New-47)', async () => {
+    await unlockApp();
+    await act(async () => lockedListener({ id: 'id-app', reason: 'user' }));
+    expect(await screen.findByText('Environment Vaults')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('says the password changed when a call finds it so (New-47)', async () => {
+    await unlockApp();
+    fireEvent.click(screen.getByRole('button', { name: 'New environment' }));
+    fireEvent.change(await screen.findByLabelText('Environment Name'), {
+      target: { value: 'qa' },
+    });
+    api.createEnv.mockResolvedValue({
+      success: false,
+      code: 'LOCKED',
+      reason: 'password-changed',
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    expect(
+      await screen.findByText(/app locked: its password was changed elsewhere/)
+    ).toBeInTheDocument();
+  });
+
   it('only refreshes the list when another vault is locked', async () => {
     await unlockApp();
     const calls = api.list.mock.calls.length;

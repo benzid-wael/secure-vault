@@ -484,7 +484,10 @@ describe('EnvVaultSession', () => {
     expect(t.pending.size).toBe(1); // the old timer was cleared
     t.fire();
     expect(session.isUnlocked('a')).toBe(false);
-    expect(onLocked).toHaveBeenCalledWith('a');
+    expect(onLocked).toHaveBeenCalledWith('a', {
+      reason: 'idle',
+      minutes: ENV_VAULT_IDLE_MS / 60000,
+    });
     session.touch('a'); // no-op once locked
     expect(t.pending.size).toBe(0);
   });
@@ -542,6 +545,20 @@ describe('EnvVaultSession', () => {
     });
   });
 
+  it('says why it locked: by hand, or every vault at once (New-47)', async () => {
+    const filePath = await seed();
+    const onLocked = vi.fn();
+    const session = new EnvVaultSession({ onLocked });
+    await session.unlock('a', filePath, PW);
+    session.lock('a');
+    expect(onLocked).toHaveBeenLastCalledWith('a', { reason: 'user' });
+    await session.unlock('a', filePath, PW);
+    await session.unlock('b', filePath, PW);
+    session.lockAll('sleep');
+    expect(onLocked).toHaveBeenCalledWith('a', { reason: 'sleep' });
+    expect(onLocked).toHaveBeenCalledWith('b', { reason: 'sleep' });
+  });
+
   it('locks when the stored password stops working (AUTH → LOCKED)', async () => {
     const filePath = await seed();
     const onLocked = vi.fn();
@@ -551,9 +568,12 @@ describe('EnvVaultSession', () => {
       success: false,
       code: 'AUTH',
     }));
-    expect(result.code).toBe('LOCKED');
+    expect(result).toMatchObject({
+      code: 'LOCKED',
+      reason: 'password-changed',
+    });
     expect(session.isUnlocked('a')).toBe(false);
-    expect(onLocked).toHaveBeenCalledWith('a');
+    expect(onLocked).toHaveBeenCalledWith('a', { reason: 'password-changed' });
   });
 
   it('opens a vault the CLI re-keyed, using the stored password', async () => {

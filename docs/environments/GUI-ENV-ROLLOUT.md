@@ -685,3 +685,17 @@ history dev` shows one new version.
 - **Verify after release:** export an env as JSON; `diff` it with
   `vault env export <env> -f json`: identical.
 - **Rollback:** reinstall the previous app.
+
+### New-47: the vault list says why an env vault locked
+
+- **Runtime change (gated by the Environments UI gate):** when the open env
+  vault locks, the list says why: idle (with the time), sleep, screen lock,
+  or its password changed elsewhere. A lock the user asked for shows no
+  message.
+- **Schema or config change:** `env-vault-locked` carries `reason` and, for
+  idle, `minutes` (main to page only).
+- **Before it ships:** nothing beyond the gate's own criteria.
+- **Gated by:** the Environments UI gate.
+- **Verify after release:** set "Lock vaults after" to 1 minute, open an
+  env vault, wait: "… locked after 1 minute without activity."
+- **Rollback:** reinstall the previous app.

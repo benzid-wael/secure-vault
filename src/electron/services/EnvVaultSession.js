@@ -38,6 +38,15 @@ const locked = () => ({
  * Limit, as in VaultSession: the password is a JS string and can't be wiped;
  * cached key Buffers are zeroed on lock.
  */
+/**
+ * Why a vault locked (New-47): `user` (Lock, File → Lock Vault), `idle`
+ * (with `minutes`), `sleep`, `screen-lock`, `quit`, or `password-changed`
+ * (the stored password stopped opening the file).
+ *
+ * @typedef {{reason: 'user'|'idle'|'sleep'|'screen-lock'|'quit'|
+ *   'password-changed', minutes?: number}} LockInfo
+ */
+
 export class EnvVaultSession {
   #service;
   #idleMs;
@@ -54,7 +63,8 @@ export class EnvVaultSession {
    * @param {Object} [options]
    * @param {typeof EnvironmentVaultService} [options.service]
    * @param {number} [options.idleMs]
-   * @param {(id: string) => void} [options.onLocked] After any lock.
+   * @param {(id: string, info: LockInfo) => void} [options.onLocked] After
+   *   any lock, with why (New-47).
    * @param {(fn: () => void, ms: number) => any} [options.setTimer]
    * @param {(timer: any) => void} [options.clearTimer]
    */
@@ -135,10 +145,11 @@ export class EnvVaultSession {
       this.#commit(id, entry, result.keyMaterial);
     } else if (!result.success && result.code === 'AUTH') {
       // The stored password no longer opens the file: changed elsewhere.
-      this.lock(id);
+      this.lock(id, { reason: 'password-changed' });
       return {
         success: false,
         code: 'LOCKED',
+        reason: 'password-changed',
         error: 'The vault password was changed elsewhere; unlock it again',
       };
     }
@@ -167,11 +178,18 @@ export class EnvVaultSession {
     const entry = this.#vaults.get(id);
     if (!entry) return;
     if (entry.timer) this.#clearTimer(entry.timer);
-    entry.timer = this.#setTimer(() => this.lock(id), this.#idleMs);
+    entry.timer = this.#setTimer(
+      () => this.lock(id, { reason: 'idle' }),
+      this.#idleMs
+    );
   }
 
-  /** Zero the key, drop the password and every view of `id`. */
-  lock(id, { silent = false } = {}) {
+  /**
+   * Zero the key, drop the password and every view of `id`.
+   * @param {string} id
+   * @param {{silent?: boolean, reason?: LockInfo['reason']}} [options]
+   */
+  lock(id, { silent = false, reason = 'user' } = {}) {
     const entry = this.#vaults.get(id);
     if (!entry) return;
     if (entry.timer) this.#clearTimer(entry.timer);
@@ -182,11 +200,18 @@ export class EnvVaultSession {
     for (const [viewId, view] of this.#views) {
       if (view.id === id) this.#views.delete(viewId);
     }
-    if (!silent) this.#onLocked(id);
+    if (silent) return;
+    this.#onLocked(
+      id,
+      reason === 'idle'
+        ? { reason, minutes: Math.round(this.#idleMs / 60000) }
+        : { reason }
+    );
   }
 
-  lockAll() {
-    for (const id of [...this.#vaults.keys()]) this.lock(id);
+  /** @param {LockInfo['reason']} [reason] */
+  lockAll(reason = 'user') {
+    for (const id of [...this.#vaults.keys()]) this.lock(id, { reason });
   }
 
   /**

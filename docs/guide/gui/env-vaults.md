@@ -69,6 +69,10 @@ environment vaults included. A vault also locks by itself:
   change it in [Settings](#settings));
 - when the computer sleeps or the screen locks.
 
+The list then says why, for example "app locked after 5 minutes without
+activity". If the vault's password was changed elsewhere (`vault env
+change-password`), the vault locks and asks for the new one.
+
 ## Work with variables
 
 The left column lists the vault's environments with their variable count,

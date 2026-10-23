@@ -2411,7 +2411,24 @@ import` says it "creates a new version with all vars from the file(s)"
 
 ### New-47: Say why an env vault locked
 
-- **Status:** ⬜ found 2026-10-23 while writing Task 31.
+- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+  merged, not released.
+- **Built:** `EnvVaultSession.lock(id, {reason})` and `lockAll(reason)`;
+  `onLocked(id, {reason, minutes?})`: `user` (Lock, File → Lock Vault),
+  `idle` with the minutes, `sleep`, `screen-lock`, `quit`,
+  `password-changed` (a LOCKED result from `run` carries it too). Main
+  passes the power-monitor event's reason and sends it with
+  `env-vault-locked`. The panel says "app locked after 5 minutes without
+  activity.", "… when the computer went to sleep.", "… when the screen
+  locked.", "app locked: its password was changed elsewhere. Unlock it
+  with the new one."; nothing for a lock the user asked for; "The vault was
+  locked." when no reason is known. RFC §6.7 event, guide.
+- **Validation done:** session: idle with minutes, password-changed (event
+  and result), user, `lockAll('sleep')` for every vault. Panel: each
+  reason's message, none for `user`, the reason from a LOCKED result. All
+  seven new tests fail on the previous code. `EnvVaultSession.js` 98.6%,
+  `EnvVaultsPanel.jsx` 93.8% lines. **Not covered:** the `main.js`
+  power-monitor wiring (no unit test reaches it).
 - **Found:** a password vault that idles out says "Vault locked after N
   minutes without activity."; an env vault only says "The vault was
   locked.", whether it was idle, sleep, or a password changed by the CLI

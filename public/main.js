@@ -83,7 +83,7 @@ class ElectronApp {
       // File → Lock Vault locks every env vault in main (New-46); the page
       // locks the password vault.
       this.menuService = new MenuService({
-        onLock: () => this.envSession?.lockAll(),
+        onLock: () => this.envSession?.lockAll('user'),
       });
       this.securityManager = new SecurityManager();
 
@@ -126,9 +126,10 @@ class ElectronApp {
           this.sendToWindow('env-vault-changed', { id, ...change }),
       });
       this.envSession = new EnvVaultSession({
-        onLocked: (id) => {
+        // `info` says why (New-47); the page tells the user.
+        onLocked: (id, info) => {
           this.envWatcher.stop(id);
-          this.sendToWindow('env-vault-locked', { id });
+          this.sendToWindow('env-vault-locked', { id, ...info });
         },
       });
 
@@ -279,15 +280,15 @@ class ElectronApp {
 
   setupAutoLock() {
     // Lock whenever the user steps away from the machine.
-    const lockAll = () => {
+    const lockAll = (reason) => {
       this.lockSession();
-      this.envSession.lockAll();
+      this.envSession.lockAll(reason);
     };
-    powerMonitor.on('suspend', lockAll);
-    powerMonitor.on('lock-screen', lockAll);
+    powerMonitor.on('suspend', () => lockAll('sleep'));
+    powerMonitor.on('lock-screen', () => lockAll('screen-lock'));
     app.on('before-quit', () => {
       this.session.close();
-      this.envSession.lockAll();
+      this.envSession.lockAll('quit');
       this.envWatcher.stopAll();
     });
   }

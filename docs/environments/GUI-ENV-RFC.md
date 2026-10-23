@@ -515,7 +515,8 @@ dots, and no part of a sensitive value leaves main until it is revealed.
 `inheritedFrom` is set for keys resolved from a parent env (§6.4).
 
 Events (main → renderer): `env-vault-changed { id, revision }`,
-`env-vault-locked { id }`.
+`env-vault-locked { id, reason, minutes? }` (`reason`: `user`, `idle`,
+`sleep`, `screen-lock`, `quit` or `password-changed`; New-47).
 
 Error shape everywhere: `{ success: false, code, error }`, where `code` is one of
 `LOCKED · STALE · CONFLICT · BUSY · LIMIT · AUTH · NOT_FOUND · INVALID · ERROR`.
