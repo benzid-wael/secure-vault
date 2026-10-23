@@ -95,7 +95,7 @@ updated as each task finishes, not in a batch at the end.
 | New-50 | Start writing env vaults in format 2                               | M1  | P2  | ⬜     | New-37 (and a release in between)      |
 | New-51 | Coverage config uses `coverage.all`, gone in Vitest 4              | —   | P3  | ✅     | —                                      |
 | New-52 | Password vaults: remember the password on this computer            | —   | P1  | ✅     | New-24                                 |
-| New-53 | Password vaults: open one from any folder                          | —   | P1  | ⬜     | New-52                                 |
+| New-53 | Password vaults: open one from any folder                          | —   | P1  | ✅     | New-52                                 |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -2807,7 +2807,43 @@ import` says it "creates a new version with all vars from the file(s)"
 
 ### New-53: Password vaults: open one from any folder
 
-- **Status:** ⬜ next.
+- **Status:** ✅ done 2026-10-23: its own validation is met. On
+  `feat/vault-env-gui`; not merged, not released. Ungated (CHANGELOG
+  "Added").
+- **Built:**
+  - `src/electron/services/OpenedVaults.js`: `<appdata>/gui-opened-vaults.json`,
+    `[{name, path}]`, 0600, read once at start. A file is named after itself
+    (`team.vault` → `team`), made valid and kept clear of every listed name
+    (`team (2)`); opening it again keeps its name.
+  - `VaultFileService` takes `links`: a listed name maps to the opened file,
+    and its backup and temp files sit beside it (`<file>.backup`). The list
+    is the app folder's vaults, then the opened ones. Deleting an opened
+    vault throws. `VaultService`, `VaultSettingsService` and
+    `ImportExportService` all get the same list from main.
+  - `PasswordVaultIpc`: `get-vaults` (moved from main) adds each opened
+    vault's file and whether it's there; `open-vault-file` (native dialog,
+    `.vault` then All files; an app-folder file gives its own name; an env
+    vault, a non-vault and an unreadable file are refused); `remove-vault`
+    (refused while unlocked, forgets the saved password, leaves the file);
+    `delete-vault` refuses an opened vault; an unlock of a missing file says
+    so instead of "Invalid master password".
+  - Renderer: **Open…** beside **Create New Vault**; an opened vault's card
+    shows its file, **Missing** when gone (and doesn't open), and a
+    **Remove from list** button instead of delete.
+  - Guide (getting started), CHANGELOG.
+- **Checked:** 1498 unit tests pass, among them the handlers on real files
+  (unlock, save in place, backup beside it, password change, recovery key,
+  settings, export, remove, missing file); e2e `opened-vault` 11/11, three
+  runs in a row (refuses an env vault, opens, unlocks, saves in place,
+  shows the file, keeps the list, removes without touching the file); the
+  e2e suite 10/10. Lines: `OpenedVaults.js` 100%, `PasswordVaultIpc.js`
+  99%, `VaultFileService.js` 92%, `VaultSelector.jsx` 96%, `App.jsx` 94%,
+  `ImportExportService.js` 0% → 95% (it had no test).
+- **Not covered:** two app instances or another machine writing the same
+  opened file at once (a synced folder): password vault writes are atomic
+  but take no lock, as before for the app folder. The CLI's password vault
+  commands don't see opened vaults.
+
 - **Found:** the author, 2026-10-23.
 - **Goal:** "Open…" in the password vault list picks a `.vault` file
   anywhere; it's listed (and remembered) like a vault in the app's folder.

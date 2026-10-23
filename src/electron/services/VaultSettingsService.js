@@ -5,10 +5,11 @@ import { Vault } from '../models/Vault.js';
 export class VaultSettingsService {
   /**
    * @param {string} vaultDirectory
-   * @param {{deriveKey?: Function}} [options] see VaultService.
+   * @param {{deriveKey?: Function, links?: Object}} [options] see
+   *   VaultService.
    */
-  constructor(vaultDirectory, { deriveKey } = {}) {
-    this.fileService = new VaultFileService(vaultDirectory);
+  constructor(vaultDirectory, { deriveKey, links } = {}) {
+    this.fileService = new VaultFileService(vaultDirectory, { links });
     this.deriveKey =
       deriveKey ??
       ((password, salt, iterations) =>

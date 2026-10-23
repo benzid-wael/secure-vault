@@ -17,12 +17,14 @@ export const LEGACY_DEFAULT_PASSWORD = 'changeme123';
 export class VaultService {
   /**
    * @param {string} vaultDirectory
-   * @param {{deriveKey?: Function}} [options] `deriveKey(password, salt,
-   *   iterations)`; the desktop main process passes its session's caching
-   *   version so loads and saves don't re-run PBKDF2 each time.
+   * @param {{deriveKey?: Function, links?: Object}} [options]
+   *   `deriveKey(password, salt, iterations)`; the desktop main process
+   *   passes its session's caching version so loads and saves don't re-run
+   *   PBKDF2 each time. `links`: vaults opened from other folders, as
+   *   VaultFileService takes them (New-53).
    */
-  constructor(vaultDirectory, { deriveKey } = {}) {
-    this.fileService = new VaultFileService(vaultDirectory);
+  constructor(vaultDirectory, { deriveKey, links } = {}) {
+    this.fileService = new VaultFileService(vaultDirectory, { links });
     this.deriveKey =
       deriveKey ??
       ((password, salt, iterations) =>

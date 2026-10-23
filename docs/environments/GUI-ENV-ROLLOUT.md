@@ -832,3 +832,21 @@ env init` writes; it's added to the remembered list.
 - **Rollback:** reinstall the previous app. It has no saved passwords:
   every vault asks for its password again, and `vault-passwords.json`
   stays in userData, encrypted, until a later version forgets it.
+
+### New-53: open a password vault from any folder
+
+- **Runtime change (every desktop user, not gated):** **Open…** in the
+  vault list adds a `.vault` file from any folder; it's unlocked, saved and
+  backed up in place. Its card shows the file and offers **Remove from
+  list** (the file stays) instead of delete.
+- **Schema or config change:** a new `gui-opened-vaults.json` in the app
+  data folder (`[{name, path}]`, 0600). No vault file changes.
+- **Before it ships:** the CHANGELOG "Added" entry and the guide (both
+  written).
+- **Gated by:** nothing: nothing changes until someone uses **Open…**.
+- **Verify after release:** open a vault on another drive, add an entry,
+  lock, unlock: the entry is there, and the app's own folder has no copy of
+  the vault. Remove it from the list: the file stays where it was.
+- **Rollback:** reinstall the previous app. It ignores the list: opened
+  vaults disappear from it, their files are untouched, and they can be
+  copied into the app's folder to use them.

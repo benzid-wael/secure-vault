@@ -7,7 +7,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   // Session: the master password is sent once to unlock (or create / recover)
   // and then held by the main process; later calls name only the vault.
+  // `opened`: vaults opened from other folders, with their file (New-53).
   getVaults: () => ipcRenderer.invoke('get-vaults'),
+  openVaultFile: () => ipcRenderer.invoke('open-vault-file'),
+  removeVault: (vaultName) => ipcRenderer.invoke('remove-vault', vaultName),
   createVault: (vaultName, masterPassword) =>
     ipcRenderer.invoke('create-vault', vaultName, masterPassword),
   // `options.remember`: true keeps the password on this computer, false

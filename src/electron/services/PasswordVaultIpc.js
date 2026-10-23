@@ -1,4 +1,8 @@
+import fs from 'fs-extra';
+import path from 'path';
+
 import { LEGACY_DEFAULT_PASSWORD } from './VaultService.js';
+import { isPasswordVaultFile } from './VaultFileService.js';
 
 /**
  * Password vault handlers that touch the saved-password store
@@ -18,17 +22,35 @@ import { LEGACY_DEFAULT_PASSWORD } from './VaultService.js';
  * @param {(name: string, password: string) => Promise<void>} deps.openSession
  *   Opens the session after a verified password (and upgrades the KDF).
  * @param {import('./VaultKeychain.js').VaultKeychain|null} [deps.keychain]
+ * @param {import('./OpenedVaults.js').OpenedVaults|null} [deps.opened]
+ *   Vaults opened from other folders (New-53); the same list `vaultService`
+ *   was built with as `links`.
+ * @param {{showOpenDialog: Function}|null} [deps.dialog]
+ * @param {() => any} [deps.getWindow]
  */
 export function createPasswordVaultHandlers({
   vaultService,
   session,
   openSession,
   keychain = null,
+  opened = null,
+  dialog = null,
+  getWindow = () => null,
 }) {
-  const pathOf = (vaultName) =>
-    vaultService.fileService.getVaultPath(vaultName);
+  const fileService = vaultService.fileService;
+  const pathOf = (vaultName) => fileService.getVaultPath(vaultName);
+  const invalid = (error) => ({ success: false, code: 'INVALID', error });
 
-  const opened = async (vaultName, password, result) => {
+  // A vault whose file is gone says so, not "Invalid master password".
+  const explain = (vaultName, result) =>
+    result.code === 'NOT_FOUND'
+      ? {
+          ...result,
+          error: `The file of ${vaultName} isn't there any more (${pathOf(vaultName)}).`,
+        }
+      : result;
+
+  const entered = async (vaultName, password, result) => {
     await openSession(vaultName, password);
     // A vault created by an older version may still use its built-in
     // password; the UI asks for it to be changed.
@@ -45,8 +67,8 @@ export function createPasswordVaultHandlers({
      */
     'unlock-vault': async (event, vaultName, password, options = {}) => {
       const result = await vaultService.verifyPassword(vaultName, password);
-      if (!result.success) return result;
-      const unlocked = await opened(vaultName, password, result);
+      if (!result.success) return explain(vaultName, result);
+      const unlocked = await entered(vaultName, password, result);
       if (keychain && options?.remember === true) {
         return {
           ...unlocked,
@@ -87,8 +109,8 @@ export function createPasswordVaultHandlers({
         vaultName,
         saved.password
       );
-      if (result.success) return opened(vaultName, saved.password, result);
-      if (result.code !== 'AUTH') return result;
+      if (result.success) return entered(vaultName, saved.password, result);
+      if (result.code !== 'AUTH') return explain(vaultName, result);
       await keychain.forget(pathOf(vaultName));
       return {
         success: false,
@@ -127,6 +149,12 @@ export function createPasswordVaultHandlers({
       }),
 
     'delete-vault': async (event, vaultName, confirmationPassword) => {
+      // Decided for New-53: an opened vault's file isn't deleted.
+      if (fileService.isOpened(vaultName)) {
+        return invalid(
+          `${vaultName} was opened from another folder. Remove it from the list instead; its file stays.`
+        );
+      }
       const vaultPath = pathOf(vaultName);
       const result = await vaultService.deleteVault(
         vaultName,
@@ -139,7 +167,92 @@ export function createPasswordVaultHandlers({
     },
   };
 
+  // Vaults opened from other folders (New-53).
+  vault['remove-vault'] = async (event, vaultName) => {
+    if (!opened?.pathOf(vaultName)) {
+      return invalid(
+        `${vaultName} is in the app's folder: only a vault opened from another folder can be removed from the list.`
+      );
+    }
+    if (session.isUnlocked(vaultName)) {
+      return invalid('Lock the vault before removing it from the list');
+    }
+    const location = pathOf(vaultName);
+    // Nothing would offer its saved password again.
+    await keychain?.forget(location);
+    await opened.remove(vaultName);
+    return { success: true, location };
+  };
+
   const general = {
+    /**
+     * Every listed vault's name, the app folder's first; `opened` gives the
+     * file and whether it's there for those opened from other folders.
+     */
+    'get-vaults': async () => {
+      try {
+        const names = await vaultService.getAvailableVaults();
+        const openedVaults = await Promise.all(
+          (opened?.list() ?? []).map(async (e) => ({
+            name: e.name,
+            location: e.path,
+            exists: await fs.pathExists(e.path),
+          }))
+        );
+        return { success: true, data: names, opened: openedVaults };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
+     * Pick a password vault file anywhere and list it. One in the app's
+     * folder is listed already; one opened before keeps its name.
+     */
+    'open-vault-file': async () => {
+      if (!opened || !dialog) {
+        return invalid('Opening a vault file is not available here');
+      }
+      const picked = await dialog.showOpenDialog(getWindow(), {
+        title: 'Open Password Vault',
+        properties: ['openFile', 'showHiddenFiles'],
+        filters: [
+          { name: 'Password vault', extensions: ['vault'] },
+          { name: 'All files', extensions: ['*'] },
+        ],
+      });
+      if (picked.canceled || picked.filePaths.length === 0) {
+        return { success: false, canceled: true };
+      }
+      const filePath = path.resolve(picked.filePaths[0]);
+      const file = path.basename(filePath);
+      if (
+        path.dirname(filePath) === fileService.vaultDirectory &&
+        file.endsWith('.vault')
+      ) {
+        return { success: true, name: file.slice(0, -'.vault'.length) };
+      }
+      let data;
+      try {
+        data = await fs.readJson(filePath);
+      } catch {
+        return invalid(`${file} isn't a vault file.`);
+      }
+      if (data?.type === 'environment-vault') {
+        return invalid(
+          `${file} is an environment vault, not a password vault.`
+        );
+      }
+      if (!isPasswordVaultFile(data)) {
+        return invalid(`${file} isn't a password vault.`);
+      }
+      const name = await opened.add(
+        filePath,
+        await fileService.listOwnVaults()
+      );
+      return { success: true, name };
+    },
+
     /**
      * What the selector and Settings show: whether "Remember on this
      * computer" can be offered, how many passwords are kept (every vault

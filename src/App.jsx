@@ -77,6 +77,8 @@ function App() {
   const [currentVault, setCurrentVault] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [availableVaults, setAvailableVaults] = useState([]);
+  // Vaults opened from other folders, with their file (New-53).
+  const [openedVaults, setOpenedVaults] = useState([]);
   // The unlocked vault still uses an older version's built-in password.
   const [usesDefaultPassword, setUsesDefaultPassword] = useState(false);
   const [currentView, setCurrentView] = useState('selector'); // selector, login, manager, create, recovery
@@ -230,6 +232,7 @@ function App() {
         const result = await window.electronAPI.getVaults();
         if (result && result.success) {
           setAvailableVaults(result.data || []);
+          setOpenedVaults(result.opened || []);
         } else {
           console.error(
             'Failed to load vaults:',
@@ -270,6 +273,49 @@ function App() {
       loadSavedPasswords();
     }
     setCurrentView('login');
+  };
+
+  // "Open…": a vault file from any folder is listed, then unlocked as usual.
+  const openVaultFile = async () => {
+    let result;
+    try {
+      result = await window.electronAPI.openVaultFile();
+    } catch {
+      result = { success: false, error: "The vault file couldn't be opened." };
+    }
+    if (result.canceled) return;
+    if (!result.success) {
+      return setSnackbar({
+        open: true,
+        message: result.error,
+        severity: 'error',
+      });
+    }
+    await loadAvailableVaults();
+    await handleVaultSelect(result.name);
+  };
+
+  // Off the list; the file stays where it is (New-53).
+  const removeVault = async (vaultName) => {
+    let result;
+    try {
+      result = await window.electronAPI.removeVault(vaultName);
+    } catch {
+      result = {
+        success: false,
+        error: "The vault couldn't be removed from the list.",
+      };
+    }
+    setSnackbar(
+      result.success
+        ? {
+            open: true,
+            message: `Removed ${vaultName} from the list. Its file stays at ${result.location}.`,
+            severity: 'success',
+          }
+        : { open: true, message: result.error, severity: 'error' }
+    );
+    loadAvailableVaults();
   };
 
   const forgetSavedPassword = async (vaultName) => {
@@ -421,6 +467,11 @@ function App() {
             onVaultDeleted={handleVaultDeleted}
             remembered={kept.vaults}
             onForgetPassword={forgetSavedPassword}
+            opened={openedVaults}
+            onOpenFile={
+              window.electronAPI?.openVaultFile ? openVaultFile : undefined
+            }
+            onRemove={removeVault}
           />
         );
       case 'login':

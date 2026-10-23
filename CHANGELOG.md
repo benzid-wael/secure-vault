@@ -12,6 +12,11 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Added
 
+- **Open a password vault from any folder** (desktop app). **Open…** in the
+  vault list picks a `.vault` file anywhere (a shared drive, a USB stick); it's
+  listed with its location, kept across restarts, and unlocked, saved and
+  backed up in place. Removing it from the list leaves the file; the app
+  never deletes it. Environment vaults are refused there.
 - **Remember a vault's password on this computer** (desktop app). Tick
   **Remember on this computer** when unlocking a password vault: the
   password is kept encrypted by the system keychain (macOS Keychain, DPAPI,

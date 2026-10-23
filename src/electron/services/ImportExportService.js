@@ -6,8 +6,12 @@ import { CryptographyService } from './CryptographyService.js';
 import path from 'path';
 
 export class ImportExportService {
-  constructor(vaultDirectory) {
-    this.fileService = new VaultFileService(vaultDirectory);
+  /**
+   * @param {string} vaultDirectory
+   * @param {{links?: Object}} [options] As VaultFileService's (New-53).
+   */
+  constructor(vaultDirectory, { links } = {}) {
+    this.fileService = new VaultFileService(vaultDirectory, { links });
   }
 
   _resolvePath(inputPath) {

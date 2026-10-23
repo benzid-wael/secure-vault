@@ -78,6 +78,20 @@ password in the app updates the saved one, and deleting the vault forgets it.
 **Forget all saved passwords** in Settings drops every saved password, for every
 vault.
 
+## Open a vault from another folder
+
+Vaults you create live in the app's own folder. To use one kept elsewhere (a
+shared drive, a USB stick, a project folder), click **Open…** in the vault list
+and pick its `.vault` file. It's listed under its file name, shows where it lives,
+and works like any other vault: it's unlocked, saved and backed up in place (the
+backup sits next to it as `<file>.backup`). The list is kept across restarts.
+
+A vault opened this way is never deleted by the app: **Remove from list** (the
+icon on its card) takes it off the list and forgets its saved password, and the
+file stays where it is. If the file is moved or deleted, the vault shows as
+**Missing** until you remove it. Environment vaults can't be opened here; open
+them under **Environments**.
+
 ## Next
 
 - [**Managing passwords**](/guide/gui/managing-passwords) — add, search, copy, edit, delete.

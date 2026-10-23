@@ -11,6 +11,8 @@ const mockElectronAPI = {
   })),
   // Vault management
   getVaults: vi.fn().mockResolvedValue([]),
+  openVaultFile: vi.fn().mockResolvedValue({ success: false, canceled: true }),
+  removeVault: vi.fn().mockResolvedValue({ success: true, location: '/x' }),
   createVault: vi.fn().mockResolvedValue({ success: true }),
   loadVault: vi.fn().mockResolvedValue({ success: true, entries: [] }),
   saveVault: vi.fn().mockResolvedValue({ success: true }),

@@ -14,11 +14,40 @@ export const DELETED_COPIES_KEPT = 5;
 // replaced, so names sort in time order.
 const DELETED_STAMP = /^\d{4}-\d{2}-\d{2}T[\d-]+Z$/;
 
+/**
+ * Whether `data` (a parsed vault file) is a password vault: encrypted
+ * content and its key settings, and not an env vault (whose files also end
+ * in `.vault`).
+ */
+export function isPasswordVaultFile(data) {
+  return (
+    data !== null &&
+    typeof data === 'object' &&
+    data.type === undefined &&
+    ['encrypted', 'iv', 'authTag', 'salt'].every(
+      (field) => typeof data[field] === 'string'
+    )
+  );
+}
+
 export class VaultFileService {
-  constructor(vaultDirectory) {
+  /**
+   * @param {string} vaultDirectory
+   * @param {{links?: {pathOf: (name: string) => string|null,
+   *   names: () => string[]}}} [options] Vaults opened from other folders
+   *   (New-53): a listed name maps to its file, and the files that go with
+   *   it (backup, temp) sit next to it.
+   */
+  constructor(vaultDirectory, { links = null } = {}) {
     // Resolve tilde and ensure absolute path
     this.vaultDirectory = this._resolvePath(vaultDirectory);
+    this.links = links;
     this._ensureVaultDirectory();
+  }
+
+  /** Whether `vaultName` is a vault opened from another folder. */
+  isOpened(vaultName) {
+    return Boolean(this.links?.pathOf(vaultName));
   }
 
   _resolvePath(inputPath) {
@@ -46,6 +75,14 @@ export class VaultFileService {
       /[/\\\0]/.test(vaultName)
     ) {
       throw new Error('Invalid vault name');
+    }
+    // An opened vault's file keeps its own name; `.vault.backup` becomes
+    // `<file>.backup` beside it.
+    const linked = this.links?.pathOf(vaultName);
+    if (linked) {
+      return suffix.startsWith('.vault')
+        ? `${linked}${suffix.slice('.vault'.length)}`
+        : `${linked}${suffix}`;
     }
     const filePath = path.resolve(this.vaultDirectory, `${vaultName}${suffix}`);
     if (path.dirname(filePath) !== this.vaultDirectory) {
@@ -176,6 +213,13 @@ export class VaultFileService {
   }
 
   async deleteVault(vaultName) {
+    // The decision for New-53: an opened vault is taken off the list, its
+    // file left where it is.
+    if (this.isOpened(vaultName)) {
+      throw new Error(
+        `${vaultName} was opened from another folder: remove it from the list instead`
+      );
+    }
     const vaultPath = this.getVaultPath(vaultName);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const deletedBackupPath = this._pathFor(
@@ -226,7 +270,15 @@ export class VaultFileService {
     }
   }
 
+  /** The app folder's vaults, then those opened from other folders. */
   async listVaults() {
+    const opened = this.links?.names() ?? [];
+    const own = await this.listOwnVaults();
+    return [...own.filter((name) => !opened.includes(name)), ...opened];
+  }
+
+  /** The vault names in the app's own folder, opened ones aside. */
+  async listOwnVaults() {
     try {
       const files = await fs.readdir(this.vaultDirectory);
       return files

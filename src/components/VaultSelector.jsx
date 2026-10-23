@@ -20,11 +20,16 @@ import {
   FolderOpen as FolderIcon,
   Delete as DeleteIcon,
   Warning as WarningIcon,
+  RemoveCircleOutline as RemoveIcon,
 } from '@mui/icons-material';
 
 /**
  * `remembered`: the vaults whose password is kept on this computer
  * (New-52); each gets a label and `onForgetPassword(name)`.
+ * `opened`: vaults opened from another folder (New-53),
+ * `[{name, location, exists}]`. Each shows its file and is taken off the
+ * list with `onRemove(name)` instead of deleted; a missing one can't be
+ * opened. `onOpenFile` offers "Open…".
  */
 const VaultSelector = ({
   vaults,
@@ -34,7 +39,11 @@ const VaultSelector = ({
   header = null,
   remembered = [],
   onForgetPassword = undefined,
+  opened = [],
+  onOpenFile = undefined,
+  onRemove = undefined,
 }) => {
+  const openedInfo = (vault) => opened.find((o) => o.name === vault);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [vaultToDelete, setVaultToDelete] = useState('');
   const [deletePassword, setDeletePassword] = useState('');
@@ -151,7 +160,9 @@ const VaultSelector = ({
                 }}
               >
                 <CardContent
-                  onClick={() => onVaultSelect(vault)}
+                  onClick={() =>
+                    openedInfo(vault)?.exists !== false && onVaultSelect(vault)
+                  }
                   sx={{
                     display: 'flex',
                     flexDirection: 'column',
@@ -212,8 +223,15 @@ const VaultSelector = ({
                       fontSize: '0.875rem',
                     }}
                   >
-                    Encrypted vault for your passwords and sensitive data
+                    {openedInfo(vault)
+                      ? openedInfo(vault).location
+                      : 'Encrypted vault for your passwords and sensitive data'}
                   </Typography>
+                  {openedInfo(vault)?.exists === false && (
+                    <Box>
+                      <Chip size="small" color="warning" label="Missing" />
+                    </Box>
+                  )}
 
                   {/* Vault stats/info */}
                   <Box
@@ -265,38 +283,61 @@ const VaultSelector = ({
                       )}
                     </Box>
                   )}
+                  {/* Opened from another folder: off the list, the file stays */}
+                  {openedInfo(vault) && onRemove && (
+                    <Button
+                      size="small"
+                      aria-label={`Remove ${vault} from the list`}
+                      title="Remove from list (the file stays)"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onRemove(vault);
+                      }}
+                      sx={{
+                        position: 'absolute',
+                        bottom: 12,
+                        right: 12,
+                        minWidth: 'auto',
+                        color: 'rgba(255, 255, 255, 0.6)',
+                      }}
+                    >
+                      <RemoveIcon sx={{ fontSize: '1.1rem' }} />
+                    </Button>
+                  )}
                   {/* Delete button overlay - bottom-right corner */}
-                  <Button
-                    className="vault-delete-button"
-                    onClick={(e) => handleDeleteClick(vault, e)}
-                    variant="outlined"
-                    size="small"
-                    sx={{
-                      position: 'absolute',
-                      bottom: 12,
-                      right: 12,
-                      minWidth: 'auto',
-                      width: 36,
-                      height: 36,
-                      borderRadius: '50%',
-                      borderColor: 'rgba(255, 255, 255, 0.2)',
-                      color: 'rgba(255, 255, 255, 0.4)',
-                      backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                      backdropFilter: 'blur(8px)',
-                      transition: 'all 0.3s ease',
-                      opacity: 0.7,
-                      '&:hover': {
-                        backgroundColor: 'rgba(244, 67, 54, 0.2)',
-                        borderColor: '#f44336',
-                        color: '#f44336',
-                        transform: 'scale(1.1)',
-                        opacity: 1,
-                        boxShadow: '0 4px 12px rgba(244, 67, 54, 0.3)',
-                      },
-                    }}
-                  >
-                    <DeleteIcon sx={{ fontSize: '1rem' }} />
-                  </Button>
+                  {!openedInfo(vault) && (
+                    <Button
+                      className="vault-delete-button"
+                      onClick={(e) => handleDeleteClick(vault, e)}
+                      variant="outlined"
+                      size="small"
+                      sx={{
+                        position: 'absolute',
+                        bottom: 12,
+                        right: 12,
+                        minWidth: 'auto',
+                        width: 36,
+                        height: 36,
+                        borderRadius: '50%',
+                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        color: 'rgba(255, 255, 255, 0.4)',
+                        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                        backdropFilter: 'blur(8px)',
+                        transition: 'all 0.3s ease',
+                        opacity: 0.7,
+                        '&:hover': {
+                          backgroundColor: 'rgba(244, 67, 54, 0.2)',
+                          borderColor: '#f44336',
+                          color: '#f44336',
+                          transform: 'scale(1.1)',
+                          opacity: 1,
+                          boxShadow: '0 4px 12px rgba(244, 67, 54, 0.3)',
+                        },
+                      }}
+                    >
+                      <DeleteIcon sx={{ fontSize: '1rem' }} />
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             ))}
@@ -304,7 +345,17 @@ const VaultSelector = ({
         </Box>
       )}
 
-      <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
+        {onOpenFile && (
+          <Button
+            variant="outlined"
+            startIcon={<FolderIcon />}
+            onClick={onOpenFile}
+            sx={{ py: 1.5, px: 3, fontSize: '1.1rem', borderRadius: '12px' }}
+          >
+            Open…
+          </Button>
+        )}
         <Button
           variant="contained"
           startIcon={<AddIcon />}

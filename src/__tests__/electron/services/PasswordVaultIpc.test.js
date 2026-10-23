@@ -13,6 +13,9 @@ import {
 } from '../../../electron/services/VaultService.js';
 import { VaultSession } from '../../../electron/services/VaultSession.js';
 import { VaultKeychain } from '../../../electron/services/VaultKeychain.js';
+import { OpenedVaults } from '../../../electron/services/OpenedVaults.js';
+import { VaultSettingsService } from '../../../electron/services/VaultSettingsService.js';
+import { EnvironmentVaultService } from '../../../electron/services/EnvironmentVaultService.js';
 import { fakeSafeStorage } from '../../helpers/fakeSafeStorage.js';
 
 const PW = 'Vault-Pass-12!';
@@ -269,5 +272,224 @@ describe('saved passwords, every vault kind', () => {
     await h['unlock-vault'](ev, 'work', PW, { remember: true });
     await fs.remove(vaultPath());
     expect(await info()).toMatchObject({ count: 0, vaults: [] });
+  });
+});
+
+describe('a vault opened from another folder (New-53)', () => {
+  let elsewhere;
+  let teamFile;
+  let opened;
+  let picked;
+  let handlers;
+
+  beforeEach(async () => {
+    elsewhere = path.join(dir, 'team-share');
+    // Made by another copy of the app, in a folder this one doesn't own.
+    await new VaultService(elsewhere).createVault('team', PW);
+    teamFile = path.join(elsewhere, 'team.vault');
+    opened = new OpenedVaults({ file: path.join(dir, 'data', 'opened.json') });
+    vaultService = new VaultService(path.join(dir, 'vaults'), {
+      links: opened,
+    });
+    picked = teamFile;
+    handlers = createPasswordVaultHandlers({
+      vaultService,
+      session,
+      openSession,
+      keychain,
+      opened,
+      dialog: {
+        showOpenDialog: vi.fn(async () =>
+          picked === null
+            ? { canceled: true, filePaths: [] }
+            : { canceled: false, filePaths: [picked] }
+        ),
+      },
+      getWindow: () => 'window',
+    });
+  });
+
+  const open = () => handlers.general['open-vault-file']();
+  const list = () => handlers.general['get-vaults']();
+
+  it('is listed after the app folder, with its file', async () => {
+    expect(await open()).toEqual({ success: true, name: 'team' });
+    expect(await list()).toEqual({
+      success: true,
+      data: ['work', 'team'],
+      opened: [{ name: 'team', location: teamFile, exists: true }],
+    });
+  });
+
+  it('is unlocked, edited and saved in place, with its backup beside it', async () => {
+    await open();
+    expect((await handlers.vault['unlock-vault'](ev, 'team', PW)).success).toBe(
+      true
+    );
+    const loaded = await vaultService.loadVault('team', PW);
+    expect(loaded.success).toBe(true);
+    const before = fs.readFileSync(teamFile, 'utf8');
+    expect(
+      (await vaultService.saveVault('team', PW, loaded.data)).success
+    ).toBe(true);
+    expect(fs.readFileSync(teamFile, 'utf8')).not.toBe(before);
+    expect(fs.existsSync(path.join(dir, 'vaults', 'team.vault'))).toBe(false);
+
+    await vaultService.fileService.createBackup('team');
+    expect(fs.existsSync(`${teamFile}.backup`)).toBe(true);
+    expect(await vaultService.fileService.hasBackup('team')).toBe(true);
+    // No temp file is left next to it.
+    expect(fs.readdirSync(elsewhere).sort()).toEqual([
+      'team.vault',
+      'team.vault.backup',
+    ]);
+  });
+
+  it('takes a password change and a new recovery key in its own file', async () => {
+    await open();
+    await handlers.vault['unlock-vault'](ev, 'team', PW, { remember: true });
+    expect(
+      (await handlers.vault['change-master-password'](ev, 'team', PW, NEW_PW))
+        .success
+    ).toBe(true);
+    expect(
+      (await new VaultService(elsewhere).verifyPassword('team', NEW_PW)).success
+    ).toBe(true);
+    // The saved password followed, keyed by the file where it really is.
+    expect(await keychain.has(teamFile)).toBe(true);
+    const key = await vaultService.generateRecoveryKey('team', NEW_PW);
+    expect(key.success).toBe(true);
+    expect(
+      (
+        await new VaultService(elsewhere).verifyRecoveryKey(
+          'team',
+          key.recoveryKey
+        )
+      ).success
+    ).toBe(true);
+  });
+
+  it('reads and writes its settings in its own file', async () => {
+    await open();
+    const settings = new VaultSettingsService(path.join(dir, 'vaults'), {
+      links: opened,
+    });
+    expect((await settings.getVaultSettings('team', PW)).success).toBe(true);
+    expect(
+      (await settings.updateVaultSettings('team', PW, { autoLockMinutes: 9 }))
+        .success
+    ).toBe(true);
+    const inPlace = await new VaultSettingsService(elsewhere).getVaultSettings(
+      'team',
+      PW
+    );
+    expect(inPlace.settings.autoLockMinutes).toBe(9);
+  });
+
+  it('is removed from the list, not deleted; its saved password goes', async () => {
+    await open();
+    await handlers.vault['unlock-vault'](ev, 'team', PW, { remember: true });
+    expect(await handlers.vault['delete-vault'](ev, 'team', PW)).toEqual({
+      success: false,
+      code: 'INVALID',
+      error:
+        'team was opened from another folder. Remove it from the list instead; its file stays.',
+    });
+    expect(await handlers.vault['remove-vault'](ev, 'team')).toEqual({
+      success: false,
+      code: 'INVALID',
+      error: 'Lock the vault before removing it from the list',
+    });
+    session.close();
+    expect(await handlers.vault['remove-vault'](ev, 'team')).toEqual({
+      success: true,
+      location: teamFile,
+    });
+    expect(fs.existsSync(teamFile)).toBe(true);
+    expect(await keychain.has(teamFile)).toBe(false);
+    expect((await list()).data).toEqual(['work']);
+  });
+
+  it("won't remove a vault of the app's folder", async () => {
+    expect((await handlers.vault['remove-vault'](ev, 'work')).error).toContain(
+      "is in the app's folder"
+    );
+  });
+
+  it('says so when its file is gone', async () => {
+    await open();
+    await fs.remove(teamFile);
+    expect((await list()).opened).toEqual([
+      { name: 'team', location: teamFile, exists: false },
+    ]);
+    const result = await handlers.vault['unlock-vault'](ev, 'team', PW);
+    expect(result).toMatchObject({ success: false, code: 'NOT_FOUND' });
+    expect(result.error).toBe(
+      `The file of team isn't there any more (${teamFile}).`
+    );
+  });
+
+  it('keeps its name when opened again, and avoids an app-folder name', async () => {
+    await open();
+    expect(await open()).toEqual({ success: true, name: 'team' });
+    await new VaultService(path.join(dir, 'other')).createVault('work', PW);
+    picked = path.join(dir, 'other', 'work.vault');
+    expect(await open()).toEqual({ success: true, name: 'work (2)' });
+  });
+
+  it("gives an app-folder vault's own name, listing nothing new", async () => {
+    picked = path.join(dir, 'vaults', 'work.vault');
+    expect(await open()).toEqual({ success: true, name: 'work' });
+    expect(opened.list()).toEqual([]);
+  });
+
+  it('refuses an env vault, a non-vault and an unreadable file', async () => {
+    picked = path.join(dir, 'proj', '.env.vault');
+    await EnvironmentVaultService.createVault(picked, PW);
+    expect((await open()).error).toBe(
+      '.env.vault is an environment vault, not a password vault.'
+    );
+    picked = path.join(dir, 'notes.json');
+    await fs.writeJson(picked, { hello: 'world' });
+    expect((await open()).error).toBe("notes.json isn't a password vault.");
+    picked = path.join(dir, 'garbage.vault');
+    await fs.writeFile(picked, 'not json');
+    expect((await open()).error).toBe("garbage.vault isn't a vault file.");
+    expect(opened.list()).toEqual([]);
+  });
+
+  it('does nothing when the dialog is canceled', async () => {
+    picked = null;
+    expect(await open()).toEqual({ success: false, canceled: true });
+  });
+
+  it('is not offered without the list or a dialog', async () => {
+    const plain = createPasswordVaultHandlers({
+      vaultService,
+      session,
+      openSession,
+    });
+    expect((await plain.general['open-vault-file']()).code).toBe('INVALID');
+    expect(await plain.general['get-vaults']()).toMatchObject({
+      success: true,
+      opened: [],
+    });
+  });
+
+  it('reports a list that cannot be read', async () => {
+    const broken = createPasswordVaultHandlers({
+      vaultService: /** @type {any} */ ({
+        fileService: vaultService.fileService,
+        getAvailableVaults: async () => {
+          throw new Error('disk gone');
+        },
+      }),
+      session,
+      openSession,
+    });
+    expect(await broken.general['get-vaults']()).toEqual({
+      success: false,
+      error: 'disk gone',
+    });
   });
 });

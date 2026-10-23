@@ -57,6 +57,7 @@ import { createEnvVaultHandlers } from '../src/electron/services/EnvVaultIpc.js'
 import { EnvVaultWatcher } from '../src/electron/services/EnvVaultWatcher.js';
 import { VaultKeychain } from '../src/electron/services/VaultKeychain.js';
 import { createPasswordVaultHandlers } from '../src/electron/services/PasswordVaultIpc.js';
+import { OpenedVaults } from '../src/electron/services/OpenedVaults.js';
 import { EnvVaultRecents } from '../src/electron/services/EnvVaultRecents.js';
 import { AppSettingsStore } from '../src/electron/services/AppSettingsStore.js';
 import {
@@ -104,10 +105,15 @@ class ElectronApp {
       // the vault is unlocked instead of re-running PBKDF2 per call.
       const deriveKey = (password, salt, iterations) =>
         this.session.deriveKey(password, salt, iterations);
-      this.vaultService = new VaultService(vaultDir, { deriveKey });
-      this.importExportService = new ImportExportService(vaultDir);
+      // Password vaults opened from other folders (New-53): one list, so
+      // every service maps their names to the same files.
+      this.openedVaults = new OpenedVaults();
+      const links = this.openedVaults;
+      this.vaultService = new VaultService(vaultDir, { deriveKey, links });
+      this.importExportService = new ImportExportService(vaultDir, { links });
       this.vaultSettingsService = new VaultSettingsService(vaultDir, {
         deriveKey,
+        links,
       });
       // Set only by the native open dialog (`select-import-file`).
       this.selectedImportPath = null;
@@ -376,16 +382,6 @@ class ElectronApp {
       return { success: true };
     });
 
-    // IPC Handlers using the new VaultService
-    handle('get-vaults', async () => {
-      try {
-        const vaults = await this.vaultService.getAvailableVaults();
-        return { success: true, data: vaults };
-      } catch (error) {
-        console.error('Error getting vaults:', error);
-        return { success: false, error: error.message };
-      }
-    });
     // Session lifecycle: these are the only handlers that receive the master
     // password from the renderer, and none of them sends it back.
     const passwordVaultHandlers = createPasswordVaultHandlers({
@@ -394,6 +390,9 @@ class ElectronApp {
       openSession: (vaultName, password) =>
         this.openSession(vaultName, password),
       keychain,
+      opened: this.openedVaults,
+      dialog,
+      getWindow: () => this.mainWindow,
     });
     for (const [channel, fn] of Object.entries(passwordVaultHandlers.vault)) {
       handleVault(channel, fn);
