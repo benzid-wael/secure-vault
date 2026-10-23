@@ -512,8 +512,9 @@ export class EnvironmentVaultService {
         result = await mutate(vault, { revision });
       } catch (error) {
         // Refusals a caller can act on keep their code: LIMIT (the version
-        // cap), CONFLICT (the change would overwrite something).
-        const code = ['LIMIT', 'CONFLICT'].includes(error.code)
+        // cap), CONFLICT (the change would overwrite something), STALE (what
+        // the change was based on moved meanwhile).
+        const code = ['LIMIT', 'CONFLICT', 'STALE'].includes(error.code)
           ? error.code
           : 'ERROR';
         return fail(code, error.message);

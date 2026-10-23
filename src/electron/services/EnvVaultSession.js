@@ -20,6 +20,8 @@ const locked = () => ({
  * @property {string} revision The file revision the renderer was shown.
  * @property {Record<string, string>} [stamps] A hash per own key at that
  *   revision (EnvVaultIpc `stampsOf`), for merging later commits.
+ * @property {Record<string, string>} [rows] A hash per row shown, inherited
+ *   ones included (EnvVaultIpc `rowStampsOf`), for reveal and copy.
  */
 
 /**

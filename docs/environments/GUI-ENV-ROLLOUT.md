@@ -603,3 +603,17 @@ a.env b.env` writes one version with the keys of every file (a later file
 history dev` shows one new version.
 - **Rollback:** reinstall the previous CLI. Vaults written by this one stay
   valid.
+
+### New-31: reveal, copy, transfer and import check only their keys
+
+- **Runtime change (gated by the Environments UI gate):** when the vault
+  file changed since the page was shown (a CLI command, another app), these
+  actions go ahead unless one of their keys changed; before, any change
+  anywhere in the vault refused them with "changed elsewhere, reload".
+- **Schema or config change:** none.
+- **Before it ships:** nothing beyond the gate's own criteria.
+- **Gated by:** the Environments UI gate.
+- **Verify after release:** open `prod` in the app, run `vault env set X 1
+-e prod`, then reveal and copy another key: both work. Run `vault env set`
+  on the key you reveal: the app asks to reload.
+- **Rollback:** reinstall the previous app. Nothing it wrote differs.

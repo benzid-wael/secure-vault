@@ -1942,7 +1942,29 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### New-31: Merge, not STALE, for reveal, copy, transfer and import
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+  merged, not released.
+- **Built:** in `EnvVaultIpc`, a view keeps a hash per row it shows
+  (`rowStampsOf`, inherited rows included) next to its own-key `stamps`,
+  both set by one `showing()` wherever the view's revision moves (view,
+  refresh, commit, transfer, import, rollback, squash; rollback and squash
+  used to leave `stamps` behind). When the file changed since:
+  - reveal, copy and edit-text compare only their keys (edit-text: all of
+    the env's rows);
+  - transfer compares the keys it copies or moves, inside the write; the
+    target's existing keys are still checked against the current file;
+  - import-pick previews against the current file and records its stamps;
+    apply compares the keys it sets, and for `replace` every own key (one
+    added meanwhile would be removed unseen).
+    A refusal is `STALE` with `changed` (the keys); `transact` now keeps a
+    `STALE` thrown by the mutation. The page's existing STALE handling
+    (reload) is unchanged. RFC §6.4 says so.
+- **Validation done:** contract tests: reveal, copy (an inherited key
+  changed in the parent), transfer and import each succeed over a change
+  to another key and refuse a change to their own with `changed`; the
+  transfer keeps the other change; `replace` refuses a key added
+  meanwhile and leaves it. All six fail on the previous code.
+  `EnvVaultIpc.js` 97.9% lines.
 - **Found:** building Task 10, 2026-10-22. Only `env:commit` merges; reveal,
   copy, transfer and import still refuse a changed file with `STALE`. The
   watcher (Task 16) makes this rare: the page reloads first.

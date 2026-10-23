@@ -25,20 +25,42 @@ function stampsOf(vault, env) {
   return Object.fromEntries(
     Object.entries(version.vars).map(([key, value]) => [
       key,
-      crypto
-        .createHash('sha256')
-        .update(
-          JSON.stringify([
-            value,
-            version.nonSensitive.includes(key),
-            version.required.includes(key),
-            version.comments?.[key] ?? '',
-          ])
-        )
-        .digest('hex'),
+      hash([
+        value,
+        version.nonSensitive.includes(key),
+        version.required.includes(key),
+        version.comments?.[key] ?? '',
+      ]),
     ])
   );
 }
+
+/**
+ * A hash per row the page shows for `env`, inherited ones included, so
+ * reveal and copy can tell whether the key they act on changed since the
+ * page was shown (New-31).
+ *
+ * @returns {Record<string, string>}
+ */
+function rowStampsOf(vault, env) {
+  return Object.fromEntries(
+    describeEnv(vault, env).map((row) => [row.key, hash(row)])
+  );
+}
+
+const hash = (data) =>
+  crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex');
+
+/** The keys among `keys` whose stamp differs between `before` and `now`. */
+const changedKeys = (keys, before, now) =>
+  [...new Set(keys)].filter((key) => now[key] !== before[key]);
+
+/** The failure for an action on keys that changed elsewhere (New-31). */
+const staleKeys = (changed) =>
+  Object.assign(
+    new Error(`Changed elsewhere meanwhile: ${changed.join(', ')}`),
+    { code: 'STALE', changed }
+  );
 
 /** Whether following `extends` from `env` comes back to it. */
 function extendsLoop(vault, env) {
@@ -106,8 +128,9 @@ const masked = (rows) =>
  * Channels taking a vault id resolve it through the registry first: an
  * unknown or forged id gets `INVALID` before any service runs.
  *
- * MVP scope: one-key edits through `env:commit` against the view's base
- * revision; a changed file gives `STALE` (no rebase yet, Task 10).
+ * A file changed elsewhere since a view was shown doesn't block an action
+ * on that view unless a key it acts on changed: `env:commit` answers
+ * `CONFLICT`, the others `STALE` with the `changed` keys (Task 10, New-31).
  *
  * @param {Object} deps
  * @param {import('./EnvVaultRegistry.js').EnvVaultRegistry} deps.registry
@@ -144,8 +167,10 @@ export function createEnvVaultHandlers({
   /**
    * Parsed .env files waiting for the user to confirm an import (Task 27),
    * by one-time token. Values stay in main; the page sees key names only.
+   * `revision` and `stamps` are those of the env the preview compared with.
    * @type {Map<string, {id: string, viewId: string, fileName: string,
-   *   vars: Record<string, string>, comments: Record<string, string>}>}
+   *   vars: Record<string, string>, comments: Record<string, string>,
+   *   revision: string, stamps: Record<string, string>}>}
    */
   const pendingImports = new Map();
   const MAX_PENDING_IMPORTS = 4;
@@ -192,33 +217,70 @@ export function createEnvVaultHandlers({
       await session.run(id, (vaultPath, auth) => service.read(vaultPath, auth))
     );
 
-  const write = async (id, mutate, expectedRevision) =>
-    noted(
+  /** A write on the unlocked vault; a `STALE` refusal keeps its `changed`. */
+  const write = async (id, mutate, expectedRevision) => {
+    let changed = null;
+    const result = noted(
       id,
       await session.run(id, (vaultPath, auth) =>
-        service.transact(vaultPath, auth, mutate, {
-          expectedRevision,
-          tool: 'gui',
-        })
+        service.transact(
+          vaultPath,
+          auth,
+          async (vault, info) => {
+            try {
+              return await mutate(vault, info);
+            } catch (error) {
+              changed = error.changed ?? null;
+              throw error;
+            }
+          },
+          { expectedRevision, tool: 'gui' }
+        )
       )
     );
+    return changed && result.code === 'STALE' ? { ...result, changed } : result;
+  };
+
+  /** Record that `view` now shows `vault` at `revision`. */
+  const showing = (view, vault, revision) => {
+    view.revision = revision;
+    view.stamps = stampsOf(vault, view.env);
+    view.rows = rowStampsOf(vault, view.env);
+  };
 
   /**
    * The rows of a view, read fresh, or a failure: `INVALID` for an unknown
-   * view, `STALE` if the file moved since it was shown (act on what the user
-   * is looking at, or on nothing).
+   * view, `STALE` if one of `keys` (all rows when null) changed since the
+   * page was shown (act on what the user is looking at, or on nothing). A
+   * change to other keys or other envs doesn't block it (New-31).
+   *
+   * @param {string[] | null} [keys]
    */
-  const rowsOfView = async (id, viewId) => {
+  const rowsOfView = async (id, viewId, keys = null) => {
     const view = session.getView(id, viewId);
     if (!view) return invalid('Unknown view');
     const result = await read(id);
     if (!result.success) return result;
     if (result.revision !== view.revision) {
-      return {
-        success: false,
-        code: 'STALE',
-        error: 'The vault changed since it was shown',
-      };
+      const before = view.rows ?? {};
+      const now = result.vault.environments[view.env]
+        ? rowStampsOf(result.vault, view.env)
+        : null;
+      const changed = now
+        ? changedKeys(
+            keys ?? [...Object.keys(before), ...Object.keys(now)],
+            before,
+            now
+          )
+        : (keys ?? Object.keys(before));
+      if (!now || changed.length > 0) {
+        return {
+          success: false,
+          code: 'STALE',
+          changed,
+          error: 'The vault changed since it was shown',
+        };
+      }
     }
     return {
       success: true,
@@ -245,11 +307,11 @@ export function createEnvVaultHandlers({
       };
     }
     const vars = masked(describeEnv(result.vault, env));
-    let view = viewId && session.getView(id, viewId);
-    if (view) view.revision = result.revision;
-    const shownId = view ? viewId : session.openView(id, env, result.revision);
-    view = session.getView(id, shownId);
-    view.stamps = stampsOf(result.vault, env);
+    const shownId =
+      viewId && session.getView(id, viewId)
+        ? viewId
+        : session.openView(id, env, result.revision);
+    showing(session.getView(id, shownId), result.vault, result.revision);
     return {
       success: true,
       viewId: shownId,
@@ -438,7 +500,7 @@ export function createEnvVaultHandlers({
     }),
 
     'env:reveal': withVault(async ({ id }, viewId, key) => {
-      const found = await rowsOfView(id, viewId);
+      const found = await rowsOfView(id, viewId, [key]);
       if (!found.success) return found;
       const row = found.rows.find((r) => r.key === key);
       return row ? { success: true, value: row.value } : notFound();
@@ -450,7 +512,7 @@ export function createEnvVaultHandlers({
       if (!['value', 'pair', 'key'].includes(format)) {
         return invalid('Unknown copy format');
       }
-      const found = await rowsOfView(id, viewId);
+      const found = await rowsOfView(id, viewId, [key]);
       if (!found.success) return found;
       const row = found.rows.find((r) => r.key === key);
       if (!row) return notFound();
@@ -466,9 +528,10 @@ export function createEnvVaultHandlers({
       return { success: true, clearsInMs };
     }),
 
-    // Copy or move keys of the view's env to another env, as one transaction
-    // against the revision on screen. Keys the target already has are
-    // refused with CONFLICT unless `overwrite`.
+    // Copy or move keys of the view's env to another env, as one transaction.
+    // A file changed elsewhere meanwhile blocks it only when one of `keys`
+    // changed (STALE, New-31). Keys the target already has are refused with
+    // CONFLICT unless `overwrite`.
     'env:transfer': withVault(async ({ id }, request) => {
       const {
         viewId,
@@ -484,11 +547,21 @@ export function createEnvVaultHandlers({
         return invalid('Choose at least one key');
       }
       if (target === view.env) return invalid('Choose another environment');
+      let after = null;
       const result = await write(
         id,
-        (vault) => {
+        (vault, { revision }) => {
           if (!vault.environments[target]) {
             throw new Error(`Environment '${target}' not found`);
+          }
+          if (revision !== view.revision) {
+            if (!vault.environments[view.env]) throw staleKeys(keys);
+            const changed = changedKeys(
+              keys,
+              view.rows ?? {},
+              rowStampsOf(vault, view.env)
+            );
+            if (changed.length > 0) throw staleKeys(changed);
           }
           const rows = describeEnv(vault, view.env);
           const picked = keys.map((key) => {
@@ -529,11 +602,12 @@ export function createEnvVaultHandlers({
               { message: `Moved to ${target} in the desktop app` }
             );
           }
+          after = vault;
         },
-        view.revision
+        null
       );
       if (!result.success) return result;
-      view.revision = result.revision;
+      showing(view, after, result.revision);
       return { success: true, revision: result.revision };
     }),
 
@@ -634,10 +708,15 @@ export function createEnvVaultHandlers({
      * warnings. Values stay in main until `env:import-apply`.
      */
     'env:import-pick': withVault(async ({ id }, viewId) => {
-      const found = await rowsOfView(id, viewId);
-      if (!found.success) return found;
+      const view = session.getView(id, viewId);
+      if (!view) return invalid('Unknown view');
+      const current = await read(id);
+      if (!current.success) return current;
+      if (!current.vault.environments[view.env]) {
+        return { success: false, code: 'NOT_FOUND', error: 'Environment gone' };
+      }
       const picked = await dialog.showOpenDialog(getWindow(), {
-        title: `Import into ${found.view.env}`,
+        title: `Import into ${view.env}`,
         properties: ['openFile', 'showHiddenFiles'],
       });
       if (picked.canceled || picked.filePaths.length === 0) {
@@ -656,8 +735,12 @@ export function createEnvVaultHandlers({
       }
       const parsed = parseDotenv(content);
       dropImports();
+      // The preview compares with the file now, whatever the page shows;
+      // apply checks the keys it touches against this (New-31).
       const own = new Map(
-        found.rows.filter((r) => !r.inheritedFrom).map((r) => [r.key, r])
+        describeEnv(current.vault, view.env)
+          .filter((r) => !r.inheritedFrom)
+          .map((r) => [r.key, r])
       );
       const keys = Object.keys(parsed.vars)
         .sort()
@@ -681,6 +764,8 @@ export function createEnvVaultHandlers({
         fileName: path.basename(filePath),
         vars: parsed.vars,
         comments: parsed.comments,
+        revision: current.revision,
+        stamps: stampsOf(current.vault, view.env),
       });
       return {
         success: true,
@@ -709,9 +794,28 @@ export function createEnvVaultHandlers({
       const picked = Object.keys(pending.vars).filter(
         (key) => !Array.isArray(keys) || keys.includes(key)
       );
+      let after = null;
       const result = await write(
         id,
-        (vault) => {
+        (vault, { revision }) => {
+          if (revision !== pending.revision) {
+            // The keys it sets, and for `replace` every own key: one added
+            // elsewhere meanwhile would be removed unseen.
+            if (!vault.environments[view.env]) throw staleKeys(picked);
+            const now = stampsOf(vault, view.env);
+            const changed = changedKeys(
+              mode === 'replace'
+                ? [
+                    ...picked,
+                    ...Object.keys(pending.stamps),
+                    ...Object.keys(now),
+                  ]
+                : picked,
+              pending.stamps,
+              now
+            );
+            if (changed.length > 0) throw staleKeys(changed);
+          }
           const own = Object.keys(vault.getActiveVersion(view.env)?.vars ?? {});
           /** @type {Array<any>} */
           const ops = picked.map((key) => ({
@@ -729,11 +833,12 @@ export function createEnvVaultHandlers({
           vault.applyVarChanges(view.env, ops, {
             message: `Imported from ${pending.fileName} in the desktop app`,
           });
+          after = vault;
         },
-        view.revision
+        null
       );
       if (!result.success) return result;
-      view.revision = result.revision;
+      showing(view, after, result.revision);
       return { success: true, revision: result.revision, count: picked.length };
     }),
 
@@ -796,7 +901,7 @@ export function createEnvVaultHandlers({
       const ops = Array.isArray(changeset.ops) ? changeset.ops : [];
       let conflicts = [];
       let rebased = false;
-      let stamps = null;
+      let after = null;
       const result = await write(
         id,
         (vault, { revision }) => {
@@ -832,15 +937,14 @@ export function createEnvVaultHandlers({
           vault.applyVarChanges(view.env, ops, {
             message: 'Edited in the desktop app',
           });
-          stamps = stampsOf(vault, view.env);
+          after = vault;
         },
         null
       );
       if (!result.success) {
         return result.code === 'CONFLICT' ? { ...result, conflicts } : result;
       }
-      view.revision = result.revision;
-      view.stamps = stamps;
+      showing(view, after, result.revision);
       return { success: true, revision: result.revision, rebased };
     }),
 
@@ -967,13 +1071,17 @@ export function createEnvVaultHandlers({
       const view = session.getView(id, viewId);
       if (!view) return invalid('Unknown view');
       if (!Number.isInteger(n)) return invalid('Choose a version');
+      let after = null;
       const result = await write(
         id,
-        (vault) => vault.rollback(view.env, n),
+        (vault) => {
+          vault.rollback(view.env, n);
+          after = vault;
+        },
         view.revision
       );
       if (!result.success) return result;
-      view.revision = result.revision;
+      showing(view, after, result.revision);
       return { success: true, revision: result.revision };
     }),
 
@@ -988,17 +1096,19 @@ export function createEnvVaultHandlers({
         return invalid('Keep at least one version');
       }
       let snapshotPath = null;
+      let after = null;
       const result = await write(
         id,
         async (vault) => {
           vault.getHistory(view.env); // a missing env throws before the copy
           snapshotPath = await service.snapshot(vaultPath, 'squashed');
           vault.squash(view.env, { keep });
+          after = vault;
         },
         view.revision
       );
       if (!result.success) return result;
-      view.revision = result.revision;
+      showing(view, after, result.revision);
       return {
         success: true,
         revision: result.revision,

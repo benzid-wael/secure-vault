@@ -359,6 +359,13 @@ sequenceDiagram
     end
 ```
 
+Reveal, copy, transfer and import check the keys they act on the same way
+(New-31): a change elsewhere to other keys or other envs doesn't block them;
+a change to one of their keys answers `STALE` with the `changed` keys.
+Reveal and copy compare the rows the page shows, inherited ones included.
+An import compares with the env its preview was made from, and `replace`
+checks every own key, since it would remove one added meanwhile.
+
 Structural ops (create/rename/copy/delete env, extends, description, rollback,
 squash, change-password, init) are **not** rebased. They carry
 `expectedRevision`. On `STALE` the GUI reloads and the user repeats the action.

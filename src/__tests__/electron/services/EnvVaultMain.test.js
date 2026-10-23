@@ -760,7 +760,7 @@ describe('env vault IPC handlers (contract)', () => {
     expect((await h['env:view'](ev, id, 'nope')).code).toBe('NOT_FOUND');
   });
 
-  it('reveals one value, and only at the revision on screen', async () => {
+  it('reveals one value, unless that key changed since it was shown', async () => {
     await unlock();
     const view = await h['env:view'](ev, id, 'prod');
     expect(await h['env:reveal'](ev, id, view.viewId, 'API_KEY')).toEqual({
@@ -773,10 +773,18 @@ describe('env vault IPC handlers (contract)', () => {
     expect((await h['env:reveal'](ev, id, 'bogus', 'API_KEY')).code).toBe(
       'INVALID'
     );
+    // New-31: another key changing doesn't block it; this one does.
     await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'X', '1');
-    expect((await h['env:reveal'](ev, id, view.viewId, 'API_KEY')).code).toBe(
-      'STALE'
+    expect((await h['env:reveal'](ev, id, view.viewId, 'API_KEY')).value).toBe(
+      SECRET
     );
+    await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'API_KEY', 'k2');
+    expect(await h['env:reveal'](ev, id, view.viewId, 'API_KEY')).toMatchObject(
+      { success: false, code: 'STALE', changed: ['API_KEY'] }
+    );
+    expect(
+      JSON.stringify(await h['env:reveal'](ev, id, view.viewId, 'API_KEY'))
+    ).not.toContain('k2');
   });
 
   it('commits against the view’s base and refuses a stale one', async () => {
@@ -1049,10 +1057,23 @@ describe('env vault IPC handlers (contract)', () => {
     expect((await h['env:copy'](ev, id, 'bogus', 'API_KEY')).code).toBe(
       'INVALID'
     );
+    // New-31: per key, inherited ones included.
     await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'X', '1');
-    expect((await h['env:copy'](ev, id, view.viewId, 'API_KEY')).code).toBe(
+    expect((await h['env:copy'](ev, id, view.viewId, 'API_KEY')).success).toBe(
+      true
+    );
+    await EnvironmentVaultService.setEnv(
+      filePath,
+      PW,
+      'base',
+      'LOG_LEVEL',
+      'warn',
+      { isPublic: true }
+    );
+    expect((await h['env:copy'](ev, id, view.viewId, 'LOG_LEVEL')).code).toBe(
       'STALE'
     );
+    expect(clip.clipboard.readText()).toBe(SECRET);
   });
 
   it('copies keys to another env, keeping their sensitivity', async () => {
@@ -1133,10 +1154,28 @@ describe('env vault IPC handlers (contract)', () => {
     ).toBe('INVALID');
     expect((await fs.readFile(filePath)).equals(before)).toBe(true);
 
+    // New-31: a change to a key it moves blocks it, with the key named.
+    await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'HOST', 'h9');
+    const stale = await transfer({ keys: ['HOST'], target: 'base' });
+    expect(stale).toMatchObject({ code: 'STALE', changed: ['HOST'] });
+    expect(stale.error).toBe('Changed elsewhere meanwhile: HOST');
+  });
+
+  it('transfers over a change to other keys made elsewhere (New-31)', async () => {
+    await unlock();
+    const view = await h['env:view'](ev, id, 'prod');
     await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'X', '1');
-    expect((await transfer({ keys: ['HOST'], target: 'base' })).code).toBe(
-      'STALE'
-    );
+    const moved = await h['env:transfer'](ev, id, {
+      viewId: view.viewId,
+      keys: ['HOST'],
+      target: 'base',
+      mode: 'move',
+    });
+    expect(moved.success).toBe(true);
+    const vault = (await EnvironmentVaultService.read(filePath, PW)).vault;
+    expect(vault.getActiveVersion('prod').vars).not.toHaveProperty('HOST');
+    expect(vault.getActiveVersion('prod').vars.X).toBe('1'); // kept
+    expect(vault.getActiveVersion('base').vars).toHaveProperty('HOST');
   });
 
   it('exports an env, resolved, to the file picked in the dialog, mode 0600', async () => {
@@ -1646,7 +1685,7 @@ describe('env vault IPC: compare, validate, import, template, password (Tasks 26
     expect((await active('prod')).vars).toEqual({ HOST: 'h2' });
   });
 
-  it('import: canceled pick, cancel, stale view, bad mode', async () => {
+  it('import: canceled pick, cancel, a key changed meanwhile, bad mode', async () => {
     const view = await h['env:view'](ev, id, 'prod');
     expect(await h['env:import-pick'](ev, id, view.viewId)).toEqual({
       success: false,
@@ -1664,11 +1703,40 @@ describe('env vault IPC: compare, validate, import, template, password (Tasks 26
     expect(
       (await h['env:import-apply'](ev, id, preview.token, { mode: 'x' })).code
     ).toBe('INVALID');
+    // New-31: a change elsewhere to a key it sets blocks it.
     preview = await h['env:import-pick'](ev, id, view.viewId);
+    await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'HOST', 'h9');
+    expect(await h['env:import-apply'](ev, id, preview.token)).toMatchObject({
+      code: 'STALE',
+      changed: ['HOST'],
+    });
+  });
+
+  it('import: applies over unrelated changes; replace sees every own key (New-31)', async () => {
+    const view = await h['env:view'](ev, id, 'prod');
+    picked = path.join(dir, 'in.env');
+    await fs.writeFile(picked, 'HOST=h2\n');
+
+    let preview = await h['env:import-pick'](ev, id, view.viewId);
     await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'X', '1');
-    expect((await h['env:import-apply'](ev, id, preview.token)).code).toBe(
-      'STALE'
+    expect((await h['env:import-apply'](ev, id, preview.token)).success).toBe(
+      true
     );
+    let vars = (
+      await EnvironmentVaultService.read(filePath, PW)
+    ).vault.getActiveVersion('prod').vars;
+    expect(vars).toMatchObject({ HOST: 'h2', X: '1' });
+
+    // replace would remove Y, added after the preview: refused.
+    preview = await h['env:import-pick'](ev, id, view.viewId);
+    await EnvironmentVaultService.setEnv(filePath, PW, 'prod', 'Y', '2');
+    expect(
+      await h['env:import-apply'](ev, id, preview.token, { mode: 'replace' })
+    ).toMatchObject({ code: 'STALE', changed: ['Y'] });
+    vars = (
+      await EnvironmentVaultService.read(filePath, PW)
+    ).vault.getActiveVersion('prod').vars;
+    expect(vars.Y).toBe('2');
   });
 
   it('saves a template with required keys marked, 0600', async () => {
