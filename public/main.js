@@ -80,7 +80,11 @@ class ElectronApp {
 
       console.log('Initializing services...');
       this.windowManager = new WindowManager();
-      this.menuService = new MenuService();
+      // File → Lock Vault locks every env vault in main (New-46); the page
+      // locks the password vault.
+      this.menuService = new MenuService({
+        onLock: () => this.envSession?.lockAll(),
+      });
       this.securityManager = new SecurityManager();
 
       console.log('Initializing vault services...');

@@ -660,3 +660,15 @@ history dev` shows one new version.
 - **Verify after release:** on macOS, Open… a repo's `.env.vault`; if it's
   greyed out, All files lets you pick it and it opens.
 - **Rollback:** reinstall the previous app; the extra setting is ignored.
+
+### New-46: File → Lock Vault locks env vaults too
+
+- **Runtime change:** Cmd/Ctrl+L (File → Lock Vault) also locks every
+  unlocked env vault, in main. With the Environments UI gate off there are
+  none, so nothing changes there.
+- **Schema or config change:** none.
+- **Before it ships:** nothing.
+- **Gated by:** effectively the Environments UI gate.
+- **Verify after release:** unlock an env vault, press Cmd/Ctrl+L: its
+  card shows no "Unlocked" chip and opening it asks for the password.
+- **Rollback:** reinstall the previous app.

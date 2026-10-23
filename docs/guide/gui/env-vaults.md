@@ -62,7 +62,8 @@ the app forgets it and asks you to type the new one. **Forget saved
 password** in the vault's header drops it on purpose.
 
 **Lock** locks the vault. **Vaults** goes back to the list and leaves it
-unlocked. A vault also locks by itself:
+unlocked. **File → Lock Vault** (Ctrl/Cmd+L) locks every vault at once,
+environment vaults included. A vault also locks by itself:
 
 - after a while without activity on its own screen (5 minutes unless you
   change it in [Settings](#settings));

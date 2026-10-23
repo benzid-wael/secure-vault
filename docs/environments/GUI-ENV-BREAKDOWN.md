@@ -2349,7 +2349,23 @@ import` says it "creates a new version with all vars from the file(s)"
 
 ### New-46: The "Lock Vault" menu item doesn't lock env vaults
 
-- **Status:** ⬜ found 2026-10-23 while writing Task 31.
+- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+  merged, not released.
+- **Decided:** it locks every unlocked env vault, not just the one on
+  screen: the shortcut is what a user presses before stepping away, like
+  sleep and screen lock, which already lock them all.
+- **Built:** `MenuService` takes `onLock`, run in main before the page is
+  told; main passes `envSession.lockAll()`. Locking in main means a stuck
+  page can't keep env vaults open. The page still locks the password vault
+  as before; each locked env vault sends `env-vault-locked`, so its screen
+  returns to the list with "The vault was locked." Label unchanged. Guide
+  updated.
+- **Validation done:** unit: the File → Lock Vault item (Cmd/Ctrl+L) runs
+  `onLock` before sending `menu-lock-vault`, and still sends it without
+  one. `MenuService.js` 75% lines. **Not covered:** the `main.js` wiring
+  (`envSession.lockAll` on the menu); e2e can't press a native menu
+  accelerator (a synthetic keydown doesn't reach it). Check by hand: unlock
+  an env vault, press Cmd/Ctrl+L, the list shows it locked.
 - **Found:** File → "Lock Vault" (Cmd/Ctrl+L) only locks the password vault
   (`App.jsx`); an unlocked env vault stays unlocked.
 - **Goal:** the menu item, and its shortcut, lock the env vault on screen
