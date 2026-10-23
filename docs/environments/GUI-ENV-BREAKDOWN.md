@@ -184,6 +184,14 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 - **Coverage rule for this plan:** ≥70% **lines** on every file a task adds or
   changes, and project totals never below the baseline above (decided
   2026-10-21). How to measure it for excluded paths is New-1.
+- **Which copies go through `ClipboardService`** (New-3, author,
+  2026-10-23): **every copy in the app goes through main**; secrets are
+  cleared after 30 s unless the clipboard changed since, the rest is never
+  cleared. Secrets are: password-type fields of password entries, grid-card
+  codes (including the automatic copy on lookup), the recovery key (30 s,
+  like the rest: no longer time for it), and env vault values as already
+  built. Username, URL and other non-secret fields are copied by main but
+  not cleared. The app has no TOTP codes, though New-3 named them.
 
 ---
 
@@ -1203,7 +1211,12 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-3: Decide which secrets go through `ClipboardService`
 
-- **Status:** ⬜ not started (decision needed from the author).
+- **Status:** ✅ decided 2026-10-23 by the author: all secrets, 30 s for
+  each, the recovery key included; non-secret fields through main too, never
+  cleared. Recorded under Decisions. Copy sites found: `PasswordManager` /
+  `EntryList` (any copyable entry field), `Level3CardGrid` (lookup
+  auto-copy and the result's copy button), `RecoveryKeyDisplay`. Task 22
+  builds it.
 - **Found:** Task 0, 2026-10-21 (Correction 3).
 - **Goal:** A recorded decision on which renderer copy sites move to main:
   password fields, TOTP codes, the recovery key.
