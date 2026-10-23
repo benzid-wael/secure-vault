@@ -38,6 +38,13 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Changed
 
+- **`vault env rename` no longer breaks what builds on the environment.**
+  Environments that extend it now extend the new name (before, they were
+  left pointing at a name that no longer existed), and `{{env:old/KEY}}`
+  references in every environment are rewritten to the new name, each
+  environment that had any getting a new version. The command says how many
+  it updated. `--keep-references` leaves references as they are. The
+  desktop app's rename does the same, and asks first.
 - **An unlocked vault locks after 5 minutes without activity.** Keys,
   clicks, scrolling and touch in the app window count as activity; the app
   says why the vault locked. Change the time in Configuration (menu or

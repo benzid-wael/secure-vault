@@ -130,6 +130,19 @@ describe('EnvironmentVault', () => {
         "Environment 'missing' not found"
       );
     });
+
+    it('moves the envs that extend it along (New-44)', () => {
+      const vault = createSampleVault();
+      vault.addEnvironment('qa');
+      vault.setExtends('qa', 'staging');
+      vault.setExtends('production', 'staging');
+      vault.addEnvironment('other');
+      vault.setExtends('other', 'production');
+      vault.renameEnvironment('staging', 'stage');
+      expect(vault.environments.qa.extends).toBe('stage');
+      expect(vault.environments.production.extends).toBe('stage');
+      expect(vault.environments.other.extends).toBe('production');
+    });
   });
 
   describe('addVersion', () => {

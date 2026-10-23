@@ -130,6 +130,11 @@ export class EnvironmentVault {
 
     this.environments[newName] = this.environments[oldName];
     delete this.environments[oldName];
+    // Envs that extended it follow (New-44): a parent that no longer exists
+    // is never what a rename means.
+    for (const env of Object.values(this.environments)) {
+      if (env.extends === oldName) env.extends = newName;
+    }
     this.updated = new Date().toISOString();
   }
 

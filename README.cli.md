@@ -198,6 +198,12 @@ Other commands: `rm`, `delete`, `rename`, `copy`, `squash`, `extends`,
 `change-password`. Run `vault env <command> --help` for the full options of any
 command.
 
+`vault env rename <old> <new>` carries the environment's dependents along:
+environments that extend it now extend the new name, and `{{env:old/KEY}}`
+references in every environment are rewritten (one new version per
+environment that had any). Pass `--keep-references` to leave references as
+they are; they then stop resolving.
+
 > **Safety:** every write keeps a `<vault>.bak` of the previous good state and
 > writes atomically, so an interrupted save can never corrupt the vault. After
 > `change-password` (or the 600k key upgrade) the `.bak` is refreshed from the

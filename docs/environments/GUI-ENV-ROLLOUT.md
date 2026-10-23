@@ -552,3 +552,20 @@ Known hazards so far, to be completed per task:
 env show shop` resolves as before.
 - **Rollback:** reinstall the previous app. Vaults it wrote stay valid; the
   rewritten references are ordinary values.
+
+### New-44: CLI `env rename` carries extends and references
+
+- **Runtime change (every CLI user, not gated):** `vault env rename` moves
+  `extends` of child envs to the new name and rewrites `{{env:old/KEY}}`
+  references; `--keep-references` skips the second.
+- **Schema or config change:** none. Envs with rewritten references get a
+  new version ("References to OLD renamed to NEW").
+- **Before it ships:** the CHANGELOG "Changed" entry (written). Scripts that
+  renamed and then fixed references by hand keep working: the references are
+  already fixed, and their own rewrite finds nothing.
+- **Gated by:** nothing; it fixes a rename that left vaults broken.
+- **Verify after release:** `vault env rename base core` in a vault where
+  `shop` uses `{{env:base/HOST}}` and `child` extends `base`: `vault env get
+HOST -e child` and the `shop` value resolve as before.
+- **Rollback:** reinstall the previous CLI. Vaults written by this one stay
+  valid.

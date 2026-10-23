@@ -86,7 +86,7 @@ updated as each task finishes, not in a batch at the end.
 | New-41 | Find the unit test that failed once in ten full runs               | —   | P2  | ⬜     | —                                      |
 | New-42 | Decide whether input in the window keeps env vaults unlocked       | —   | P2  | ✅     | 13                                     |
 | New-43 | `npm run lint` lints the docs site's ignored build output          | —   | P3  | ⬜     | —                                      |
-| New-44 | CLI `env rename` leaves `extends` and references on the old name   | —   | P1  | ⬜     | New-30                                 |
+| New-44 | CLI `env rename` leaves `extends` and references on the old name   | —   | P1  | ✅     | New-30                                 |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -2208,9 +2208,31 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### New-44: CLI `env rename` leaves `extends` and references on the old name
 
-- **Status:** ⬜ found 2026-10-22 during New-30.
-- **Found:** `EnvironmentVaultService.renameEnv` only calls
-  `renameEnvironment`. Envs that extended the renamed one keep `extends`
+- **Status:** ✅ done 2026-10-22. Uncommitted on `feat/vault-env-gui`; not
+  merged, not released. CLI behavior change: CHANGELOG "Changed".
+- **Decided:** references are updated by default, as in the app;
+  `--keep-references` opts out. `extends` always follows: a parent that no
+  longer exists is never wanted.
+- **Built:**
+  - `EnvironmentVault.renameEnvironment` moves `extends` itself, so every
+    caller gets it; the app's own loop for it is gone.
+  - `EnvironmentVaultService.renameEnv(…, {updateReferences = true,
+message})` renames and rewrites references in one write and returns
+    `updated` (envs and counts).
+  - `vault env rename` prints "Updated N references in A, B." when it did;
+    `--keep-references`. README.cli.md and SPEC §5 say what follows.
+- **Validation done:** CLI integration test (`envRename.integration`):
+  after a rename, a referencing env resolves as before, an env extending it
+  still layers its values, the old name is gone; with `--keep-references`
+  the reference fails and `extends` still follows. Both tests fail on the
+  previous code. Model: children follow, others don't. Service: references
+  rewritten with the message, or kept; a failed rename has no `updated`.
+  The validation asked for `doctor` to be clean; `doctor` needs a
+  `.vaultrc`, so the test resolves every affected env with `get` instead.
+  Coverage of `bin/commands/env.js` isn't measured (the CLI runs in a child
+  process); `EnvironmentVault.js` 97% lines.
+- **Found:** `EnvironmentVaultService.renameEnv` only called
+  `renameEnvironment`. Envs that extended the renamed one kept `extends`
   pointing at a name that no longer exists, and `{{env:OLD/KEY}}`
   references stop resolving. The app does both (Task 24, New-30).
 - **Goal:** `vault env rename` gives the same result as the app: children

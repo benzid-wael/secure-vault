@@ -1844,6 +1844,10 @@ export function registerEnvCommand(program) {
     .option('--password <password>', 'Vault password (non-interactive)')
     .option('--password-file <path>', 'Read vault password from a file')
     .option('--password-stdin', 'Read vault password from stdin')
+    .option(
+      '--keep-references',
+      'Leave {{env:OLD/KEY}} references as they are (they stop resolving)'
+    )
     .action(async (oldName, newName, options) => {
       const spinner = oraQuiet(
         `Renaming "${oldName}" to "${newName}"...`
@@ -1852,11 +1856,13 @@ export function registerEnvCommand(program) {
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
 
+        // Envs extending it follow; references too unless kept (New-44).
         const result = await EnvironmentVaultService.renameEnv(
           vaultPath,
           vaultPassword,
           oldName,
-          newName
+          newName,
+          { updateReferences: !options.keepReferences }
         );
 
         if (!result.success) {
@@ -1864,7 +1870,17 @@ export function registerEnvCommand(program) {
           process.exit(1);
         }
 
-        spinner.succeed(chalk.green(`Renamed "${oldName}" to "${newName}".`));
+        const count = result.updated.reduce((n, r) => n + r.count, 0);
+        spinner.succeed(
+          chalk.green(
+            `Renamed "${oldName}" to "${newName}".` +
+              (count > 0
+                ? ` Updated ${count} ${count === 1 ? 'reference' : 'references'} in ${result.updated
+                    .map((r) => r.env)
+                    .join(', ')}.`
+                : '')
+          )
+        );
       } catch (error) {
         spinner.fail(chalk.red(error.message));
         process.exit(1);

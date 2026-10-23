@@ -882,8 +882,7 @@ export function createEnvVaultHandlers({
             .listEnvironmentNames()
             .filter((other) => vault.environments[other].extends === env);
           if (op === 'rename') {
-            vault.renameEnvironment(env, name);
-            for (const child of children) vault.setExtends(child, name);
+            vault.renameEnvironment(env, name); // children follow
             // In the same write, so no reader sees one without the other.
             if (updateReferences === true) {
               updated = vault.renameReferences(env, name, {

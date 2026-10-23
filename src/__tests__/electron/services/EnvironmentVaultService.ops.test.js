@@ -390,6 +390,59 @@ describe('EnvironmentVaultService write operations', () => {
       expect(result.success).toBe(true);
       expect((await reload()).listEnvironmentNames()).toEqual(['prod']);
     });
+
+    const seedWithRef = async () => {
+      const vault = populated(ENV, { KEY: 'val' });
+      vault.addEnvironment('web');
+      vault.addVersion('web', { K: `{{env:${ENV}/KEY}}` });
+      await seed(vault);
+    };
+
+    it('updates references in the same write (New-44)', async () => {
+      await seedWithRef();
+      const result = await EnvironmentVaultService.renameEnv(
+        vaultPath,
+        PW,
+        ENV,
+        'prod'
+      );
+      expect(result).toMatchObject({
+        success: true,
+        updated: [{ env: 'web', count: 1 }],
+      });
+      const after = await reload();
+      expect(after.getActiveVersion('web')).toMatchObject({
+        vars: { K: '{{env:prod/KEY}}' },
+        message: `References to ${ENV} renamed to prod`,
+      });
+    });
+
+    it('leaves references when told to', async () => {
+      await seedWithRef();
+      const result = await EnvironmentVaultService.renameEnv(
+        vaultPath,
+        PW,
+        ENV,
+        'prod',
+        { updateReferences: false }
+      );
+      expect(result).toMatchObject({ success: true, updated: [] });
+      expect((await reload()).getActiveVersion('web').vars.K).toBe(
+        `{{env:${ENV}/KEY}}`
+      );
+    });
+
+    it('reports a failed rename without `updated`', async () => {
+      await seed(populated(ENV, { KEY: 'val' }));
+      const result = await EnvironmentVaultService.renameEnv(
+        vaultPath,
+        PW,
+        'ghost',
+        'x'
+      );
+      expect(result.success).toBe(false);
+      expect(result).not.toHaveProperty('updated');
+    });
   });
 
   describe('copyEnv', () => {

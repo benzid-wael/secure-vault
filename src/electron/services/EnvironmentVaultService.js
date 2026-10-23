@@ -954,10 +954,37 @@ export class EnvironmentVaultService {
     });
   }
 
-  static async renameEnv(vaultPath, password, oldName, newName) {
-    return this.#mutate(vaultPath, password, (vault) => {
+  /**
+   * Rename an env. Envs that extend it follow; `{{env:OLD/KEY}}` references
+   * are pointed at the new name too unless `updateReferences` is false
+   * (New-44), in the same write.
+   *
+   * @param {Object} [options]
+   * @param {boolean} [options.updateReferences]
+   * @param {string|null} [options.message] For the versions the reference
+   *   update adds.
+   * @returns {Promise<{success: boolean, revision?: string, error?: string,
+   *   updated?: {env: string, count: number}[]}>} `updated`: the envs whose
+   *   references were rewritten, with counts.
+   */
+  static async renameEnv(
+    vaultPath,
+    password,
+    oldName,
+    newName,
+    { updateReferences = true, message = null } = {}
+  ) {
+    let updated = [];
+    const result = await this.#mutate(vaultPath, password, (vault) => {
       vault.renameEnvironment(oldName, newName);
+      updated = updateReferences
+        ? vault.renameReferences(oldName, newName, {
+            message:
+              message ?? `References to ${oldName} renamed to ${newName}`,
+          })
+        : [];
     });
+    return result.success ? { ...result, updated } : result;
   }
 
   static async copyEnv(vaultPath, password, sourceName, destName) {

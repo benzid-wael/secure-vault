@@ -452,7 +452,8 @@ vault env
   │
   │   ── env-level (env positional REQUIRED) ──
   ├── delete <env>                    Delete an entire environment
-  ├── rename <oldName> <newName>      Rename an environment
+  ├── rename <oldName> <newName>      Rename an environment; extends and
+  │        [--keep-references]         {{env:old/KEY}} references follow
   ├── copy   <src> <dst>              Copy an environment to a new name
   ├── diff   <envA> <envB>            Show diff between two environments
   ├── import <env> <file...>          Import .env file(s) into an environment
