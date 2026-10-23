@@ -1831,6 +1831,48 @@ describe('env vault IPC: compare, validate, import, template, password (Tasks 26
     expect((await active('prod')).vars).toEqual({ HOST: 'h2' });
   });
 
+  it('drops a previewed import when the vault locks by itself (New-34)', async () => {
+    // A session whose idle timer the test fires.
+    let fireIdle = () => {};
+    const idleSession = new EnvVaultSession({
+      setTimer: (fn) => ((fireIdle = fn), {}),
+      clearTimer: () => {},
+    });
+    const handlers = createEnvVaultHandlers({
+      registry: new EnvVaultRegistry({ envsDir }),
+      session: idleSession,
+      dialog: {
+        showOpenDialog: async () => ({ filePaths: [picked] }),
+        showSaveDialog: async () => ({ canceled: true }),
+      },
+    });
+    const vid = (await handlers['env-vaults:list']()).vaults[0].id;
+    await handlers['env-vault:unlock'](ev, vid, PW);
+    const view = await handlers['env:view'](ev, vid, 'prod');
+    picked = path.join(dir, 'in.env');
+    await fs.writeFile(picked, 'HOST=from-file\n');
+    expect(
+      (await handlers['env:import-pick'](ev, vid, view.viewId)).success
+    ).toBe(true);
+    expect(handlers.pendingImportCount()).toBe(1);
+
+    fireIdle(); // idle lock: no IPC call is involved
+    expect(idleSession.isUnlocked(vid)).toBe(false);
+    expect(handlers.pendingImportCount()).toBe(0);
+    expect(Object.keys(handlers)).not.toContain('pendingImportCount');
+  });
+
+  it('drops it on sleep too; locking another vault keeps it (New-34)', async () => {
+    const view = await h['env:view'](ev, id, 'prod');
+    picked = path.join(dir, 'in.env');
+    await fs.writeFile(picked, 'HOST=from-file\n');
+    await h['env:import-pick'](ev, id, view.viewId);
+    session.lock('another-vault'); // not unlocked: nothing happens
+    expect(h.pendingImportCount()).toBe(1);
+    session.lockAll('sleep');
+    expect(h.pendingImportCount()).toBe(0);
+  });
+
   it('import: canceled pick, cancel, a key changed meanwhile, bad mode', async () => {
     const view = await h['env:view'](ev, id, 'prod');
     expect(await h['env:import-pick'](ev, id, view.viewId)).toEqual({

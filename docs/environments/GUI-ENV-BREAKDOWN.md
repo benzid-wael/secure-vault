@@ -2056,7 +2056,17 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-34: Drop a pending import as soon as the vault locks
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+  merged, not released.
+- **Built:** `EnvVaultSession.onLock(listener)`: called on every lock
+  (silent re-unlocks too), returns an unsubscribe. The IPC handlers
+  subscribe and drop that vault's previewed imports at the lock itself.
+  A non-enumerable `pendingImportCount()` on the handlers lets tests see
+  the map; main's channel loop skips it.
+- **Validation done:** idle timer fired with no IPC call → 0 pending;
+  `lockAll('sleep')` → 0; locking a vault that isn't unlocked keeps the
+  preview; `pendingImportCount` isn't a channel. Both fail on the previous
+  code. `EnvVaultSession.js` 98.7%, `EnvVaultIpc.js` 98.0% lines.
 - **Found:** building Task 27, 2026-10-22. The parsed values of a previewed
   import stay in main until cancel, apply, the next import call, or a lock
   through the app; after an idle or sleep lock they're dropped at the next

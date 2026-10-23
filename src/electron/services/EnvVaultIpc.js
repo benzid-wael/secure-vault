@@ -185,6 +185,9 @@ export function createEnvVaultHandlers({
       }
     }
   };
+  // However the vault locks (idle, sleep, a password changed elsewhere),
+  // its previewed imports go at once, not at the next import call (New-34).
+  session.onLock?.((id) => dropImports(id));
 
   /** Ask for a file to write `content` to, and write it `0600`. */
   const saveFile = async (title, defaultPath, content) => {
@@ -321,7 +324,7 @@ export function createEnvVaultHandlers({
     };
   };
 
-  return {
+  const handlers = {
     'env-vaults:list': async () => {
       const entries = await registry.list();
       // Passwords of vault files deleted or moved don't linger (New-36).
@@ -1173,4 +1176,10 @@ export function createEnvVaultHandlers({
         : result;
     }),
   };
+  // For tests: how many previews wait for apply. Not enumerable, so main
+  // doesn't register it as a channel.
+  Object.defineProperty(handlers, 'pendingImportCount', {
+    value: () => pendingImports.size,
+  });
+  return handlers;
 }

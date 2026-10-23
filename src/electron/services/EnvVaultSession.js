@@ -58,6 +58,8 @@ export class EnvVaultSession {
   #vaults = new Map();
   /** @type {Map<string, EnvView>} */
   #views = new Map();
+  /** @type {Set<(id: string) => void>} */
+  #lockListeners = new Set();
 
   /**
    * @param {Object} [options]
@@ -200,6 +202,7 @@ export class EnvVaultSession {
     for (const [viewId, view] of this.#views) {
       if (view.id === id) this.#views.delete(viewId);
     }
+    for (const listener of this.#lockListeners) listener(id);
     if (silent) return;
     this.#onLocked(
       id,
@@ -207,6 +210,18 @@ export class EnvVaultSession {
         ? { reason, minutes: Math.round(this.#idleMs / 60000) }
         : { reason }
     );
+  }
+
+  /**
+   * Run `listener(id)` whenever a vault locks, however (silent re-unlocks
+   * included), for state kept per vault outside the session, like a
+   * previewed import (New-34).
+   * @param {(id: string) => void} listener
+   * @returns {() => void} Stops listening.
+   */
+  onLock(listener) {
+    this.#lockListeners.add(listener);
+    return () => this.#lockListeners.delete(listener);
   }
 
   /** @param {LockInfo['reason']} [reason] */

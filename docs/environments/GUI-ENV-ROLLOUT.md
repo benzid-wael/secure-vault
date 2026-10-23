@@ -713,3 +713,14 @@ env init` writes; it's added to the remembered list.
   `.env.vault` in a repo; `vault env list` in that repo opens it with the
   same password.
 - **Rollback:** reinstall the previous app; vaults it created stay valid.
+
+### New-34: previewed imports dropped at the lock
+
+- **Runtime change (gated by the Environments UI gate):** a previewed
+  `.env` import's values leave main's memory when the vault locks, however
+  it locks, instead of at the next import call.
+- **Schema or config change:** none.
+- **Before it ships:** nothing beyond the gate's own criteria.
+- **Gated by:** the Environments UI gate.
+- **Verify after release:** not visible to the user; covered by tests.
+- **Rollback:** reinstall the previous app.
