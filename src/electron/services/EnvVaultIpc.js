@@ -323,10 +323,13 @@ export function createEnvVaultHandlers({
   return {
     'env-vaults:list': async () => {
       const entries = await registry.list();
+      // Passwords of vault files deleted or moved don't linger (New-36).
+      await keychain?.prune();
       return {
         success: true,
         // Whether "Remember on this computer" can be offered at all.
         keychain: keychain?.available() ?? false,
+        savedPasswords: keychain ? await keychain.count() : 0,
         vaults: await Promise.all(
           entries.map(async (e) => ({
             ...e,
@@ -342,14 +345,25 @@ export function createEnvVaultHandlers({
     'env-vaults:open': () => registry.openFromDialog(getWindow()),
     'env-vaults:open-folder': () => registry.openFolderFromDialog(getWindow()),
     // Off the list, now and in later runs (Task 14); the file is untouched.
-    'env-vaults:forget': (event, id) =>
-      session.isUnlocked(id)
-        ? {
-            success: false,
-            code: 'INVALID',
-            error: 'Lock the vault before removing it from the list',
-          }
-        : registry.forget(id),
+    // Its saved password goes too (New-36): nothing would offer it again.
+    'env-vaults:forget': async (event, id) => {
+      if (session.isUnlocked(id)) {
+        return {
+          success: false,
+          code: 'INVALID',
+          error: 'Lock the vault before removing it from the list',
+        };
+      }
+      const vaultPath = registry.resolve(id);
+      const result = await registry.forget(id);
+      if (result.success && vaultPath) await keychain?.forget(vaultPath);
+      return result;
+    },
+    // "Forget all saved passwords" in Settings (New-36).
+    'env-vaults:forget-passwords': async () => ({
+      success: true,
+      count: keychain ? await keychain.forgetAll() : 0,
+    }),
     // Input on the vault's own screen (New-42): the only thing that keeps an
     // env vault unlocked. Calls, the page's own or the user's, never do.
     'env-vaults:activity': (event, id) => {

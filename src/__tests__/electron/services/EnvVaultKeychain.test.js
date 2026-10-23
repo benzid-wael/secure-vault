@@ -59,6 +59,43 @@ describe('EnvVaultKeychain', () => {
     expect(await fs.readFile(file, 'utf8')).not.toContain('enc:');
   });
 
+  it('prunes the passwords of vault files that are gone (New-36)', async () => {
+    const safeStorage = fakeSafeStorage();
+    const keychain = new EnvVaultKeychain({ file, safeStorage });
+    const here = path.join(dir, 'proj', '.env.vault');
+    const deleted = path.join(dir, 'proj', 'old.env.vault');
+    const unmounted = path.join(dir, 'Volumes', 'usb', '.env.vault');
+    await fs.outputFile(here, '{}');
+    for (const p of [here, deleted, unmounted]) {
+      await keychain.remember(p, 'pw');
+    }
+    const decrypt = vi.spyOn(safeStorage, 'decryptString');
+    const encrypt = vi.spyOn(safeStorage, 'encryptString');
+
+    expect(await keychain.prune()).toEqual([deleted]);
+    expect(await keychain.has(here)).toBe(true);
+    // The folder is missing too: maybe a drive that isn't mounted.
+    expect(await keychain.has(unmounted)).toBe(true);
+    expect(await keychain.count()).toBe(2);
+    expect(await fs.readFile(file, 'utf8')).not.toContain('old.env.vault');
+    expect(decrypt).not.toHaveBeenCalled();
+    expect(encrypt).not.toHaveBeenCalled();
+    expect(await keychain.prune()).toEqual([]);
+  });
+
+  it('forgets every password at once (New-36)', async () => {
+    const keychain = new EnvVaultKeychain({
+      file,
+      safeStorage: fakeSafeStorage(),
+    });
+    await keychain.remember(VAULT, 'pw');
+    await keychain.remember('/other/.env.vault', 'pw2');
+    expect(await keychain.forgetAll()).toBe(2);
+    expect(await keychain.count()).toBe(0);
+    expect(await fs.readJson(file)).toEqual({ format: 1, entries: {} });
+    expect(await keychain.forgetAll()).toBe(0);
+  });
+
   it('asks for presence before giving a password back', async () => {
     const confirmPresence = vi.fn(async () => false);
     const keychain = new EnvVaultKeychain({

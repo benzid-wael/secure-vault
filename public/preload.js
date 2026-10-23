@@ -141,6 +141,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Input on this vault's screen: keeps it from locking (New-42).
     activity: (id) => ipcRenderer.invoke('env-vaults:activity', id),
     forget: (id) => ipcRenderer.invoke('env-vaults:forget', id),
+    forgetPasswords: () => ipcRenderer.invoke('env-vaults:forget-passwords'),
     create: (options, password) =>
       ipcRenderer.invoke('env-vaults:create', options, password),
     unlock: (id, password, options) =>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   Alert,
   Box,
+  Button,
   FormControl,
   FormControlLabel,
   InputLabel,
@@ -17,11 +18,16 @@ const minutes = (n) => (n === 1 ? '1 minute' : `${n} minutes`);
 
 /** The preload's settings API; read at call time so tests can swap it. */
 const settingsApi = () => /** @type {any} */ (window).electronAPI?.appSettings;
+const envVaultsApi = () => /** @type {any} */ (window).electronAPI?.envVaults;
+
+const passwords = (n) =>
+  n === 1 ? '1 saved password' : `${n} saved passwords`;
 
 /**
  * App-wide settings (GUI-ENV-BREAKDOWN Tasks 13, 23): the idle timeout of
  * every vault (D1) and, with env vaults on, whether opened env vaults are
- * remembered (D5). Each change is saved, and takes effect, at once.
+ * remembered (D5), and forgetting every saved env vault password (New-36).
+ * Each change is saved, and takes effect, at once.
  *
  * @param {{envVaults?: boolean}} props
  */
@@ -30,6 +36,41 @@ const AppSettingsSection = ({ envVaults = false }) => {
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
   const [saved, setSaved] = useState('');
+  /** @type {[number|null, Function]} null: unknown or not offered */
+  const [savedPasswords, setSavedPasswords] = useState(null);
+
+  useEffect(() => {
+    if (!envVaults) return undefined;
+    let active = true;
+    Promise.resolve(envVaultsApi()?.list?.())
+      .then((result) => {
+        if (active && result?.success) {
+          setSavedPasswords(result.savedPasswords ?? 0);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [envVaults]);
+
+  const forgetPasswords = async () => {
+    setError('');
+    setSaved('');
+    let result;
+    try {
+      result = await envVaultsApi().forgetPasswords();
+    } catch {
+      result = { success: false };
+    }
+    if (!result?.success) {
+      return setError("The saved passwords couldn't be forgotten.");
+    }
+    setSavedPasswords(0);
+    setSaved(
+      `Forgot ${passwords(result.count)}. You'll type each password the next time you unlock.`
+    );
+  };
 
   useEffect(() => {
     let active = true;
@@ -146,6 +187,27 @@ const AppSettingsSection = ({ envVaults = false }) => {
             restart. Turning this off clears that list; the vault files stay
             where they are.
           </Typography>
+          {savedPasswords !== null && (
+            <Box sx={{ mt: 2 }}>
+              <Button
+                variant="outlined"
+                color="warning"
+                size="small"
+                disabled={savedPasswords === 0}
+                onClick={forgetPasswords}
+              >
+                Forget all saved passwords
+              </Button>
+              <Typography
+                variant="body2"
+                sx={{ color: 'rgba(255,255,255,0.6)', mt: 1 }}
+              >
+                {savedPasswords === 0
+                  ? 'No environment vault password is saved on this computer.'
+                  : `${passwords(savedPasswords)} for environment vaults on this computer. Forgetting them doesn’t change the vaults.`}
+              </Typography>
+            </Box>
+          )}
         </Box>
       )}
     </Box>

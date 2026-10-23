@@ -1950,6 +1950,52 @@ describe('env vault IPC: password kept on this computer (New-24)', () => {
     expect((await listed()).remembered).toBe(false);
   });
 
+  it('drops the password of a deleted vault at the next list (New-36)', async () => {
+    await h['env-vault:unlock'](ev, id, PW, { remember: true });
+    session.lock(id);
+    expect((await h['env-vaults:list']()).savedPasswords).toBe(1);
+    await fs.remove(filePath);
+    const list = await h['env-vaults:list']();
+    expect(list.savedPasswords).toBe(0);
+    expect(await keychain.has(filePath)).toBe(false);
+  });
+
+  it('forgets every saved password on request (New-36)', async () => {
+    await h['env-vault:unlock'](ev, id, PW, { remember: true });
+    session.lock(id);
+    expect(await h['env-vaults:forget-passwords']()).toEqual({
+      success: true,
+      count: 1,
+    });
+    expect((await h['env-vaults:list']()).savedPasswords).toBe(0);
+    expect((await listed()).remembered).toBe(false);
+  });
+
+  it('forgets the password of a vault taken off the list (New-36)', async () => {
+    const project = await seed(path.join(dir, 'proj', '.env.vault'));
+    const handlers = createEnvVaultHandlers({
+      registry: new EnvVaultRegistry({
+        envsDir,
+        dialog: {
+          showOpenDialog: async () => ({
+            canceled: false,
+            filePaths: [project],
+          }),
+        },
+      }),
+      session,
+      keychain,
+    });
+    const opened = await handlers['env-vaults:open']();
+    await handlers['env-vault:unlock'](ev, opened.id, PW, { remember: true });
+    await handlers['env-vault:lock'](ev, opened.id);
+    expect(await keychain.has(project)).toBe(true);
+    expect((await handlers['env-vaults:forget'](ev, opened.id)).success).toBe(
+      true
+    );
+    expect(await keychain.has(project)).toBe(false);
+  });
+
   it('works without a keychain: nothing kept, nothing offered', async () => {
     const plain = createEnvVaultHandlers({
       registry: new EnvVaultRegistry({ envsDir }),
@@ -1957,6 +2003,11 @@ describe('env vault IPC: password kept on this computer (New-24)', () => {
     });
     const list = await plain['env-vaults:list']();
     expect(list.keychain).toBe(false);
+    expect(list.savedPasswords).toBe(0);
+    expect(await plain['env-vaults:forget-passwords']()).toEqual({
+      success: true,
+      count: 0,
+    });
     expect(list.vaults[0].remembered).toBe(false);
     const plainId = list.vaults[0].id;
     expect(

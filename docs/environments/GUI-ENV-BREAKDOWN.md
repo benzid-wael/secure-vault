@@ -2043,7 +2043,28 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### New-36: Prune saved passwords of gone vaults; "forget all"
 
-- **Status:** ⬜ found 2026-10-22 while building New-24.
+- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+  merged, not released.
+- **Decided:** "gone" means the file is missing but its folder is there; a
+  missing folder (unmounted drive, disconnected share) keeps its password.
+  Taking a vault off the list forgets its password too: nothing would offer
+  it again. "Forget all" doesn't ask to confirm: it only costs typing the
+  passwords again.
+- **Built:** `EnvVaultKeychain.prune()` (file system only, never
+  safeStorage), `forgetAll()`, `count()`. `env-vaults:list` prunes first
+  and reports `savedPasswords`; `env-vaults:forget` forgets the password;
+  new `env-vaults:forget-passwords` → `{count}`; preload
+  `envVaults.forgetPasswords`. Configuration → App settings, with env
+  vaults on: "Forget all saved passwords" and how many there are (disabled
+  at none). RFC §6.7 table.
+- **Validation done:** unit: a deleted file's password is pruned, a missing
+  folder's kept, safeStorage never called; `forgetAll` empties the file.
+  Contract: a deleted app-folder vault's password is gone at the next list;
+  forget-passwords returns the count and clears `remembered`; removing a
+  vault from the list forgets its password; no keychain → 0. UI: the
+  count, the button, the result, the failure, hidden without env vaults.
+  `EnvVaultKeychain.js` 100%, `AppSettingsSection.jsx` 98.4%,
+  `EnvVaultIpc.js` 97.9% lines.
 - **Goal:** a kept password whose vault file was deleted or moved doesn't
   linger in `env-vault-passwords.json`, and one action forgets every kept
   password.

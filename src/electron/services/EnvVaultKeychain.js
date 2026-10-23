@@ -131,6 +131,47 @@ export class EnvVaultKeychain {
     await this.#save();
   }
 
+  /** How many passwords are kept. */
+  async count() {
+    return Object.keys(await this.#load()).length;
+  }
+
+  /**
+   * Drop the passwords of vault files that are gone: the file is missing
+   * but its folder is there (deleted, moved, renamed). A missing folder
+   * keeps its password: it may be an unmounted drive or a disconnected
+   * share. Only the file system is asked, never the OS keychain.
+   * @returns {Promise<string[]>} The paths dropped.
+   */
+  async prune() {
+    const entries = await this.#load();
+    const gone = [];
+    for (const key of Object.keys(entries)) {
+      if (
+        !(await fs.pathExists(key)) &&
+        (await fs.pathExists(path.dirname(key)))
+      ) {
+        gone.push(key);
+      }
+    }
+    if (gone.length === 0) return gone;
+    for (const key of gone) delete entries[key];
+    await this.#save();
+    return gone;
+  }
+
+  /**
+   * Forget every kept password.
+   * @returns {Promise<number>} How many there were.
+   */
+  async forgetAll() {
+    const entries = await this.#load();
+    const count = Object.keys(entries).length;
+    for (const key of Object.keys(entries)) delete entries[key];
+    await this.#save();
+    return count;
+  }
+
   /**
    * The saved password of `vaultPath`, after the presence check.
    * @returns {Promise<{success: boolean, password?: string,

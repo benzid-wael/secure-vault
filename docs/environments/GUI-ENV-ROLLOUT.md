@@ -617,3 +617,20 @@ history dev` shows one new version.
 -e prod`, then reveal and copy another key: both work. Run `vault env set`
   on the key you reveal: the app asks to reload.
 - **Rollback:** reinstall the previous app. Nothing it wrote differs.
+
+### New-36: saved passwords of gone vaults are dropped; "forget all"
+
+- **Runtime change (gated by the Environments UI gate):** listing env
+  vaults drops the saved password of a vault file that was deleted or moved
+  (its folder still there). Removing a vault from the list forgets its
+  password. Configuration has "Forget all saved passwords".
+- **Schema or config change:** none. `env-vault-passwords.json` loses
+  entries; its format is unchanged.
+- **Before it ships:** nothing beyond the gate's own criteria.
+- **Gated by:** the Environments UI gate.
+- **Verify after release:** save a password for an app-folder vault,
+  delete the vault file, reopen the vault list: Configuration shows one
+  fewer saved password. "Forget all saved passwords" leaves none, and every
+  vault asks for its password.
+- **Rollback:** reinstall the previous app. Forgotten passwords stay
+  forgotten; the user types them again.
