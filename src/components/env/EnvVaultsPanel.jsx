@@ -626,13 +626,18 @@ const EnvVaultsPanel = ({ header = null }) => {
     [api, onLocked, refresh]
   );
 
-  // `notice` shows on the vault screen once it opens.
+  // `notice` shows on the vault screen once it opens. A vault locked
+  // meanwhile (the list was older than the click) asks for its password.
   const enter = async (id, notice = '') => {
     const listed = await refresh();
     const vault = listed.find((v) => v.id === id);
+    setNotice('');
+    if (vault && !vault.unlocked) {
+      setOpenVault(null);
+      return setDialog({ kind: 'unlock', vault });
+    }
     setOpenVault(vault ? { ...vault, notice } : null);
     setDialog(null);
-    setNotice('');
   };
 
   // A kept password is tried first; if it fails, the dialog says why.
@@ -706,10 +711,11 @@ const EnvVaultsPanel = ({ header = null }) => {
     return result;
   };
 
+  // The list comes back current: no "Unlocked" left over to click.
   const lock = async () => {
     await api.lock(openVault.id);
+    await refresh();
     setOpenVault(null);
-    refresh();
   };
 
   if (openVault) {

@@ -159,8 +159,9 @@ In the **⋮** menu next to **Export .env**:
   doesn't have, and lists them. The file's `#` comments can become key
   comments. Values are never shown in the preview.
 - **Export .env** saves the environment, with parents and references
-  resolved, as a `.env` file only you can read. For JSON, use
-  `vault env export <env> --format json`.
+  resolved, as a `.env` file only you can read. **Export as JSON…** in the
+  **⋮** menu saves the same values as JSON, as
+  `vault env export <env> --format json` prints them (without comments).
 - **Save template (.env.example)…** saves every key without its value,
   with required keys marked `<required>`.
 
@@ -210,7 +211,6 @@ edit it.
 - Mark a key as required: `vault env set KEY value --required -e <env>`.
 - Run a command with an environment injected: `vault env run`.
 - Create a vault inside a project: `vault env init`.
-- Export as JSON: `vault env export <env> --format json`.
 
 ## Next
 

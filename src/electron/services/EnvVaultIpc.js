@@ -627,7 +627,12 @@ export function createEnvVaultHandlers({
 
     // Main picks the file in a native dialog and writes it 0600; the values
     // never cross IPC. Resolved like `vault env export` (extends, templates).
-    'env:export': withVault(async ({ id }, env) => {
+    // `format` 'json' writes what `vault env export -f json` prints (New-35):
+    // resolved values only; comments don't fit in JSON.
+    'env:export': withVault(async ({ id }, env, format = 'dotenv') => {
+      if (!['dotenv', 'json'].includes(format)) {
+        return invalid('Unknown export format');
+      }
       const result = await read(id);
       if (!result.success) return result;
       if (!result.vault.environments[env]) {
@@ -639,14 +644,19 @@ export function createEnvVaultHandlers({
       }
       let content;
       try {
-        content = toDotenv(
-          new EnvironmentResolver(result.vault).resolveEnvironment(env),
-          { comments: result.vault.commentsOf(env) }
+        const vars = new EnvironmentResolver(result.vault).resolveEnvironment(
+          env
         );
+        content =
+          format === 'json'
+            ? `${JSON.stringify(vars, null, 2)}\n`
+            : toDotenv(vars, { comments: result.vault.commentsOf(env) });
       } catch (error) {
         return { success: false, code: 'ERROR', error: error.message };
       }
-      return saveFile(`Export ${env}`, `${env}.env`, content);
+      return format === 'json'
+        ? saveFile(`Export ${env} as JSON`, `${env}.json`, content)
+        : saveFile(`Export ${env}`, `${env}.env`, content);
     }),
 
     /**

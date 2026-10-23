@@ -672,3 +672,16 @@ history dev` shows one new version.
 - **Verify after release:** unlock an env vault, press Cmd/Ctrl+L: its
   card shows no "Unlocked" chip and opening it asks for the password.
 - **Rollback:** reinstall the previous app.
+
+### New-35: JSON export from the app
+
+- **Runtime change (gated by the Environments UI gate):** the env ⋮ menu
+  has "Export as JSON…", writing what `vault env export -f json` prints.
+  Also: after Lock, the vault list is current before it shows (no stale
+  "Unlocked" to click).
+- **Schema or config change:** none.
+- **Before it ships:** nothing beyond the gate's own criteria.
+- **Gated by:** the Environments UI gate.
+- **Verify after release:** export an env as JSON; `diff` it with
+  `vault env export <env> -f json`: identical.
+- **Rollback:** reinstall the previous app.

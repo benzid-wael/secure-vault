@@ -2048,7 +2048,29 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### New-35: JSON export from the app
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+  merged, not released.
+- **Built:** `env:export(id, env, format = 'dotenv')`; `json` writes the
+  resolved values exactly as `vault env export -f json` prints them
+  (`JSON.stringify(vars, null, 2)` plus a newline; no comments), through
+  the save dialog "Export ${env} as JSON", default `${env}.json`, 0600. An
+unknown format is `INVALID`. Preload passes `format`. The env ⋮ menu has
+  "Export as JSON…"; the "Export .env" button is unchanged. Guide updated.
+- **Validation done:** contract: the file equals the CLI's JSON for the
+  same env, byte for byte, mode 0600, the dialog's title and name; `yaml`
+  refused. UI on the real handlers: the menu item writes the file and says
+  where. Panel: a vault listed unlocked but locked meanwhile asks for the
+  password (fails on the previous code). `EnvVaultIpc.js` 98.2%,
+  `EnvVaultsPanel.jsx` 93.2%, `EnvView.jsx` 86.9% lines.
+- **Found along the way (New-41):** two races in the real-handler UI
+  tests. (1) A real one in the panel: after **Lock** the list rendered
+  before it was re-read, so a quick click on the vault took the stale
+  "unlocked" path, opened its screen and bounced back with "The vault was
+  locked." `lock` now re-reads the list before showing it, and `enter`
+  asks for the password when the vault turns out locked. (2) Test-only:
+  teardown deleted the temp folder while a handler call was still writing
+  into it (`ENOTEMPTY`); the test's API wrapper now tracks calls in flight
+  and teardown waits for them. A third flake remains: see New-41.
 - **Found:** Task 27's goal mentions it; not built.
 - **Goal:** Export offers dotenv or JSON, like `vault env export -f json`.
 - **Dependencies:** 27.
@@ -2228,6 +2250,18 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
   and fixed.
 - **Cost of leaving it:** CI goes red now and then for no change, and people
   learn to re-run instead of read.
+- **Narrowed 2026-10-23 (New-35):** `EnvVaultsReal.test.jsx` run alone
+  30–40 times fails about 1 in 10–30 runs, each failure on the committed
+  code too. Two causes are fixed (see New-35): a real stale-list race after
+  Lock, and teardown deleting the temp folder under a write in flight.
+  One remains: "remembers the password when asked and unlocks with it next
+  time" — after Lock, the list shows "Password saved"; clicking the vault
+  does nothing for 5 s and more (no dialog, no error, no screen), so it's
+  not a slow unlock (a 5 s `asyncUtilTimeout` didn't help and was
+  reverted). Passes 12/12 when run alone (`-t`), so it depends on an
+  earlier test in the file. Next: log `select`/`unlockSaved` in that test
+  and bisect which earlier test leaves state behind (module-level
+  `present`, `safeStore`, the keychain file, StrictMode double effects).
 
 ### New-42: Decide whether input in the window keeps env vaults unlocked
 

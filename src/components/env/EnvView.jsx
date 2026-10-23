@@ -313,8 +313,10 @@ const EnvView = ({
     );
   };
 
-  const exportEnv = async () => {
-    const result = await api.exportEnv(vaultId, env);
+  /** @param {'dotenv'|'json'} [format] */
+  const exportEnv = async (format = 'dotenv') => {
+    setEnvMenu(null);
+    const result = await api.exportEnv(vaultId, env, format);
     if (result.canceled) return;
     if (!result.success) return handleFailure(result);
     setNotice(`Exported ${env} to ${result.path}`);
@@ -557,7 +559,7 @@ const EnvView = ({
         <Button variant="outlined" onClick={() => setHistoryOpen(true)}>
           History
         </Button>
-        <Button variant="outlined" onClick={exportEnv}>
+        <Button variant="outlined" onClick={() => exportEnv()}>
           Export .env
         </Button>
         <Button
@@ -797,6 +799,7 @@ const EnvView = ({
         onClose={() => setEnvMenu(null)}
       >
         {!readOnly && <MenuItem onClick={startImport}>Import .env…</MenuItem>}
+        <MenuItem onClick={() => exportEnv('json')}>Export as JSON…</MenuItem>
         <MenuItem onClick={exportTemplate}>
           Save template (.env.example)…
         </MenuItem>

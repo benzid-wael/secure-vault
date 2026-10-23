@@ -1220,6 +1220,49 @@ describe('env vault IPC handlers (contract)', () => {
     }
   });
 
+  it('exports as JSON, as `vault env export -f json` prints it (New-35)', async () => {
+    await unlock();
+    dialog.showSaveDialog.mockResolvedValueOnce({
+      canceled: false,
+      filePath: path.join(dir, 'out', 'prod.json'),
+    });
+    const result = await h['env:export'](ev, id, 'prod', 'json');
+    expect(result).toEqual({
+      success: true,
+      path: path.join(dir, 'out', 'prod.json'),
+    });
+    expect(dialog.showSaveDialog).toHaveBeenLastCalledWith(
+      'main-window',
+      expect.objectContaining({
+        title: 'Export prod as JSON',
+        defaultPath: 'prod.json',
+      })
+    );
+    const cli = await EnvironmentVaultService.exportEnv(
+      filePath,
+      PW,
+      'prod',
+      'json'
+    );
+    const content = await fs.readFile(
+      path.join(dir, 'out', 'prod.json'),
+      'utf8'
+    );
+    expect(content).toBe(`${JSON.stringify(cli.data, null, 2)}\n`);
+    expect(JSON.parse(content)).toMatchObject({
+      API_KEY: SECRET,
+      LOG_LEVEL: 'debug',
+    });
+    if (process.platform !== 'win32') {
+      expect(
+        (await fs.stat(path.join(dir, 'out', 'prod.json'))).mode & 0o777
+      ).toBe(0o600);
+    }
+    expect((await h['env:export'](ev, id, 'prod', 'yaml')).code).toBe(
+      'INVALID'
+    );
+  });
+
   it('reports a canceled export, a missing env, and a locked vault', async () => {
     expect((await h['env:export'](ev, id, 'prod')).code).toBe('LOCKED');
     await unlock();

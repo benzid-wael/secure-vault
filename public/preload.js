@@ -163,7 +163,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     copy: (id, viewId, key, format) =>
       ipcRenderer.invoke('env:copy', id, viewId, key, format),
     transfer: (id, request) => ipcRenderer.invoke('env:transfer', id, request),
-    exportEnv: (id, env) => ipcRenderer.invoke('env:export', id, env),
+    exportEnv: (id, env, format) =>
+      ipcRenderer.invoke('env:export', id, env, format),
     manageEnv: (id, request) => ipcRenderer.invoke('env:manage', id, request),
     // Envs that refer to `env` ({{env:env/KEY}}), with counts (New-30).
     references: (id, env) => ipcRenderer.invoke('env:references', id, env),

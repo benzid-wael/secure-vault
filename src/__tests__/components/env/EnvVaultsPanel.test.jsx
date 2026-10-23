@@ -97,6 +97,10 @@ describe('EnvVaultsPanel', () => {
     fireEvent.change(await screen.findByLabelText('Vault Password'), {
       target: { value: 'pw' },
     });
+    api.list.mockResolvedValue({
+      success: true,
+      vaults: [{ ...APP, unlocked: true }, GONE],
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
     await screen.findByText('New environment');
     fireEvent.pointerDown(window);
@@ -108,6 +112,21 @@ describe('EnvVaultsPanel', () => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_000);
     fireEvent.keyDown(window, { key: 'a' });
     expect(api.activity).not.toHaveBeenCalled();
+  });
+
+  it('asks for the password when a vault listed unlocked was locked meanwhile', async () => {
+    // The list on screen is older than the click: main locked it since.
+    api.list
+      .mockResolvedValueOnce({
+        success: true,
+        vaults: [{ ...APP, unlocked: true }, GONE],
+      })
+      .mockResolvedValue({ success: true, vaults: [APP, GONE] });
+    render(<EnvVaultsPanel />);
+    expect(await screen.findByText('Unlocked')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('app'));
+    expect(await screen.findByLabelText('Vault Password')).toBeInTheDocument();
+    expect(screen.queryByText('New environment')).toBeNull();
   });
 
   it('lists vaults with their location and state', async () => {

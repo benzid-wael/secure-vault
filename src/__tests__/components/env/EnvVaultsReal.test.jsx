@@ -49,6 +49,8 @@ let safeStore;
 let picked;
 /** Listeners of `onChanged`, as main's watcher would call them. */
 let changeListeners = [];
+/** Handler calls not settled yet; teardown waits for them. */
+const inFlight = new Set();
 const emitChange = (payload) =>
   act(async () => {
     for (const listener of changeListeners) listener(payload);
@@ -62,11 +64,19 @@ function wire(handlers) {
   let views = 0;
   const call =
     (channel) =>
-    async (...args) => {
-      if (channel === 'env:view' && views++ % 2 === 0) {
-        await new Promise((r) => setTimeout(r, 30));
-      }
-      return handlers[channel]({}, ...args);
+    (...args) => {
+      const pending = (async () => {
+        if (channel === 'env:view' && views++ % 2 === 0) {
+          await new Promise((r) => setTimeout(r, 30));
+        }
+        return handlers[channel]({}, ...args);
+      })();
+      inFlight.add(pending);
+      pending.then(
+        () => inFlight.delete(pending),
+        () => inFlight.delete(pending)
+      );
+      return pending;
     };
   return {
     list: call('env-vaults:list'),
@@ -135,9 +145,10 @@ beforeEach(async () => {
       canceled: false,
       filePaths: [picked ?? path.join(dir, 'in.env')],
     }),
-    showSaveDialog: async () => ({
+    // Saves under the name the app suggests.
+    showSaveDialog: async (win, options) => ({
       canceled: false,
-      filePath: path.join(dir, 'ci-dev.env'),
+      filePath: path.join(dir, options.defaultPath),
     }),
   };
   safeStore = fakeSafeStorage();
@@ -169,6 +180,8 @@ beforeEach(async () => {
 
 afterEach(async () => {
   cleanup(); // unmount while the wired API is still in place
+  // Calls the page started may still be writing into `dir` (New-41).
+  while (inFlight.size > 0) await Promise.allSettled([...inFlight]);
   session.lockAll();
   win.electronAPI = saved;
   await fs.remove(dir);
@@ -348,6 +361,19 @@ describe('env vault UI on the real handlers (StrictMode)', () => {
     expect(await fs.readFile(out, 'utf8')).toContain(
       'MATCH_PASSWORD=ci-dev-match'
     );
+  });
+
+  it('exports the env as JSON from the menu (New-35)', async () => {
+    await openEnv('ci-dev');
+    fireEvent.click(screen.getByLabelText('More environment actions'));
+    fireEvent.click(await screen.findByText('Export as JSON…'));
+    const out = path.join(dir, 'ci-dev.json');
+    expect(
+      await screen.findByText(`Exported ci-dev to ${out}`)
+    ).toBeInTheDocument();
+    expect(JSON.parse(await fs.readFile(out, 'utf8'))).toMatchObject({
+      MATCH_PASSWORD: 'ci-dev-match',
+    });
   });
 
   const vaultId = async () =>
