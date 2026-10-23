@@ -36,6 +36,7 @@ import {
   parseGridPosition,
   getCodeAtPosition,
   getOrderedFields,
+  isSensitiveField,
 } from '../../utils/entryTypes';
 
 describe('Entry Types', () => {
@@ -295,5 +296,20 @@ describe('Entry Types', () => {
         expect(otpFields.some((f) => f.fieldName === 'service')).toBe(true);
       });
     });
+  });
+});
+
+describe('isSensitiveField (New-3)', () => {
+  it('treats password fields, private keys and note content as secrets', () => {
+    const def = (t) => getEntryTypeDefinition(t).schema;
+    expect(isSensitiveField(def('password'), 'password')).toBe(true);
+    expect(isSensitiveField(def('credit_card'), 'cvv')).toBe(true);
+    expect(isSensitiveField(def('ssh_key'), 'privateKey')).toBe(true);
+    expect(isSensitiveField(def('gpg_key'), 'privateKey')).toBe(true);
+    expect(isSensitiveField(def('secure_note'), 'content')).toBe(true);
+    expect(isSensitiveField(def('password'), 'username')).toBe(false);
+    expect(isSensitiveField(def('ssh_key'), 'publicKey')).toBe(false);
+    expect(isSensitiveField(def('bank_account'), 'iban')).toBe(false);
+    expect(isSensitiveField(def('password'), 'nope')).toBe(false);
   });
 });

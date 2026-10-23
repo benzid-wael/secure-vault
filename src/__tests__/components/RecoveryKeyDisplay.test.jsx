@@ -3,12 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
 import RecoveryKeyDisplay from '../../components/RecoveryKeyDisplay';
 
-// Mock clipboard API
-Object.assign(navigator, {
-  clipboard: {
-    writeText: vi.fn(),
-  },
-});
+const copy = () => /** @type {any} */ (window).electronAPI.copyToClipboard;
 
 describe('RecoveryKeyDisplay', () => {
   const mockOnClose = vi.fn();
@@ -77,8 +72,6 @@ describe('RecoveryKeyDisplay', () => {
   });
 
   it('copies recovery key to clipboard', async () => {
-    navigator.clipboard.writeText.mockResolvedValueOnce();
-
     render(<RecoveryKeyDisplay {...defaultProps} />);
 
     const copyButton = screen.getByRole('button', {
@@ -87,19 +80,19 @@ describe('RecoveryKeyDisplay', () => {
     fireEvent.click(copyButton);
 
     await waitFor(() => {
-      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-        defaultProps.recoveryKey
-      );
+      expect(copy()).toHaveBeenCalledWith(defaultProps.recoveryKey, {
+        sensitive: true,
+      });
     });
 
-    expect(screen.getByText('Copied to clipboard!')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Copied. Cleared in 30 s.')
+    ).toBeInTheDocument();
   });
 
   it('handles copy failure gracefully', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    navigator.clipboard.writeText.mockRejectedValueOnce(
-      new Error('Copy failed')
-    );
+    copy().mockRejectedValueOnce(new Error('Copy failed'));
 
     render(<RecoveryKeyDisplay {...defaultProps} />);
 
@@ -197,7 +190,7 @@ describe('RecoveryKeyDisplay', () => {
     fireEvent.click(copyButton);
 
     // Should not crash and should not call clipboard API
-    expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
+    expect(copy()).not.toHaveBeenCalled();
   });
 
   it('formats recovery key display correctly when hidden', () => {

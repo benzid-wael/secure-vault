@@ -657,15 +657,16 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 12: Main-process `ClipboardService` + IPC
 
-- **Status:** 🟡 partial 2026-10-22, pulled into the MVP after testing. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-23 with Task 22 (was 🟡 partial 2026-10-22,
+  pulled into the MVP after testing). Uncommitted on `feat/vault-env-gui`; not merged, not released.
 - **Built:** `ClipboardService` (main): writes the clipboard; a sensitive
   copy is cleared after 30 s unless the clipboard has changed since; a new
   copy replaces the pending clear. `env:copy` takes a view, a key and a
   format (`value`, `pair`, `key`) and returns no value. Key names and
   public values aren't cleared. The e2e driver saves and restores the
   real clipboard around each scenario.
-- **Not done:** password-vault entries still copy from the renderer
-  (Task 22, New-3).
+- **Not done (2026-10-22):** password-vault entries still copy from the
+  renderer: done in Task 22 (2026-10-23), so Task 12's goal is met.
 - **Goal:** Main writes secrets to the clipboard and clears them after 30 s if
   the clipboard still holds the same value (D6). It's exposed as one IPC channel
   that takes a reference, never a value from an env vault.
@@ -956,7 +957,34 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 22: Renderer: move secret copy to `ClipboardService`
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+  merged, not released. Not gated: a change for every desktop user,
+  CHANGELOG "Changed".
+- **Built:** channel `clipboard:copy(text, {sensitive})`
+  (`ClipboardIpc.js`, registered outside the Environments gate), refusing
+  empty, non-string or over-1 MB text; only `sensitive: true` is cleared.
+  Main makes one `ClipboardService` for it and `env:copy`, so a new copy
+  replaces a pending clear from either. Preload `copyToClipboard`; the page
+  helper `copyText` (`src/utils/clipboard.js`). Call sites: entry fields
+  (`EntryList` passes `isSensitiveField`: password-typed fields, and private
+  keys and note content, now marked `sensitive` in the schema), grid-card
+  lookup auto-copy and its copy button, the recovery key. Messages: "X
+  copied to clipboard. It is cleared from the clipboard in 30 s." for a
+  secret; the recovery key chip "Copied. Cleared in 30 s.". Guide
+  (managing passwords) and README say so.
+- **Validation done:** a test scans `src/` (tests and `setupTests.js`
+  aside) and finds no `navigator.clipboard`. Channel: clears a secret,
+  doesn't clear the rest, only an explicit `true` is a secret, refusals
+  write nothing. Helper and `isSensitiveField` (password, CVV, private
+  keys, note content yes; username, public key, IBAN no). Components:
+  entries copy username as not secret and CVV, private key, password as
+  secret, with the message; failure shown; grid lookup, copy button and a
+  failed copy; recovery key. `ClipboardIpc.js` and `clipboard.js` 100%,
+  `EntryList.jsx` 94.3%, `PasswordManager.jsx` 73.3%,
+  `Level3CardGrid.jsx` 93.8% (was below 70% before this task; cell-edit
+  tests added), `RecoveryKeyDisplay.jsx` 95.8%, `entryTypes.js` 92.2%
+  lines. Type check 289 (two fewer: the recovery-key test's clipboard
+  mock errors went with it). Found New-49.
 - **Goal:** The renderer copy sites decided in New-3 use main's clipboard
   service, with the 30 s clear.
 - **Constraints:** Same UX feedback (snackbar, "Copied!").
@@ -2521,3 +2549,15 @@ import` says it "creates a new version with all vars from the file(s)"
   and `EnvVaultRegistry.js` 100%, `AppSettingsSection.jsx` 98.7% lines.
   **Not verified:** that the macOS panel now lets you pick that file; it
   needs a person at the dialog (All files at least lifts the filter).
+
+### New-49: Escape doesn't cancel a grid-card cell edit
+
+- **Status:** ⬜ found 2026-10-23 while building Task 22.
+- **Found:** `Level3CardGrid` handles Enter and Escape in the cell's
+  `onKeyPress`; React fires no key-press event for Escape, so the cancel
+  branch never runs (a test of it fails). Enter works.
+- **Goal:** Escape cancels the edit and keeps the old code (`onKeyDown`).
+- **Validation:** a component test: Escape leaves the value and calls no
+  `onChange`.
+- **Cost of leaving it:** Escape does nothing; blurring the field saves
+  whatever was typed.

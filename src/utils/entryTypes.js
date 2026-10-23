@@ -230,6 +230,7 @@ export const ENTRY_TYPE_DEFINITIONS = {
       privateKey: {
         type: FIELD_TYPES.MULTILINE,
         required: true,
+        sensitive: true,
         label: 'Private Key',
         order: 400,
       },
@@ -296,6 +297,7 @@ export const ENTRY_TYPE_DEFINITIONS = {
       privateKey: {
         type: FIELD_TYPES.MULTILINE,
         required: true,
+        sensitive: true,
         label: 'Private Key',
         order: 500,
       },
@@ -339,6 +341,7 @@ export const ENTRY_TYPE_DEFINITIONS = {
       content: {
         type: FIELD_TYPES.MULTILINE,
         required: true,
+        sensitive: true,
         label: 'Note Content',
         order: 100,
       },
@@ -595,6 +598,15 @@ export const getDisplayFields = (entryType) => {
   const definition = getEntryTypeDefinition(entryType);
   return definition.displayFields || [];
 };
+
+/**
+ * Whether a field holds a secret: password-typed, or marked `sensitive`
+ * (private keys, note content). A copied secret is cleared from the
+ * clipboard after 30 s (GUI-ENV-BREAKDOWN New-3).
+ */
+export const isSensitiveField = (schema, fieldName) =>
+  schema[fieldName]?.type === FIELD_TYPES.PASSWORD ||
+  schema[fieldName]?.sensitive === true;
 
 export const getCopyableFields = (entryType) => {
   const definition = getEntryTypeDefinition(entryType);

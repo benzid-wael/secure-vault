@@ -299,6 +299,13 @@ describe('PasswordManager', () => {
     loadVault: vi.fn(),
     saveVault: vi.fn(),
     getVaults: vi.fn(),
+    copyToClipboard: vi.fn(
+      async (text, { sensitive } = {}) =>
+        /** @type {any} */ ({
+          success: true,
+          clearsInMs: sensitive ? 30000 : null,
+        })
+    ),
   };
 
   beforeEach(() => {
@@ -574,6 +581,37 @@ describe('PasswordManager', () => {
       });
     });
 
+    it('copies a password as a secret that main clears (New-3)', async () => {
+      render(React.createElement(PasswordManager, defaultProps));
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'Copy Password' })
+      );
+      await waitFor(() =>
+        expect(
+          /** @type {any} */ (window).electronAPI.copyToClipboard
+        ).toHaveBeenCalledWith('secretpass', { sensitive: true })
+      );
+      expect(
+        await screen.findByText(
+          'Password copied to clipboard. It is cleared from the clipboard in 30 s.'
+        )
+      ).toBeInTheDocument();
+    });
+
+    it('says so when the copy fails', async () => {
+      mockElectronAPI.copyToClipboard.mockResolvedValueOnce({
+        success: false,
+        error: 'Nothing to copy',
+      });
+      render(React.createElement(PasswordManager, defaultProps));
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'Copy Password' })
+      );
+      expect(
+        await screen.findByText('Failed to copy to clipboard')
+      ).toBeInTheDocument();
+    });
+
     it('copies username to clipboard', async () => {
       render(React.createElement(PasswordManager, defaultProps));
 
@@ -591,13 +629,14 @@ describe('PasswordManager', () => {
         fireEvent.click(usernameCopyButton);
 
         await waitFor(() => {
-          expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-            'user@gmail.com'
-          );
+          expect(
+            /** @type {any} */ (window).electronAPI.copyToClipboard
+          ).toHaveBeenCalledWith('user@gmail.com', { sensitive: false });
         });
 
+        // Not a secret: nothing about clearing (New-3).
         expect(
-          screen.getByText('Username/Email copied to clipboard')
+          await screen.findByText('Username/Email copied to clipboard.')
         ).toBeInTheDocument();
       }
     });

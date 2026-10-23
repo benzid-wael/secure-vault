@@ -55,6 +55,7 @@ import { readFeatures } from '../src/electron/utils/features.js';
 import { EnvVaultRegistry } from '../src/electron/services/EnvVaultRegistry.js';
 import { EnvVaultSession } from '../src/electron/services/EnvVaultSession.js';
 import { ClipboardService } from '../src/electron/services/ClipboardService.js';
+import { createClipboardHandlers } from '../src/electron/services/ClipboardIpc.js';
 import { createEnvVaultHandlers } from '../src/electron/services/EnvVaultIpc.js';
 import { EnvVaultWatcher } from '../src/electron/services/EnvVaultWatcher.js';
 import { EnvVaultKeychain } from '../src/electron/services/EnvVaultKeychain.js';
@@ -313,6 +314,14 @@ class ElectronApp {
       });
 
     handle('get-features', () => ({ success: true, ...this.features }));
+    // One clipboard service for every copy (New-3, Task 22): a new copy
+    // replaces a pending clear, whichever screen made either.
+    const clipboardService = new ClipboardService({ clipboard });
+    for (const [channel, fn] of Object.entries(
+      createClipboardHandlers({ clipboard: clipboardService })
+    )) {
+      handle(channel, fn);
+    }
     // Behind the New-4 gate: with it off, none of these channels exist.
     if (this.features.envVaults) {
       const envHandlers = createEnvVaultHandlers({
@@ -320,7 +329,7 @@ class ElectronApp {
         session: this.envSession,
         getWindow: () => this.mainWindow,
         dialog,
-        clipboard: new ClipboardService({ clipboard }),
+        clipboard: clipboardService,
         watcher: this.envWatcher,
         // Opt-in per vault (New-24). The file sits in userData: safeStorage's
         // key belongs to this app build, so other builds couldn't read it.

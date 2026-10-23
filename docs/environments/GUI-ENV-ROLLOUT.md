@@ -737,3 +737,19 @@ env init` writes; it's added to the remembered list.
 - **Verify after release:** not reliably reproducible by hand (a race);
   covered by tests.
 - **Rollback:** reinstall the previous app.
+
+### Task 22: every copy through main; secrets cleared after 30 s
+
+- **Runtime change (every desktop user, not gated):** password entries,
+  grid-card codes and the recovery key are copied by main; secrets are
+  cleared from the clipboard after 30 s unless it changed since. Usernames,
+  URLs and other plain fields aren't cleared.
+- **Schema or config change:** none. Entry type schemas mark private keys
+  and note content `sensitive` (code only, not stored).
+- **Before it ships:** the CHANGELOG "Changed" entry (written).
+- **Gated by:** nothing; it applies a promise (D6) the app already made for
+  env vaults.
+- **Verify after release:** copy a password, wait 30 s, paste: empty. Copy
+  a username, wait, paste: still there. Copy a password, then copy text in
+  another app within 30 s: that text stays.
+- **Rollback:** reinstall the previous app.

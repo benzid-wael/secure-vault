@@ -38,6 +38,12 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Changed
 
+- **Copied secrets are cleared from the clipboard after 30 seconds** in
+  the desktop app: passwords, PINs, card numbers, CVVs, private keys, note
+  content, grid-card codes (including the automatic copy on lookup) and the
+  recovery key. Nothing is cleared if you've copied something else since.
+  Usernames, URLs and other plain fields stay on the clipboard. The message
+  after a copy says when a secret is cleared.
 - **`vault env import <env> a.env b.env` imports every file.** Before, each
   file replaced the one before it, so only the last file's keys were left.
   Now the files make one version with the keys of all of them; a later file

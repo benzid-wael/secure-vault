@@ -24,7 +24,9 @@ have to reuse one. Generate a fresh password per site.
 - **Search** — use the search bar to filter entries as you type.
 - **Reveal** — click the eye icon to show or hide a password.
 - **Copy** — click the copy icon next to any field (username, password, URL) to
-  put it on your clipboard.
+  put it on your clipboard. A secret (a password, PIN, card number, private
+  key, note content, a grid-card code or the recovery key) is cleared from the
+  clipboard after 30 seconds, unless you've copied something else since.
 
 ## Edit or delete
 

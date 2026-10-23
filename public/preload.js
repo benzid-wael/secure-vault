@@ -15,6 +15,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   lockVault: () => ipcRenderer.invoke('lock-vault'),
   // Input in the window: keeps the unlocked vault from locking (Task 13).
   vaultActivity: () => ipcRenderer.invoke('vault-activity'),
+  // Main writes the clipboard and clears a secret after 30 s (New-3).
+  copyToClipboard: (text, options) =>
+    ipcRenderer.invoke('clipboard:copy', text, options),
   // `info.reason` is 'idle' (with `info.minutes`) after an idle lock.
   onVaultLocked: (callback) =>
     ipcRenderer.on('vault-locked', (event, info) => {

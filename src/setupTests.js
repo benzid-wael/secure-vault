@@ -4,6 +4,11 @@ import { vi } from 'vitest';
 
 // Mock window.electronAPI globally
 const mockElectronAPI = {
+  // Every copy goes through main (New-3, Task 22).
+  copyToClipboard: vi.fn(async (text, { sensitive } = {}) => ({
+    success: true,
+    clearsInMs: sensitive ? 30000 : null,
+  })),
   // Vault management
   getVaults: vi.fn().mockResolvedValue([]),
   createVault: vi.fn().mockResolvedValue({ success: true }),

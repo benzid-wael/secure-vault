@@ -18,6 +18,7 @@ import {
   getSearchFields,
   ENTRY_TYPE_DEFINITIONS,
 } from '../utils/entryTypes';
+import { copyText, clearsNote } from '../utils/clipboard';
 
 const PasswordManager = ({
   vaultName,
@@ -228,11 +229,11 @@ const PasswordManager = ({
     }
   };
 
-  const copyToClipboard = (text, label) => {
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        showSnackbar(`${label} copied to clipboard`);
+  // Main writes the clipboard; a secret is cleared after 30 s (New-3).
+  const copyToClipboard = (text, label, { sensitive = false } = {}) => {
+    copyText(text, { sensitive })
+      .then((result) => {
+        showSnackbar(`${label} copied to clipboard.${clearsNote(result)}`);
       })
       .catch(() => {
         showSnackbar('Failed to copy to clipboard', 'error');

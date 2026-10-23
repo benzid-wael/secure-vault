@@ -85,7 +85,9 @@ describe('EntryList — common behaviour', () => {
   it('copies through onCopy with the schema label', () => {
     renderList(entries);
     fireEvent.click(card('1').getByLabelText('Copy Username/Email'));
-    expect(onCopy).toHaveBeenCalledWith('user1', 'Username/Email');
+    expect(onCopy).toHaveBeenCalledWith('user1', 'Username/Email', {
+      sensitive: false,
+    });
   });
 
   it('treats an entry without entryType as a password entry', () => {
@@ -171,7 +173,7 @@ describe('EntryList — each type shows its own fields', () => {
 
     fireEvent.click(c.getByLabelText('Open menu'));
     fireEvent.click(screen.getByText('Copy CVV/CVC'));
-    expect(onCopy).toHaveBeenCalledWith('123', 'CVV/CVC');
+    expect(onCopy).toHaveBeenCalledWith('123', 'CVV/CVC', { sensitive: true });
   });
 
   it('select fields show the option label, not the stored value', () => {
@@ -231,7 +233,10 @@ describe('EntryList — each type shows its own fields', () => {
     expect(c.getByText('22')).toBeInTheDocument();
     expect(c.queryByText('-----BEGIN KEY-----')).toBeNull();
     fireEvent.click(c.getByLabelText('Copy Private Key'));
-    expect(onCopy).toHaveBeenCalledWith('-----BEGIN KEY-----', 'Private Key');
+    // A private key is a secret though not password-typed (New-3).
+    expect(onCopy).toHaveBeenCalledWith('-----BEGIN KEY-----', 'Private Key', {
+      sensitive: true,
+    });
   });
 
   it('level 3 card: its own fields and no secret row', () => {
