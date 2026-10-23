@@ -318,21 +318,27 @@ function App() {
     loadAvailableVaults();
   };
 
+  // From the unlocked vault only, as for env vaults; main refuses it locked.
   const forgetSavedPassword = async (vaultName) => {
+    let result;
     try {
-      await window.electronAPI.forgetVaultPassword(vaultName);
-      setSnackbar({
-        open: true,
-        message: `Forgot the saved password of ${vaultName}.`,
-        severity: 'success',
-      });
+      result = await window.electronAPI.forgetVaultPassword(vaultName);
     } catch {
-      setSnackbar({
-        open: true,
-        message: "The saved password couldn't be forgotten.",
-        severity: 'error',
-      });
+      result = { success: false };
     }
+    setSnackbar(
+      result?.success
+        ? {
+            open: true,
+            message: `Forgot the saved password of ${vaultName}. You'll type it the next time you unlock.`,
+            severity: 'success',
+          }
+        : {
+            open: true,
+            message: "The saved password couldn't be forgotten.",
+            severity: 'error',
+          }
+    );
     loadSavedPasswords();
   };
 
@@ -466,7 +472,6 @@ function App() {
             onCreateNew={() => setCurrentView('create')}
             onVaultDeleted={handleVaultDeleted}
             remembered={kept.vaults}
-            onForgetPassword={forgetSavedPassword}
             opened={openedVaults}
             onOpenFile={
               window.electronAPI?.openVaultFile ? openVaultFile : undefined
@@ -509,6 +514,8 @@ function App() {
             onLock={lockVault}
             usesDefaultPassword={usesDefaultPassword}
             onPasswordChanged={() => setUsesDefaultPassword(false)}
+            passwordSaved={kept.vaults.includes(currentVault)}
+            onForgetPassword={() => forgetSavedPassword(currentVault)}
           />
         );
       default:

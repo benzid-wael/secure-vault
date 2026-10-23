@@ -7,7 +7,14 @@ import App from '../App';
 // the real selector and login screen, a fake preload bridge.
 vi.mock('../components/PasswordManager', () => ({
   __esModule: true,
-  default: ({ vaultName }) => <div>manager {vaultName}</div>,
+  default: ({ vaultName, passwordSaved, onForgetPassword }) => (
+    <div>
+      manager {vaultName}
+      {passwordSaved && (
+        <button onClick={onForgetPassword}>Forget saved password</button>
+      )}
+    </div>
+  ),
 }));
 vi.mock('../components/ConfigurationDialog', () => ({
   __esModule: true,
@@ -134,29 +141,52 @@ describe('App: saved passwords for password vaults', () => {
     ).toBeInTheDocument();
   });
 
-  it('forgets a saved password from the vault list', async () => {
+  it('offers no forget in the vault list, only in the unlocked vault', async () => {
     render(<App />);
+    await screen.findByText('Password saved');
+    expect(screen.queryByText(/Forget/)).toBeNull();
+    await card('work');
+    await screen.findByText('manager work');
     fireEvent.click(
-      await screen.findByRole('button', {
-        name: 'Forget the saved password of work',
-      })
+      screen.getByRole('button', { name: 'Forget saved password' })
     );
     await waitFor(() =>
       expect(api.forgetVaultPassword).toHaveBeenCalledWith('work')
     );
     expect(
-      await screen.findByText('Forgot the saved password of work.')
+      await screen.findByText(
+        "Forgot the saved password of work. You'll type it the next time you unlock."
+      )
     ).toBeInTheDocument();
-    expect(api.unlockVaultSaved).not.toHaveBeenCalled();
   });
 
-  it('says so when forgetting fails', async () => {
-    api.forgetVaultPassword.mockRejectedValue(new Error('ipc'));
+  it("offers no forget in a vault whose password isn't saved", async () => {
     render(<App />);
+    await screen.findByText('Password saved');
+    await card('home');
+    fireEvent.change(await screen.findByLabelText('Master Password'), {
+      target: { value: 'x' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock Vault' }));
+    await screen.findByText('manager home');
+    expect(
+      screen.queryByRole('button', { name: 'Forget saved password' })
+    ).toBeNull();
+  });
+
+  it.each([
+    [
+      'a refusal',
+      () => ({ success: false, error: 'Vault is locked', locked: true }),
+    ],
+    ['a failed call', () => Promise.reject(new Error('ipc'))],
+  ])('says so when forgetting fails on %s', async (_, outcome) => {
+    api.forgetVaultPassword.mockImplementation(async () => outcome());
+    render(<App />);
+    await screen.findByText('Password saved');
+    await card('work');
     fireEvent.click(
-      await screen.findByRole('button', {
-        name: 'Forget the saved password of work',
-      })
+      await screen.findByRole('button', { name: 'Forget saved password' })
     );
     expect(
       await screen.findByText("The saved password couldn't be forgotten.")

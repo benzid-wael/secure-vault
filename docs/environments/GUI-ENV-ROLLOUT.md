@@ -828,7 +828,8 @@ env init` writes; it's added to the remembered list.
 - **Gated by:** nothing: off by default per vault.
 - **Verify after release:** tick the box, lock, click the vault: Touch ID,
   then the vault opens. Change the password in the app, lock, click: it
-  still opens. **Forget password**: the next click asks for it.
+  still opens. **Forget saved password** in the unlocked vault: after
+  locking, the next click asks for the password.
 - **Rollback:** reinstall the previous app. It has no saved passwords:
   every vault asks for its password again, and `vault-passwords.json`
   stays in userData, encrypted, until a later version forgets it.

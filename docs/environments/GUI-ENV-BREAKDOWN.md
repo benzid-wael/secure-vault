@@ -2795,9 +2795,12 @@ import` says it "creates a new version with all vars from the file(s)"
     or `'NOT_FOUND'`, so a saved password is dropped only when wrong.
   - Renderer: a vault with a saved password opens on click (the login
     screen shows why when it doesn't; a canceled Touch ID says nothing);
-    "Remember on this computer" on the login screen; "Password saved" and
-    "Forget password" on the vault card; "Forget all saved passwords" in
-    Settings for every vault, shown where the keychain can keep one.
+    "Remember on this computer" on the login screen; "Password saved" on
+    the vault card; "Forget saved password" in the unlocked vault's header
+    (as env vaults; main refuses it while the vault is locked, changed
+    2026-10-23 at the author's request: it was on the card, usable without
+    unlocking); "Forget all saved passwords" in Settings for every vault,
+    shown where the keychain can keep one.
   - Guide (getting started, security) and CHANGELOG.
 - **Checked:** 1456 unit tests pass; `PasswordVaultIpc.js` 100% lines
   on a real `VaultService`, `VaultSession` and `VaultKeychain`;

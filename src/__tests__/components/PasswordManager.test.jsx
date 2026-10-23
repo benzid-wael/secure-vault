@@ -328,6 +328,36 @@ describe('PasswordManager', () => {
     delete global.window.electronAPI;
   });
 
+  describe('saved password (New-52)', () => {
+    it('offers to forget it when it is saved', async () => {
+      const onForgetPassword = vi.fn();
+      render(
+        React.createElement(PasswordManager, {
+          ...defaultProps,
+          passwordSaved: true,
+          onForgetPassword,
+        })
+      );
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'Forget saved password' })
+      );
+      expect(onForgetPassword).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers nothing when it is not saved', async () => {
+      render(
+        React.createElement(PasswordManager, {
+          ...defaultProps,
+          onForgetPassword: vi.fn(),
+        })
+      );
+      await screen.findByText('test-vault');
+      expect(
+        screen.queryByRole('button', { name: 'Forget saved password' })
+      ).toBeNull();
+    });
+  });
+
   describe('Component Rendering', () => {
     it('shows loading state initially', () => {
       render(React.createElement(PasswordManager, defaultProps));

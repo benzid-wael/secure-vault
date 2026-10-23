@@ -24,8 +24,8 @@ Design detail for the environment-vault (`vault env`) features lives in
   vault later unlocks it, after Touch ID where the Mac has it. Off by
   default, per vault. A saved password follows a password change made in
   the app, is dropped when the vault is deleted or the password no longer
-  works, and **Forget password** on the vault or **Forget all saved
-  passwords** in Settings removes it.
+  works, and **Forget saved password** in the unlocked vault or **Forget
+  all saved passwords** in Settings removes it.
 - **Environment vaults can bind their header to their contents** (vault
   format 2). Changing the file's plaintext header (its format version,
   features or key settings) then makes it refuse to open with "…'s header was

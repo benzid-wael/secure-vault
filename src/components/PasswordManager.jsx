@@ -20,11 +20,17 @@ import {
 } from '../utils/entryTypes';
 import { copyText, clearsNote } from '../utils/clipboard';
 
+/**
+ * `passwordSaved`: this vault's password is kept on this computer (New-52);
+ * the header then offers `onForgetPassword`.
+ */
 const PasswordManager = ({
   vaultName,
   onLock,
   usesDefaultPassword = false,
   onPasswordChanged = () => {},
+  passwordSaved = false,
+  onForgetPassword = undefined,
 }) => {
   const [entries, setEntries] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -327,6 +333,11 @@ const PasswordManager = ({
           </Box>
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
+          {passwordSaved && onForgetPassword && (
+            <Button onClick={onForgetPassword} sx={{ color: 'white' }}>
+              Forget saved password
+            </Button>
+          )}
           <Button
             variant="outlined"
             startIcon={<ImportExportIcon />}

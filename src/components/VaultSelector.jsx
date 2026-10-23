@@ -25,7 +25,7 @@ import {
 
 /**
  * `remembered`: the vaults whose password is kept on this computer
- * (New-52); each gets a label and `onForgetPassword(name)`.
+ * (New-52); each gets a label. It's forgotten from the unlocked vault.
  * `opened`: vaults opened from another folder (New-53),
  * `[{name, location, exists}]`. Each shows its file and is taken off the
  * list with `onRemove(name)` instead of deleted; a missing one can't be
@@ -38,7 +38,6 @@ const VaultSelector = ({
   onVaultDeleted = undefined,
   header = null,
   remembered = [],
-  onForgetPassword = undefined,
   opened = [],
   onOpenFile = undefined,
   onRemove = undefined,
@@ -263,24 +262,8 @@ const VaultSelector = ({
                     </Box>
                   </Box>
                   {remembered.includes(vault) && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box>
                       <Chip size="small" label="Password saved" />
-                      {onForgetPassword && (
-                        <Button
-                          size="small"
-                          aria-label={`Forget the saved password of ${vault}`}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onForgetPassword(vault);
-                          }}
-                          sx={{
-                            color: 'rgba(255, 255, 255, 0.7)',
-                            textTransform: 'none',
-                          }}
-                        >
-                          Forget password
-                        </Button>
-                      )}
                     </Box>
                   )}
                   {/* Opened from another folder: off the list, the file stays */}

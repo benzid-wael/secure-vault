@@ -71,8 +71,9 @@ the vault in the app, so leave it off on a shared account. The box is offered
 only where the system keychain can encrypt it (on Linux, a keyring such as GNOME
 Keyring or KWallet must be running).
 
-A vault with a saved password is labeled **Password saved**; **Forget password**
-on it drops the password. If the password was changed elsewhere, the saved one
+A vault with a saved password is labeled **Password saved**. To drop it, unlock the
+vault and click **Forget saved password** in its header: as with environment vaults,
+only someone who can open the vault can change how it opens. If the password was changed elsewhere, the saved one
 stops working: the app forgets it and asks you to type the new one. Changing the
 password in the app updates the saved one, and deleting the vault forgets it.
 **Forget all saved passwords** in Settings drops every saved password, for every

@@ -68,39 +68,18 @@ describe('VaultSelector', () => {
   });
 
   describe('saved passwords (New-52)', () => {
-    it('labels a vault with a saved password and forgets it on request', () => {
-      const onForgetPassword = vi.fn();
+    it('labels a vault with a saved password, offering no forget while locked', () => {
       render(
         <VaultSelector
           vaults={vaults}
           onVaultSelect={onVaultSelect}
           onCreateNew={onCreateNew}
           remembered={['work']}
-          onForgetPassword={onForgetPassword}
         />
       );
       expect(screen.getAllByText('Password saved')).toHaveLength(1);
-      fireEvent.click(
-        screen.getByRole('button', {
-          name: 'Forget the saved password of work',
-        })
-      );
-      expect(onForgetPassword).toHaveBeenCalledWith('work');
-      // The button doesn't also open the vault.
-      expect(onVaultSelect).not.toHaveBeenCalled();
-    });
-
-    it('shows the label alone without a forget handler', () => {
-      render(
-        <VaultSelector
-          vaults={vaults}
-          onVaultSelect={onVaultSelect}
-          onCreateNew={onCreateNew}
-          remembered={['main']}
-        />
-      );
-      expect(screen.getByText('Password saved')).toBeInTheDocument();
-      expect(screen.queryByText('Forget password')).toBeNull();
+      // Forgetting happens from the unlocked vault, as for env vaults.
+      expect(screen.queryByText(/Forget/)).toBeNull();
     });
   });
 

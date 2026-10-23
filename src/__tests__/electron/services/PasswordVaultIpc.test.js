@@ -245,6 +245,17 @@ describe('the kept password follows the vault', () => {
     expect(await keychain.count()).toBe(1);
   });
 
+  it('is not forgotten while the vault is locked', async () => {
+    await h['unlock-vault'](ev, 'work', PW, { remember: true });
+    session.close();
+    expect(await h['forget-vault-password'](ev, 'work')).toEqual({
+      success: false,
+      error: 'Vault is locked',
+      locked: true,
+    });
+    expect(await keychain.count()).toBe(1);
+  });
+
   it('is forgotten on request', async () => {
     await h['unlock-vault'](ev, 'work', PW, { remember: true });
     expect(await h['forget-vault-password'](ev, 'work')).toEqual({

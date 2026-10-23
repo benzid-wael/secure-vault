@@ -120,10 +120,13 @@ export function createPasswordVaultHandlers({
       };
     },
 
-    'forget-vault-password': async (event, vaultName) => {
-      await keychain?.forget(pathOf(vaultName));
-      return { success: true };
-    },
+    // Only from the unlocked vault, as for env vaults: someone who can't
+    // open it can't change how it opens either.
+    'forget-vault-password': (event, vaultName) =>
+      session.withPassword(vaultName, async () => {
+        await keychain?.forget(pathOf(vaultName));
+        return { success: true };
+      }),
 
     // The current password is still re-entered and checked here: holding a
     // session must not be enough to take over the vault. A saved password
