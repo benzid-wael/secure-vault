@@ -96,6 +96,7 @@ updated as each task finishes, not in a batch at the end.
 | New-51 | Coverage config uses `coverage.all`, gone in Vitest 4              | —   | P3  | ✅     | —                                      |
 | New-52 | Password vaults: remember the password on this computer            | —   | P1  | ✅     | New-24                                 |
 | New-53 | Password vaults: open one from any folder                          | —   | P1  | ✅     | New-52                                 |
+| New-54 | Password vaults: a key file as second factor (RFC)                 | —   | P2  | 🟡     | New-52                                 |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -2860,3 +2861,17 @@ import` says it "creates a new version with all vars from the file(s)"
 - **Validation:** open, unlock (typed and saved password), edit, change
   password and remove from list on a vault outside the app's folder, in
   unit tests on real files and in an e2e scenario.
+
+### New-54: Password vaults: a key file as second factor
+
+- **Status:** 🟡 design drafted 2026-10-23,
+  [`PASSWORD-VAULT-2FA-RFC.md`](PASSWORD-VAULT-2FA-RFC.md); waiting for the
+  author's approval and answers to its Q1 and Q2. No code yet.
+- **Found:** the author, 2026-10-23: "for security reason I would like to
+  support 2fa".
+- **Decided (author, 2026-10-23):** a key file first, hardware keys after a
+  spike; the recovery key opens the vault alone; "Remember on this
+  computer" keeps the password only; password vaults only.
+- **Goal:** a stolen copy of a vault plus its password opens nothing
+  without the key file.
+- **Validation:** per the RFC's plan (§10), each step its own task.
