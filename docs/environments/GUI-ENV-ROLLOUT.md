@@ -584,3 +584,22 @@ HOST -e child` and the `shop` value resolve as before.
   it: `vault env show <env>` still prints its value.
 - **Rollback:** reinstall the previous CLI. Vaults written by this one stay
   valid.
+
+### New-45: CLI `env import` of several files imports all of them
+
+- **Runtime change (every CLI user, not gated):** `vault env import <env>
+a.env b.env` writes one version with the keys of every file (a later file
+  wins), instead of one version per file with only the last file's keys.
+  A missing file now aborts the whole import. Warnings print `file:line`
+  as before.
+- **Schema or config change:** none. The version message lists every file
+  ("Imported from a.env, b.env").
+- **Before it ships:** the CHANGELOG "Changed" entry (written). A script
+  that relied on only the last file winning gets the earlier files' keys
+  too; that's what the docs always said.
+- **Gated by:** nothing; it fixes data the command dropped.
+- **Verify after release:** `vault env import dev a.env b.env` with
+  different keys in each: `vault env show dev` lists both, and `vault env
+history dev` shows one new version.
+- **Rollback:** reinstall the previous CLI. Vaults written by this one stay
+  valid.

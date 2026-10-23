@@ -129,7 +129,7 @@ describe('EnvironmentVaultService write operations', () => {
       );
       expect(imported.success).toBe(true);
       expect(imported.warnings).toEqual([
-        { line: 3, message: 'Not KEY=value; skipped' },
+        { file, line: 3, message: 'Not KEY=value; skipped' },
       ]);
       expect((await reload()).getActiveVersion(ENV).comments).toEqual({
         B: 'from file',
@@ -581,6 +581,29 @@ describe('EnvironmentVaultService write operations', () => {
       expect((await reload()).getActiveVersion(ENV).vars.IMPORTED_KEY).toBe(
         'imported_value'
       );
+    });
+
+    it('imports several files as one version, naming each warning (New-45)', async () => {
+      await seed(populated(ENV, { KEY: 'old' }));
+      const a = path.join(dir, 'a.env');
+      const b = path.join(dir, 'b.env');
+      fs.writeFileSync(a, 'A=1\nSHARED=a\n');
+      fs.writeFileSync(b, 'nope\nSHARED=b\n');
+
+      const result = await EnvironmentVaultService.importEnvFile(
+        vaultPath,
+        PW,
+        ENV,
+        [a, b]
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.warnings).toEqual([
+        { file: b, line: 1, message: 'Not KEY=value; skipped' },
+      ]);
+      const active = (await reload()).getActiveVersion(ENV);
+      expect(active.vars).toEqual({ A: '1', SHARED: 'b' });
+      expect(active.message).toBe('Imported from a.env, b.env');
     });
 
     it('fails on a missing .env file without touching the vault', async () => {

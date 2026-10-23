@@ -411,6 +411,20 @@ describe('EnvironmentVault', () => {
       expect(vault.getActiveVersion('staging').vars.NEW_KEY).toBe('new_val');
     });
 
+    it('merges several files into one version; the last one wins (New-45)', () => {
+      const vault = new EnvironmentVault();
+      vault.importFromEnvFile(
+        'dev',
+        ['# from a\nX=a\nA=1', 'X=b\nB=2', '# from c\nC=3'],
+        { comments: true }
+      );
+      expect(vault.getHistory('dev')).toHaveLength(1);
+      const active = vault.getActiveVersion('dev');
+      expect(active.vars).toEqual({ X: 'b', A: '1', B: '2', C: '3' });
+      // X's value came from the second file, which gives it no comment.
+      expect(active.comments).toEqual({ C: 'from c' });
+    });
+
     it('keeps the flags of the keys still in the file (New-32)', () => {
       const vault = new EnvironmentVault();
       vault.addEnvironment('dev');

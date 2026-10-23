@@ -1,6 +1,7 @@
 // @vitest-environment node
 // `vault env import` (New-32): keys still in the file keep their public and
 // required flags; new keys are secret, dropped keys take their flags along.
+// Several files make one version with all their keys (New-45).
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
@@ -71,5 +72,30 @@ describe('vault env import', () => {
     fs.writeFileSync(file, 'URL=http://b\nOLD=o\n');
     ok(['import', 'dev', file]);
     expect(sensitivity()).toEqual({ URL: false, OLD: true });
+  });
+
+  it('imports several files as one version with all their keys', () => {
+    const a = path.join(workDir, 'a.env');
+    const b = path.join(workDir, 'b.env');
+    fs.writeFileSync(a, 'URL=http://a\nONLY_A=1\n');
+    fs.writeFileSync(b, 'URL=http://b\nONLY_B=2\nbad line\n');
+    const result = ok(['import', 'dev', a, b]);
+
+    const shown = JSON.parse(ok(['show', 'dev', '--json']).stdout);
+    expect(
+      Object.fromEntries(shown.keys.map((k) => [k.key, k.value]))
+    ).toMatchObject({ URL: 'http://b', ONLY_A: '1', ONLY_B: '2' });
+    expect(shown.activeVersion).toBe(4); // three sets, then one import
+    expect(result.stderr).toContain(`${b}:3: Not KEY=value; skipped`);
+  });
+
+  it('writes nothing when one of the files is missing', () => {
+    const a = path.join(workDir, 'a.env');
+    fs.writeFileSync(a, 'ONLY_A=1\n');
+    const result = cli(['import', 'dev', a, path.join(workDir, 'none.env')]);
+    expect(result.status).not.toBe(0);
+    expect(JSON.parse(ok(['show', 'dev', '--json']).stdout).activeVersion).toBe(
+      3
+    );
   });
 });

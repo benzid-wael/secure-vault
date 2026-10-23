@@ -2261,7 +2261,21 @@ message})` renames and rewrites references in one write and returns
 
 ### New-45: `env import` of several files keeps only the last one
 
-- **Status:** ⬜ found 2026-10-23 while building New-32.
+- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+  merged, not released. CLI behavior change: CHANGELOG "Changed".
+- **Built:** `EnvironmentVault.importFromEnvFile` takes one content or an
+  array and writes one version; a later file wins on a repeated key, with
+  its comment (or none). `EnvironmentVaultService.importEnvFile` takes one
+  path or several, reads them all before taking the lock (nothing is
+  written if one is missing; before, the files ahead of it were imported),
+  and tags each warning with its `file`. The version message lists the
+  files. `vault env import` makes one call. SPEC says so.
+- **Validation done:** CLI integration: `import dev a.env b.env` leaves the
+  keys of both, `b`'s value on a shared key, in one new version, and the
+  warning names `b.env` and its line; a missing second file writes nothing.
+  Both fail on the previous code. Service test (one version, message,
+  warnings with `file`) and model test (merge, comments of the winning
+  file). Coverage of `bin/commands/env.js` isn't measured (child process).
 - **Found:** `vault env import prod a.env b.env` writes one version per
   file, each replacing the env's variables, so only `b.env`'s keys remain
   (v1 "Imported from a.env", v2 "Imported from b.env"). SPEC §`vault env

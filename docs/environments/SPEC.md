@@ -1003,7 +1003,8 @@ DESCRIPTION
 Imports one or more .env files into an environment of an existing vault.
 The environment name is the first positional; one or more file paths follow.
 Parses KEY=VALUE lines (skips comments, blank lines, supports `export` prefix).
-Creates a new version with all vars from the file(s).
+Creates one new version with all vars from the file(s); a later file wins
+on a repeated key. If a file can't be read, nothing is written.
 Keys still in the file keep their public and required flags; new keys are
 secret.
 

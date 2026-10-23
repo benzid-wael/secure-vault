@@ -538,24 +538,22 @@ export function registerEnvCommand(program) {
           process.exit(1);
         }
 
-        for (const file of files) {
-          spinner.text = `Importing ${file} as "${envName}"...`;
+        spinner.text = `Importing ${files.join(', ')} as "${envName}"...`;
+        // One version with every file's keys; a later file wins.
+        const result = await EnvironmentVaultService.importEnvFile(
+          vaultPath,
+          vaultPassword,
+          envName,
+          files,
+          { comments: !!options.comments }
+        );
 
-          const result = await EnvironmentVaultService.importEnvFile(
-            vaultPath,
-            vaultPassword,
-            envName,
-            file,
-            { comments: !!options.comments }
-          );
-
-          if (!result.success) {
-            spinner.fail(chalk.red(`${file}: ${result.error}`));
-            process.exit(1);
-          }
-          for (const w of result.warnings ?? []) {
-            console.error(chalk.yellow(`${file}:${w.line}: ${w.message}`));
-          }
+        if (!result.success) {
+          spinner.fail(chalk.red(result.error));
+          process.exit(1);
+        }
+        for (const w of result.warnings ?? []) {
+          console.error(chalk.yellow(`${w.file}:${w.line}: ${w.message}`));
         }
 
         spinner.succeed(

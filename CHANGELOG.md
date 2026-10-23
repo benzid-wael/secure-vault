@@ -38,6 +38,12 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Changed
 
+- **`vault env import <env> a.env b.env` imports every file.** Before, each
+  file replaced the one before it, so only the last file's keys were left.
+  Now the files make one version with the keys of all of them; a later file
+  wins on a repeated key. If any file can't be read, nothing is imported
+  (before, the files ahead of it were). Warnings name the file they're
+  about.
 - **`vault env import` keeps the flags of the keys it replaces.** A key
   still in the file stays public or required as it was; before, every
   import made all keys secret and dropped `required`. New keys are secret,

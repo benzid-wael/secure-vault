@@ -1082,33 +1082,40 @@ export class EnvironmentVaultService {
   }
 
   /**
-   * Replace an env's variables with a .env file's. The result carries the
-   * parser's `warnings` (skipped lines, repeated keys), which hold no value.
+   * Replace an env's variables with one or more .env files', as one new
+   * version (a later file wins on a repeated key). The result carries the
+   * parser's `warnings` (skipped lines, repeated keys), each naming its
+   * `file`; they hold no value. Nothing is written if a file can't be read.
    *
+   * @param {string | string[]} filePaths
    * @param {Object} [options]
    * @param {boolean} [options.comments] Take the file's `#` comments above a
    *   key as its comment.
    * @returns {Promise<{success: boolean, error?: string, code?: string,
-   *   revision?: string, warnings?: Array<{line: number, message: string}>}>}
+   *   revision?: string,
+   *   warnings?: Array<{file: string, line: number, message: string}>}>}
    */
   static async importEnvFile(
     vaultPath,
     password,
     envName,
-    filePath,
+    filePaths,
     { comments = false } = {}
   ) {
-    let content;
+    const files = [filePaths].flat();
+    const contents = [];
     try {
-      // Read the .env before taking the lock: it's not part of the vault.
-      content = await fs.readFile(filePath, 'utf-8');
+      // Read the .env files before taking the lock: they're not part of the vault.
+      for (const file of files) contents.push(await fs.readFile(file, 'utf-8'));
     } catch (error) {
       return { success: false, error: error.message };
     }
-    const { warnings } = parseDotenv(content);
+    const warnings = contents.flatMap((content, i) =>
+      parseDotenv(content).warnings.map((w) => ({ file: files[i], ...w }))
+    );
     const result = await this.#mutate(vaultPath, password, (vault) => {
-      vault.importFromEnvFile(envName, content, {
-        message: `Imported from ${path.basename(filePath)}`,
+      vault.importFromEnvFile(envName, contents, {
+        message: `Imported from ${files.map((f) => path.basename(f)).join(', ')}`,
         comments,
       });
     });

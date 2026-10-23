@@ -499,25 +499,41 @@ export class EnvironmentVault {
 
   /**
    * Replace `name`'s variables with a .env file's, as one new version.
+   * Several files (an array) make one version with the keys of all of them;
+   * a later file wins on a repeated key, with its comment.
    * With `comments`, the file's `#` comments above a key become its comment;
    * otherwise keys keep the comments they had. Keys still in the file keep
    * their public and required flags; new keys are secret.
+   *
+   * @param {string} name
+   * @param {string | string[]} content
    */
   importFromEnvFile(name, content, { message = null, comments = false } = {}) {
-    const parsed = parseDotenv(content);
+    /** @type {Record<string, string>} */
+    const vars = {};
+    /** @type {Record<string, string>} */
+    const fileComments = {};
+    for (const one of [content].flat()) {
+      const parsed = parseDotenv(one);
+      for (const [key, value] of Object.entries(parsed.vars)) {
+        vars[key] = value;
+        if (parsed.comments[key]) fileComments[key] = parsed.comments[key];
+        else delete fileComments[key];
+      }
+    }
 
     if (!this.environments[name]) {
       this.addEnvironment(name);
     }
 
     const active = this.getActiveVersion(name);
-    const inFile = (/** @type {string} */ key) => key in parsed.vars;
+    const inFile = (/** @type {string} */ key) => key in vars;
     const kept = active?.comments;
-    return this.addVersion(name, parsed.vars, {
+    return this.addVersion(name, vars, {
       nonSensitive: (active?.nonSensitive ?? []).filter(inFile),
       required: (active?.required ?? []).filter(inFile),
       message,
-      ...(comments && { comments: { ...kept, ...parsed.comments } }),
+      ...(comments && { comments: { ...kept, ...fileComments } }),
     });
   }
 }
