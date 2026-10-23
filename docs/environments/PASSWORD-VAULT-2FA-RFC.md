@@ -2,7 +2,7 @@
 
 | Field   | Value                                                                                                                          |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Status  | **Draft**, 2026-10-23: waiting for the author's approval                                                                       |
+| Status  | **Approved** (rev. 2, 2026-10-23): Q1 and Q2 as proposed; §5's tag scope refined in step 1                                     |
 | Tracked | GUI-ENV-BREAKDOWN New-54                                                                                                       |
 | Touches | Password vault file format (version 2), `VaultService` and its siblings, `VaultSession`, unlock and recovery UI, CLI `recover` |
 
@@ -88,9 +88,17 @@ the DEK twice, wrapped in two slots:
 - `main` KEK = `HKDF-SHA256(ikm = PBKDF2(password, salt) ‖ keyFileKey,
 salt = salt, info = "secure-vault password-vault v2 main")`.
 - `recovery` KEK = `PBKDF2(recoveryKey, slots.recovery.salt)`.
-- Every AES-256-GCM operation (payload and slots) takes the plaintext
-  header as additional data, as env format 2 does (New-37): editing
-  `features`, `keyFile` or `kdf` in the file makes it refuse to open.
+- Every AES-256-GCM operation takes plaintext header fields as additional
+  data, as env format 2 does (New-37), so an edited header refuses to
+  open. **Rev. 2:** each slot's tag covers the format (`version`,
+  `features`) and its own settings only (`main`: `salt`, `kdf`,
+  `keyFile.id`; `recovery`: its `salt`, `kdf`), so re-wrapping one slot
+  never needs the other slot's key; a session holding only the DEK can
+  still make a new recovery key. The payload's tag covers all of them and
+  is re-sealed whenever the header changes.
+- Each slot keeps a `check` (128 bits of HMAC of its key, like env format
+  2's `keyCheck`), so a wrong password or recovery key is told from a
+  changed file.
 - `recoveryMetadata` (format 1's copy of the master password under the
   recovery key) isn't written in format 2.
 
@@ -165,10 +173,8 @@ makes it format 1 again.
 7. Later: a spike on FIDO2 `hmac-secret`/PRF in Electron on the three OSes;
    a hardware key would be another `main`-style slot.
 
-## 11. Open questions
+## 11. Questions answered (author, 2026-10-23)
 
-- **Q1.** Remember the key file's location per vault (one click to unlock
-  while the USB stick is in) or ask every time? Proposed: remember it,
-  with "Choose another key file…" on the unlock screen.
-- **Q2.** Turn off writes format 1 (opens in older versions, needs a new
-  recovery key) or keeps format 2 without a key file? Proposed: format 1.
+- **Q1.** The app remembers the key file's **location** per vault, never its
+  content, with "Choose another key file…" on the unlock screen.
+- **Q2.** Turning 2FA off writes format 1 again, with a new recovery key.

@@ -96,7 +96,7 @@ updated as each task finishes, not in a batch at the end.
 | New-51 | Coverage config uses `coverage.all`, gone in Vitest 4              | —   | P3  | ✅     | —                                      |
 | New-52 | Password vaults: remember the password on this computer            | —   | P1  | ✅     | New-24                                 |
 | New-53 | Password vaults: open one from any folder                          | —   | P1  | ✅     | New-52                                 |
-| New-54 | Password vaults: a key file as second factor (RFC)                 | —   | P2  | 🟡     | New-52                                 |
+| New-54 | Password vaults: a key file as second factor                       | —   | P2  | 🟡     | New-52                                 |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -2864,9 +2864,27 @@ import` says it "creates a new version with all vars from the file(s)"
 
 ### New-54: Password vaults: a key file as second factor
 
-- **Status:** 🟡 design drafted 2026-10-23,
-  [`PASSWORD-VAULT-2FA-RFC.md`](PASSWORD-VAULT-2FA-RFC.md); waiting for the
-  author's approval and answers to its Q1 and Q2. No code yet.
+- **Status:** 🟡 step 1 of 6 done 2026-10-23. Design approved
+  ([`PASSWORD-VAULT-2FA-RFC.md`](PASSWORD-VAULT-2FA-RFC.md) rev. 2, Q1 and
+  Q2 as proposed). On `feat/vault-env-gui`; not merged, not released.
+  Nothing reads or writes format 2 yet: no user-visible change.
+- **Step 1, built:** `src/electron/utils/passwordVaultEnvelope.js`, pure
+  functions: key file (`createKeyFile`, `parseKeyFile`, `keyFileIdOf`),
+  keys (`newDataKey`, `mainKekOf` = HKDF-SHA256 of PBKDF2 ‖ key file,
+  `recoveryKekOf`), header (`newHeader`, `isFormat2`), slots (`wrapSlot`,
+  `unwrapSlot` with a per-slot `check`, `checkKeyFile`), payload
+  (`sealPayload`, `openPayload`); errors `AUTH`, `KEY_FILE`,
+  `INVALID_KEY_FILE`, `TAMPERED`. Refined the RFC's §5: each slot's tag
+  covers only the format and its own settings (rev. 2).
+- **Step 1, checked:** 24 tests, 100% lines: pinned derivations and a
+  frozen fixture opened through both slots; round trips; one slot re-wrapped
+  without the other's key; every header edit refused as tampered by the
+  slot and the payload that cover it; swapped, missing and short slots;
+  wrong password, recovery key and key file named as such; key file
+  parsing.
+- **Next:** step 2, `VaultService` (and siblings) read and write format 2,
+  and `VaultSession` holds the DEK.
+
 - **Found:** the author, 2026-10-23: "for security reason I would like to
   support 2fa".
 - **Decided (author, 2026-10-23):** a key file first, hardware keys after a
