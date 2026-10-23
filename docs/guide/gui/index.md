@@ -52,9 +52,10 @@ to set your own. The vault is otherwise unchanged.
 4. Confirm your password.
 5. Click **Create Vault**.
 
-::: tip Your master password is never stored
+::: tip Your master password is never stored, unless you ask
 SecureVault is zero-knowledge. If you forget the master password, the vault cannot
-be recovered — choose something long, unique, and memorable.
+be recovered — choose something long, unique, and memorable. The app keeps it only
+if you tick **Remember on this computer** when unlocking (below).
 :::
 
 ## Unlock a vault
@@ -62,6 +63,20 @@ be recovered — choose something long, unique, and memorable.
 Select the vault in the vault selector and enter its master password. The vault
 stays unlocked until you lock it, quit, or step away: it locks automatically
 when your computer sleeps or its screen locks.
+
+Tick **Remember on this computer** to keep the password, encrypted by the system
+keychain. Next time, clicking the vault unlocks it straight away, after Touch ID
+on a Mac that has it. Anyone using your account on this computer can then open
+the vault in the app, so leave it off on a shared account. The box is offered
+only where the system keychain can encrypt it (on Linux, a keyring such as GNOME
+Keyring or KWallet must be running).
+
+A vault with a saved password is labeled **Password saved**; **Forget password**
+on it drops the password. If the password was changed elsewhere, the saved one
+stops working: the app forgets it and asks you to type the new one. Changing the
+password in the app updates the saved one, and deleting the vault forgets it.
+**Forget all saved passwords** in Settings drops every saved password, for every
+vault.
 
 ## Next
 

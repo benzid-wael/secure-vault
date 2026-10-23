@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { vi } from 'vitest';
 import VaultSelector from '../../components/VaultSelector';
@@ -65,5 +65,136 @@ describe('VaultSelector', () => {
     ).toBeInTheDocument();
     fireEvent.click(screen.getByText('Create Your First Vault'));
     expect(onCreateNew).toHaveBeenCalled();
+  });
+
+  describe('saved passwords (New-52)', () => {
+    it('labels a vault with a saved password and forgets it on request', () => {
+      const onForgetPassword = vi.fn();
+      render(
+        <VaultSelector
+          vaults={vaults}
+          onVaultSelect={onVaultSelect}
+          onCreateNew={onCreateNew}
+          remembered={['work']}
+          onForgetPassword={onForgetPassword}
+        />
+      );
+      expect(screen.getAllByText('Password saved')).toHaveLength(1);
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: 'Forget the saved password of work',
+        })
+      );
+      expect(onForgetPassword).toHaveBeenCalledWith('work');
+      // The button doesn't also open the vault.
+      expect(onVaultSelect).not.toHaveBeenCalled();
+    });
+
+    it('shows the label alone without a forget handler', () => {
+      render(
+        <VaultSelector
+          vaults={vaults}
+          onVaultSelect={onVaultSelect}
+          onCreateNew={onCreateNew}
+          remembered={['main']}
+        />
+      );
+      expect(screen.getByText('Password saved')).toBeInTheDocument();
+      expect(screen.queryByText('Forget password')).toBeNull();
+    });
+  });
+
+  describe('deleting a vault', () => {
+    const win = /** @type {any} */ (window);
+    let original;
+    beforeEach(() => {
+      original = win.electronAPI.deleteVault;
+    });
+    afterEach(() => {
+      win.electronAPI.deleteVault = original;
+    });
+
+    const openDelete = (onVaultDeleted = vi.fn()) => {
+      render(
+        <VaultSelector
+          vaults={vaults}
+          onVaultSelect={onVaultSelect}
+          onCreateNew={onCreateNew}
+          onVaultDeleted={onVaultDeleted}
+        />
+      );
+      fireEvent.click(screen.getAllByTestId('DeleteIcon')[1].closest('button'));
+      return onVaultDeleted;
+    };
+    const typePassword = (value) =>
+      fireEvent.change(
+        screen.getByLabelText('Enter vault password to confirm deletion'),
+        { target: { value } }
+      );
+    const confirm = () =>
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Vault' }));
+
+    it('asks for the password, without opening the vault', () => {
+      openDelete();
+      expect(screen.getByText('Delete Vault "work"')).toBeInTheDocument();
+      expect(onVaultSelect).not.toHaveBeenCalled();
+      expect(
+        screen.getByRole('button', { name: 'Delete Vault' })
+      ).toBeDisabled();
+    });
+
+    it('deletes with the password and reports it', async () => {
+      win.electronAPI.deleteVault = vi.fn().mockResolvedValue({
+        success: true,
+        message: 'Vault "work" has been deleted.',
+      });
+      const onVaultDeleted = openDelete();
+      typePassword('pw');
+      confirm();
+      await waitFor(() =>
+        expect(onVaultDeleted).toHaveBeenCalledWith(
+          'work',
+          'Vault "work" has been deleted.'
+        )
+      );
+      expect(win.electronAPI.deleteVault).toHaveBeenCalledWith('work', 'pw');
+      await waitFor(() =>
+        expect(screen.queryByText('Delete Vault "work"')).toBeNull()
+      );
+    });
+
+    it('shows a refusal and keeps the dialog', async () => {
+      win.electronAPI.deleteVault = vi.fn().mockResolvedValue({
+        success: false,
+        error: 'Invalid password. Vault not deleted.',
+      });
+      const onVaultDeleted = openDelete();
+      typePassword('wrong');
+      confirm();
+      expect(
+        await screen.findByText('Invalid password. Vault not deleted.')
+      ).toBeInTheDocument();
+      expect(onVaultDeleted).not.toHaveBeenCalled();
+    });
+
+    it('says so when the call fails', async () => {
+      win.electronAPI.deleteVault = vi.fn().mockRejectedValue(new Error('ipc'));
+      openDelete();
+      typePassword('pw');
+      confirm();
+      expect(
+        await screen.findByText('Failed to delete vault. Please try again.')
+      ).toBeInTheDocument();
+    });
+
+    it('cancels', async () => {
+      win.electronAPI.deleteVault = vi.fn();
+      openDelete();
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      await waitFor(() =>
+        expect(screen.queryByText('Delete Vault "work"')).toBeNull()
+      );
+      expect(win.electronAPI.deleteVault).not.toHaveBeenCalled();
+    });
   });
 });

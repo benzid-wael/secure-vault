@@ -5,7 +5,7 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 
-import { EnvVaultKeychain } from '../../../electron/services/EnvVaultKeychain.js';
+import { VaultKeychain } from '../../../electron/services/VaultKeychain.js';
 import { fakeSafeStorage } from '../../helpers/fakeSafeStorage.js';
 
 let dir;
@@ -18,9 +18,9 @@ afterEach(() => fs.remove(dir));
 
 const VAULT = '/projects/app/.env.vault';
 
-describe('EnvVaultKeychain', () => {
+describe('VaultKeychain', () => {
   it('keeps a password encrypted, 0600, and gives it back', async () => {
-    const keychain = new EnvVaultKeychain({
+    const keychain = new VaultKeychain({
       file,
       safeStorage: fakeSafeStorage(),
     });
@@ -35,7 +35,7 @@ describe('EnvVaultKeychain', () => {
     }
 
     // A new instance (the next app run) reads it from the file.
-    const later = new EnvVaultKeychain({
+    const later = new VaultKeychain({
       file,
       safeStorage: fakeSafeStorage(),
     });
@@ -47,7 +47,7 @@ describe('EnvVaultKeychain', () => {
   });
 
   it('forgets a password', async () => {
-    const keychain = new EnvVaultKeychain({
+    const keychain = new VaultKeychain({
       file,
       safeStorage: fakeSafeStorage(),
     });
@@ -61,7 +61,7 @@ describe('EnvVaultKeychain', () => {
 
   it('prunes the passwords of vault files that are gone (New-36)', async () => {
     const safeStorage = fakeSafeStorage();
-    const keychain = new EnvVaultKeychain({ file, safeStorage });
+    const keychain = new VaultKeychain({ file, safeStorage });
     const here = path.join(dir, 'proj', '.env.vault');
     const deleted = path.join(dir, 'proj', 'old.env.vault');
     const unmounted = path.join(dir, 'Volumes', 'usb', '.env.vault');
@@ -84,7 +84,7 @@ describe('EnvVaultKeychain', () => {
   });
 
   it('forgets every password at once (New-36)', async () => {
-    const keychain = new EnvVaultKeychain({
+    const keychain = new VaultKeychain({
       file,
       safeStorage: fakeSafeStorage(),
     });
@@ -98,7 +98,7 @@ describe('EnvVaultKeychain', () => {
 
   it('asks for presence before giving a password back', async () => {
     const confirmPresence = vi.fn(async () => false);
-    const keychain = new EnvVaultKeychain({
+    const keychain = new VaultKeychain({
       file,
       safeStorage: fakeSafeStorage(),
       confirmPresence,
@@ -117,7 +117,7 @@ describe('EnvVaultKeychain', () => {
     ['an unknown Linux backend', { backend: 'unknown' }],
     ['no Linux encryption', { available: false }],
   ])('offers nothing and stores nothing with %s', async (_, options) => {
-    const keychain = new EnvVaultKeychain({
+    const keychain = new VaultKeychain({
       file,
       safeStorage: fakeSafeStorage(options),
       platform: 'linux',
@@ -130,7 +130,7 @@ describe('EnvVaultKeychain', () => {
   it('on macOS, asks the keychain only once the user opts in', async () => {
     const store = fakeSafeStorage({ available: false });
     const asked = vi.spyOn(store, 'isEncryptionAvailable');
-    const keychain = new EnvVaultKeychain({
+    const keychain = new VaultKeychain({
       file,
       safeStorage: store,
       platform: 'darwin',
@@ -146,19 +146,19 @@ describe('EnvVaultKeychain', () => {
   });
 
   it('accepts a Linux keyring, and ignores the backend elsewhere', () => {
-    const linux = new EnvVaultKeychain({
+    const linux = new VaultKeychain({
       file,
       safeStorage: fakeSafeStorage({ backend: 'gnome_libsecret' }),
       platform: 'linux',
     });
     expect(linux.available()).toBe(true);
-    const mac = new EnvVaultKeychain({
+    const mac = new VaultKeychain({
       file,
       safeStorage: fakeSafeStorage({ backend: 'unknown' }),
       platform: 'darwin',
     });
     expect(mac.available()).toBe(true);
-    expect(new EnvVaultKeychain({ file }).available()).toBe(false);
+    expect(new VaultKeychain({ file }).available()).toBe(false);
   });
 
   it('stores nothing when the keychain refuses to encrypt', async () => {
@@ -166,14 +166,14 @@ describe('EnvVaultKeychain', () => {
     store.encryptString = () => {
       throw new Error('User denied keychain access');
     };
-    const keychain = new EnvVaultKeychain({ file, safeStorage: store });
+    const keychain = new VaultKeychain({ file, safeStorage: store });
     expect(await keychain.remember(VAULT, 'pw')).toBe(false);
     expect(await keychain.has(VAULT)).toBe(false);
   });
 
   it('says UNAVAILABLE when encryption went away after saving', async () => {
     const store = fakeSafeStorage();
-    const keychain = new EnvVaultKeychain({ file, safeStorage: store });
+    const keychain = new VaultKeychain({ file, safeStorage: store });
     await keychain.remember(VAULT, 'pw');
     store.isEncryptionAvailable = () => false;
     expect((await keychain.get(VAULT)).code).toBe('UNAVAILABLE');
@@ -184,7 +184,7 @@ describe('EnvVaultKeychain', () => {
       format: 1,
       entries: { [VAULT]: Buffer.from('garbage').toString('base64') },
     });
-    const keychain = new EnvVaultKeychain({
+    const keychain = new VaultKeychain({
       file,
       safeStorage: fakeSafeStorage(),
     });
@@ -200,7 +200,7 @@ describe('EnvVaultKeychain', () => {
     ],
   ])('starts empty from a %s file', async (_, content) => {
     await fs.outputFile(file, content);
-    const keychain = new EnvVaultKeychain({
+    const keychain = new VaultKeychain({
       file,
       safeStorage: fakeSafeStorage(),
     });
@@ -210,14 +210,14 @@ describe('EnvVaultKeychain', () => {
   });
 
   it('keeps every entry when saves overlap', async () => {
-    const keychain = new EnvVaultKeychain({
+    const keychain = new VaultKeychain({
       file,
       safeStorage: fakeSafeStorage(),
     });
     await Promise.all(
       ['a', 'b', 'c', 'd'].map((n) => keychain.remember(`/v/${n}`, n))
     );
-    const later = new EnvVaultKeychain({
+    const later = new VaultKeychain({
       file,
       safeStorage: fakeSafeStorage(),
     });

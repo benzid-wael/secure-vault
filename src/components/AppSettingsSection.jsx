@@ -19,7 +19,8 @@ const minutes = (n) => (n === 1 ? '1 minute' : `${n} minutes`);
 
 /** The preload's settings API; read at call time so tests can swap it. */
 const settingsApi = () => /** @type {any} */ (window).electronAPI?.appSettings;
-const envVaultsApi = () => /** @type {any} */ (window).electronAPI?.envVaults;
+const savedPasswordsApi = () =>
+  /** @type {any} */ (window).electronAPI?.savedPasswords;
 
 /** "vault, .env-vault" → ['vault', 'env-vault'] */
 const parseExtensions = (text) =>
@@ -36,7 +37,8 @@ const passwords = (n) =>
  * App-wide settings (GUI-ENV-BREAKDOWN Tasks 13, 23): the idle timeout of
  * every vault (D1) and, with env vaults on, whether opened env vaults are
  * remembered (D5), the file extensions the Open… dialog offers for env
- * vaults (New-48), and forgetting every saved env vault password (New-36).
+ * vaults (New-48), and forgetting every saved vault password (New-36,
+ * New-52), shown wherever this computer can keep them.
  * Each change is saved, and takes effect, at once.
  *
  * @param {{envVaults?: boolean}} props
@@ -52,26 +54,26 @@ const AppSettingsSection = ({ envVaults = false }) => {
   const [savedPasswords, setSavedPasswords] = useState(null);
 
   useEffect(() => {
-    if (!envVaults) return undefined;
     let active = true;
-    Promise.resolve(envVaultsApi()?.list?.())
+    Promise.resolve(savedPasswordsApi()?.info?.())
       .then((result) => {
-        if (active && result?.success) {
-          setSavedPasswords(result.savedPasswords ?? 0);
+        // Offered where this computer can keep passwords, or keeps some.
+        if (active && result?.success && (result.available || result.count)) {
+          setSavedPasswords(result.count ?? 0);
         }
       })
       .catch(() => {});
     return () => {
       active = false;
     };
-  }, [envVaults]);
+  }, []);
 
   const forgetPasswords = async () => {
     setError('');
     setSaved('');
     let result;
     try {
-      result = await envVaultsApi().forgetPasswords();
+      result = await savedPasswordsApi().forgetAll();
     } catch {
       result = { success: false };
     }
@@ -226,27 +228,27 @@ const AppSettingsSection = ({ envVaults = false }) => {
               helperText="Open… lists these files first, separated by commas. Choose All files there to pick any other file."
             />
           )}
-          {savedPasswords !== null && (
-            <Box sx={{ mt: 2 }}>
-              <Button
-                variant="outlined"
-                color="warning"
-                size="small"
-                disabled={savedPasswords === 0}
-                onClick={forgetPasswords}
-              >
-                Forget all saved passwords
-              </Button>
-              <Typography
-                variant="body2"
-                sx={{ color: 'rgba(255,255,255,0.6)', mt: 1 }}
-              >
-                {savedPasswords === 0
-                  ? 'No environment vault password is saved on this computer.'
-                  : `${passwords(savedPasswords)} for environment vaults on this computer. Forgetting them doesn’t change the vaults.`}
-              </Typography>
-            </Box>
-          )}
+        </Box>
+      )}
+      {savedPasswords !== null && (
+        <Box sx={{ mt: 2 }}>
+          <Button
+            variant="outlined"
+            color="warning"
+            size="small"
+            disabled={savedPasswords === 0}
+            onClick={forgetPasswords}
+          >
+            Forget all saved passwords
+          </Button>
+          <Typography
+            variant="body2"
+            sx={{ color: 'rgba(255,255,255,0.6)', mt: 1 }}
+          >
+            {savedPasswords === 0
+              ? 'No vault password is saved on this computer.'
+              : `${passwords(savedPasswords)} on this computer. Forgetting them doesn’t change the vaults.`}
+          </Typography>
         </Box>
       )}
     </Box>

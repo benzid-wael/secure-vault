@@ -23,7 +23,7 @@ import { EnvVaultRegistry } from '../../../electron/services/EnvVaultRegistry.js
 import { EnvVaultSession } from '../../../electron/services/EnvVaultSession.js';
 import { createEnvVaultHandlers } from '../../../electron/services/EnvVaultIpc.js';
 import { ClipboardService } from '../../../electron/services/ClipboardService.js';
-import { EnvVaultKeychain } from '../../../electron/services/EnvVaultKeychain.js';
+import { VaultKeychain } from '../../../electron/services/VaultKeychain.js';
 import { fakeSafeStorage } from '../../helpers/fakeSafeStorage.js';
 
 // jsdom resolves `path` to the npm browser polyfill; the main-process code
@@ -159,7 +159,7 @@ beforeEach(async () => {
       createEnvVaultHandlers({
         registry: new EnvVaultRegistry({ envsDir: dir, dialog }),
         session,
-        keychain: new EnvVaultKeychain({
+        keychain: new VaultKeychain({
           file: path.join(dir, 'kept', 'passwords.json'),
           safeStorage: safeStore,
           confirmPresence: async () => present,

@@ -811,3 +811,24 @@ env init` writes; it's added to the remembered list.
 - **Verify after release:** `vault env set my-key x -e dev` exits 1 with
   the rule; `vault env set MY_KEY x -e dev` works.
 - **Rollback:** reinstall the previous CLI.
+
+### New-52: remember a password vault's password
+
+- **Runtime change (every desktop user, opt-in per vault):** "Remember on
+  this computer" when unlocking a password vault keeps its password,
+  encrypted by the system keychain; clicking the vault then unlocks it,
+  after Touch ID where the Mac has it. Nothing changes for anyone who
+  doesn't tick it.
+- **Schema or config change:** saved passwords move to one file,
+  `vault-passwords.json` in userData, for both vault kinds. No vault file
+  changes.
+- **Before it ships:** the CHANGELOG "Added" entry and the guide (both
+  written); a hand check on a Mac with Touch ID, on Windows and on Linux
+  with a keyring (and without one: the box isn't offered).
+- **Gated by:** nothing: off by default per vault.
+- **Verify after release:** tick the box, lock, click the vault: Touch ID,
+  then the vault opens. Change the password in the app, lock, click: it
+  still opens. **Forget password**: the next click asks for it.
+- **Rollback:** reinstall the previous app. It has no saved passwords:
+  every vault asks for its password again, and `vault-passwords.json`
+  stays in userData, encrypted, until a later version forgets it.

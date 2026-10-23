@@ -8,6 +8,8 @@ import {
   InputAdornment,
   Alert,
   CircularProgress,
+  Checkbox,
+  FormControlLabel,
 } from '@mui/material';
 import {
   Visibility,
@@ -17,10 +19,26 @@ import {
   Security as SecurityIcon,
 } from '@mui/icons-material';
 
-const VaultLogin = ({ vaultName, onLogin, onBack, onRecovery }) => {
+/**
+ * `canRemember`: this computer can keep the password (New-52); the box
+ * starts checked when `remembered`. `onLogin(password, options)` gets
+ * `{remember}` only when the box is offered: true keeps the password,
+ * false forgets a kept one. `initialError`: why a saved password didn't
+ * unlock the vault.
+ */
+const VaultLogin = ({
+  vaultName,
+  onLogin,
+  onBack,
+  onRecovery,
+  canRemember = false,
+  remembered = false,
+  initialError = '',
+}) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(initialError);
+  const [keep, setKeep] = useState(remembered);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -34,7 +52,9 @@ const VaultLogin = ({ vaultName, onLogin, onBack, onRecovery }) => {
     setError('');
 
     try {
-      const result = await onLogin(password);
+      const result = await (canRemember
+        ? onLogin(password, { remember: keep })
+        : onLogin(password));
       if (!result.success) {
         setError(result.error || 'Invalid password');
       }
@@ -105,6 +125,30 @@ const VaultLogin = ({ vaultName, onLogin, onBack, onRecovery }) => {
           }}
         />
 
+        {canRemember && (
+          <Box sx={{ mt: 1 }}>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={keep}
+                  onChange={(e) => setKeep(e.target.checked)}
+                  disabled={loading}
+                />
+              }
+              label="Remember on this computer"
+              sx={{ color: 'white' }}
+            />
+            <Typography
+              variant="body2"
+              sx={{ color: 'rgba(255, 255, 255, 0.6)' }}
+            >
+              Kept encrypted by the system keychain. Anyone using your account
+              here can then open this vault in the app, after Touch ID where the
+              Mac has it.
+            </Typography>
+          </Box>
+        )}
+
         {error && (
           <Alert severity="error" sx={{ mt: 2 }}>
             {error}
@@ -164,7 +208,9 @@ const VaultLogin = ({ vaultName, onLogin, onBack, onRecovery }) => {
       <div className="security-indicator">
         <SecurityIcon sx={{ color: '#4caf50' }} />
         <Typography className="security-text">
-          Your password is never stored - only used to decrypt your vault
+          {keep
+            ? 'Your password is kept on this computer, encrypted by the system keychain'
+            : 'Your password is never stored - only used to decrypt your vault'}
         </Typography>
       </div>
     </div>

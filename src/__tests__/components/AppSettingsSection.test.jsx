@@ -10,7 +10,7 @@ import ConfigurationDialog from '../../components/ConfigurationDialog';
 const win = /** @type {any} */ (window);
 let saved;
 let api;
-let envApi;
+let keptApi;
 
 beforeEach(() => {
   saved = win.electronAPI;
@@ -26,14 +26,19 @@ beforeEach(() => {
       return { success: true, settings: current };
     }),
   };
-  envApi = {
-    list: vi.fn(async () => ({ success: true, vaults: [], savedPasswords: 2 })),
-    forgetPasswords: vi.fn(async () => ({ success: true, count: 2 })),
+  keptApi = {
+    info: vi.fn(async () => ({
+      success: true,
+      available: true,
+      count: 2,
+      vaults: ['work'],
+    })),
+    forgetAll: vi.fn(async () => ({ success: true, count: 2 })),
   };
   win.electronAPI = {
     ...saved,
     appSettings: api,
-    envVaults: envApi,
+    savedPasswords: keptApi,
     getVaultDirectory: vi.fn(async () => ({ success: true, path: '/v' })),
   };
 });
@@ -257,16 +262,18 @@ describe('ConfigurationDialog (what it already showed)', () => {
   });
 });
 
-describe('AppSettingsSection: saved env vault passwords (New-36)', () => {
+describe('AppSettingsSection: saved passwords, every vault kind (New-36, New-52)', () => {
   it('forgets them all and says how many', async () => {
-    render(<AppSettingsSection envVaults />);
+    render(<AppSettingsSection />);
     expect(
-      await screen.findByText(/2 saved passwords for environment vaults/)
+      await screen.findByText(
+        '2 saved passwords on this computer. Forgetting them doesn’t change the vaults.'
+      )
     ).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole('button', { name: 'Forget all saved passwords' })
     );
-    expect(envApi.forgetPasswords).toHaveBeenCalledTimes(1);
+    expect(keptApi.forgetAll).toHaveBeenCalledTimes(1);
     expect(
       await screen.findByText(
         "Forgot 2 saved passwords. You'll type each password the next time you unlock."
@@ -276,15 +283,13 @@ describe('AppSettingsSection: saved env vault passwords (New-36)', () => {
       screen.getByRole('button', { name: 'Forget all saved passwords' })
     ).toBeDisabled();
     expect(
-      screen.getByText(
-        'No environment vault password is saved on this computer.'
-      )
+      screen.getByText('No vault password is saved on this computer.')
     ).toBeInTheDocument();
   });
 
   it('says so when forgetting fails', async () => {
-    envApi.forgetPasswords.mockRejectedValueOnce(new Error('ipc'));
-    render(<AppSettingsSection envVaults />);
+    keptApi.forgetAll.mockRejectedValueOnce(new Error('ipc'));
+    render(<AppSettingsSection />);
     fireEvent.click(
       await screen.findByRole('button', { name: 'Forget all saved passwords' })
     );
@@ -293,10 +298,16 @@ describe('AppSettingsSection: saved env vault passwords (New-36)', () => {
     ).toBeInTheDocument();
   });
 
-  it('is not offered without env vaults', async () => {
+  it('is not offered where this computer can keep none and keeps none', async () => {
+    keptApi.info.mockResolvedValueOnce({
+      success: true,
+      available: false,
+      count: 0,
+      vaults: [],
+    });
     render(<AppSettingsSection />);
     await screen.findByText('App settings');
-    expect(envApi.list).not.toHaveBeenCalled();
+    expect(keptApi.info).toHaveBeenCalled();
     expect(
       screen.queryByRole('button', { name: 'Forget all saved passwords' })
     ).not.toBeInTheDocument();

@@ -144,7 +144,7 @@ const masked = (rows) =>
  * @param {import('./EnvVaultWatcher.js').EnvVaultWatcher} [deps.watcher]
  *   Told when a vault is unlocked and of every revision the app reads or
  *   writes, so it reports only changes made elsewhere.
- * @param {import('./EnvVaultKeychain.js').EnvVaultKeychain} [deps.keychain]
+ * @param {import('./VaultKeychain.js').VaultKeychain} [deps.keychain]
  *   Passwords the user chose to keep on this computer (New-24).
  */
 export function createEnvVaultHandlers({
@@ -333,7 +333,6 @@ export function createEnvVaultHandlers({
         success: true,
         // Whether "Remember on this computer" can be offered at all.
         keychain: keychain?.available() ?? false,
-        savedPasswords: keychain ? await keychain.count() : 0,
         vaults: await Promise.all(
           entries.map(async (e) => ({
             ...e,
@@ -363,11 +362,6 @@ export function createEnvVaultHandlers({
       if (result.success && vaultPath) await keychain?.forget(vaultPath);
       return result;
     },
-    // "Forget all saved passwords" in Settings (New-36).
-    'env-vaults:forget-passwords': async () => ({
-      success: true,
-      count: keychain ? await keychain.forgetAll() : 0,
-    }),
     // Input on the vault's own screen (New-42): the only thing that keeps an
     // env vault unlocked. Calls, the page's own or the user's, never do.
     'env-vaults:activity': (event, id) => {

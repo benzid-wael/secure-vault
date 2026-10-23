@@ -12,6 +12,7 @@ import {
   TextField,
   Alert,
   CircularProgress,
+  Chip,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -21,12 +22,18 @@ import {
   Warning as WarningIcon,
 } from '@mui/icons-material';
 
+/**
+ * `remembered`: the vaults whose password is kept on this computer
+ * (New-52); each gets a label and `onForgetPassword(name)`.
+ */
 const VaultSelector = ({
   vaults,
   onVaultSelect,
   onCreateNew,
   onVaultDeleted = undefined,
   header = null,
+  remembered = [],
+  onForgetPassword = undefined,
 }) => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [vaultToDelete, setVaultToDelete] = useState('');
@@ -237,6 +244,27 @@ const VaultSelector = ({
                       <span>Secure</span>
                     </Box>
                   </Box>
+                  {remembered.includes(vault) && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Chip size="small" label="Password saved" />
+                      {onForgetPassword && (
+                        <Button
+                          size="small"
+                          aria-label={`Forget the saved password of ${vault}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onForgetPassword(vault);
+                          }}
+                          sx={{
+                            color: 'rgba(255, 255, 255, 0.7)',
+                            textTransform: 'none',
+                          }}
+                        >
+                          Forget password
+                        </Button>
+                      )}
+                    </Box>
+                  )}
                   {/* Delete button overlay - bottom-right corner */}
                   <Button
                     className="vault-delete-button"

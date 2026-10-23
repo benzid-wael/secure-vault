@@ -15,9 +15,13 @@ without your master password.
 
 ### Zero-knowledge architecture
 
-Your master password is **never written to disk**. While a vault is unlocked it
-is held in memory by the app's main process only; the window you interact with
-never keeps it. Locking the vault (manually, or automatically on sleep / screen
+Your master password is **never written to disk** unless you tick **Remember on
+this computer**: then it's kept encrypted by the system keychain (the macOS
+Keychain, DPAPI on Windows, the Secret Service on Linux), for your account on
+this computer only, and Touch ID is asked before it's used where the Mac has it.
+While a vault is unlocked the password is held in memory by the app's main
+process only; the window you interact with never keeps it, and a saved one
+never reaches it. Locking the vault (manually, or automatically on sleep / screen
 lock) ends the session. This means:
 
 - Nobody — including the developers — can recover your data without the master password.

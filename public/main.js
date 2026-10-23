@@ -37,10 +37,7 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // Import services
-import {
-  VaultService,
-  LEGACY_DEFAULT_PASSWORD,
-} from '../src/electron/services/VaultService.js';
+import { VaultService } from '../src/electron/services/VaultService.js';
 import { ImportExportService } from '../src/electron/services/ImportExportService.js';
 import { VaultSettingsService } from '../src/electron/services/VaultSettingsService.js';
 import { VaultSession } from '../src/electron/services/VaultSession.js';
@@ -58,7 +55,8 @@ import { ClipboardService } from '../src/electron/services/ClipboardService.js';
 import { createClipboardHandlers } from '../src/electron/services/ClipboardIpc.js';
 import { createEnvVaultHandlers } from '../src/electron/services/EnvVaultIpc.js';
 import { EnvVaultWatcher } from '../src/electron/services/EnvVaultWatcher.js';
-import { EnvVaultKeychain } from '../src/electron/services/EnvVaultKeychain.js';
+import { VaultKeychain } from '../src/electron/services/VaultKeychain.js';
+import { createPasswordVaultHandlers } from '../src/electron/services/PasswordVaultIpc.js';
 import { EnvVaultRecents } from '../src/electron/services/EnvVaultRecents.js';
 import { AppSettingsStore } from '../src/electron/services/AppSettingsStore.js';
 import {
@@ -326,6 +324,27 @@ class ElectronApp {
     )) {
       handle(channel, fn);
     }
+    // Saved passwords, opt-in per vault, for both vault kinds (New-24,
+    // New-52). The file sits in userData: safeStorage's key belongs to this
+    // app build, so other builds couldn't read it.
+    const keychain = new VaultKeychain({
+      file: path.join(app.getPath('userData'), 'vault-passwords.json'),
+      safeStorage,
+      confirmPresence: async (reason) => {
+        if (
+          process.platform !== 'darwin' ||
+          !systemPreferences.canPromptTouchID()
+        ) {
+          return true;
+        }
+        try {
+          await systemPreferences.promptTouchID(reason);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    });
     // Behind the New-4 gate: with it off, none of these channels exist.
     if (this.features.envVaults) {
       const envHandlers = createEnvVaultHandlers({
@@ -335,26 +354,7 @@ class ElectronApp {
         dialog,
         clipboard: clipboardService,
         watcher: this.envWatcher,
-        // Opt-in per vault (New-24). The file sits in userData: safeStorage's
-        // key belongs to this app build, so other builds couldn't read it.
-        keychain: new EnvVaultKeychain({
-          file: path.join(app.getPath('userData'), 'env-vault-passwords.json'),
-          safeStorage,
-          confirmPresence: async (reason) => {
-            if (
-              process.platform !== 'darwin' ||
-              !systemPreferences.canPromptTouchID()
-            ) {
-              return true;
-            }
-            try {
-              await systemPreferences.promptTouchID(reason);
-              return true;
-            } catch {
-              return false;
-            }
-          },
-        }),
+        keychain,
       });
       for (const [channel, fn] of Object.entries(envHandlers)) {
         handle(channel, fn);
@@ -388,6 +388,19 @@ class ElectronApp {
     });
     // Session lifecycle: these are the only handlers that receive the master
     // password from the renderer, and none of them sends it back.
+    const passwordVaultHandlers = createPasswordVaultHandlers({
+      vaultService: this.vaultService,
+      session: this.session,
+      openSession: (vaultName, password) =>
+        this.openSession(vaultName, password),
+      keychain,
+    });
+    for (const [channel, fn] of Object.entries(passwordVaultHandlers.vault)) {
+      handleVault(channel, fn);
+    }
+    for (const [channel, fn] of Object.entries(passwordVaultHandlers.general)) {
+      handle(channel, fn);
+    }
     handleVault('create-vault', async (event, vaultName, masterPassword) => {
       const result = await this.vaultService.createVault(
         vaultName,
@@ -395,20 +408,6 @@ class ElectronApp {
       );
       if (result.success) this.session.open(vaultName, masterPassword);
       return result;
-    });
-    handleVault('unlock-vault', async (event, vaultName, password) => {
-      const result = await this.vaultService.verifyPassword(
-        vaultName,
-        password
-      );
-      if (!result.success) return result;
-      await this.openSession(vaultName, password);
-      // A vault created by an older version may still use its built-in
-      // password; the UI asks for it to be changed.
-      return {
-        ...result,
-        usesDefaultPassword: password === LEGACY_DEFAULT_PASSWORD,
-      };
     });
     handle('lock-vault', () => {
       this.session.close();
@@ -425,34 +424,6 @@ class ElectronApp {
       this.session.withPassword(vaultName, (password) =>
         this.vaultService.saveVault(vaultName, password, data)
       )
-    );
-    handleVault(
-      'change-master-password',
-      // The current password is still re-entered and checked here: holding a
-      // session must not be enough to take over the vault.
-      (event, vaultName, currentPassword, newPassword) =>
-        this.session.withPassword(vaultName, async () => {
-          const result = await this.vaultService.changePassword(
-            vaultName,
-            currentPassword,
-            newPassword
-          );
-          if (result.success) this.session.open(vaultName, newPassword);
-          return result;
-        })
-    );
-    handleVault(
-      'delete-vault',
-      async (event, vaultName, confirmationPassword) => {
-        const result = await this.vaultService.deleteVault(
-          vaultName,
-          confirmationPassword
-        );
-        if (result.success && this.session.isUnlocked(vaultName)) {
-          this.session.close();
-        }
-        return result;
-      }
     );
     handleVault('generate-recovery-key', (event, vaultName) =>
       this.session.withPassword(vaultName, (password) =>

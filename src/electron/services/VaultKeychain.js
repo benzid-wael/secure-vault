@@ -5,8 +5,10 @@ import { writePrivateJson } from '../utils/privateJsonFile.js';
 const FORMAT = 1;
 
 /**
- * Env vault passwords the user chose to keep on this computer
- * (GUI-ENV-BREAKDOWN New-24, option B). Off by default, per vault.
+ * Vault passwords the user chose to keep on this computer, for env vaults
+ * (GUI-ENV-BREAKDOWN New-24, option B) and password vaults (New-52). Off by
+ * default, per vault. One store holds both kinds: entries are keyed by
+ * file path, so "forget all" covers every vault.
  *
  * Each password is encrypted with Electron's `safeStorage` (the macOS
  * Keychain, DPAPI on Windows, the Secret Service on Linux) and the result
@@ -19,7 +21,7 @@ const FORMAT = 1;
  * stay in main: none of these methods is reachable from the page except
  * through the IPC handlers, which never return one.
  */
-export class EnvVaultKeychain {
+export class VaultKeychain {
   #file;
   #safeStorage;
   #confirmPresence;

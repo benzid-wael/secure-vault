@@ -133,7 +133,13 @@ export class VaultService {
         ? { success: true }
         : { success: true, readOnly: true, formatMessage: format.message };
     } catch (error) {
-      return { success: false, error: 'Invalid master password' };
+      // AUTH only for a password that doesn't decrypt the file: callers
+      // holding a saved password drop it on AUTH, not on a missing file.
+      return {
+        success: false,
+        code: error.code === 'ENOENT' ? 'NOT_FOUND' : 'AUTH',
+        error: 'Invalid master password',
+      };
     }
   }
 

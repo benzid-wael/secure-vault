@@ -94,6 +94,8 @@ updated as each task finishes, not in a batch at the end.
 | New-49 | Escape doesn't cancel a grid-card cell edit                        | —   | P3  | ✅     | —                                      |
 | New-50 | Start writing env vaults in format 2                               | M1  | P2  | ⬜     | New-37 (and a release in between)      |
 | New-51 | Coverage config uses `coverage.all`, gone in Vitest 4              | —   | P3  | ✅     | —                                      |
+| New-52 | Password vaults: remember the password on this computer            | —   | P1  | ✅     | New-24                                 |
+| New-53 | Password vaults: open one from any folder                          | —   | P1  | ⬜     | New-52                                 |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -2765,3 +2767,60 @@ import` says it "creates a new version with all vars from the file(s)"
 - **Validation:** `npm run test:coverage` gives the same files and totals as
   before (one branch in `EnvVaultsPanel.jsx` varies by one between runs, with
   or without the change); `vite build` still builds.
+
+### New-52: Password vaults: remember the password on this computer
+
+- **Status:** ✅ done 2026-10-23. On `feat/vault-env-gui`; not merged, not
+  released. Ungated: every desktop user can opt in (CHANGELOG "Added").
+- **Found:** the author, 2026-10-23: env vaults could keep their password
+  (New-24), password vaults couldn't.
+- **Goal:** the same opt-in for password vaults: kept encrypted by the
+  system keychain, Touch ID before use, off by default per vault.
+- **Built:**
+  - `EnvVaultKeychain` is now `VaultKeychain`, one store for both vault
+    kinds (keyed by file path), built once in main and handed to both.
+    Its file is now `vault-passwords.json` in userData (was
+    `env-vault-passwords.json`; New-24 is unreleased, so there's no
+    migration: a dev profile's saved env passwords are typed once again).
+  - `src/electron/services/PasswordVaultIpc.js`: `unlock-vault` (with
+    `{remember}`), `unlock-vault-saved`, `forget-vault-password`,
+    `change-master-password` (a kept password follows the change),
+    `delete-vault` (forgets it), registered through main's name-validating
+    `handleVault`; `saved-passwords:info` (offered or not, how many, which
+    password vaults) and `saved-passwords:forget-all` for every kind. The
+    env-only `env-vaults:forget-passwords` and the env list's
+    `savedPasswords` are gone: Settings uses the shared channels.
+  - `VaultService.verifyPassword` reports `code: 'AUTH'` (wrong password)
+    or `'NOT_FOUND'`, so a saved password is dropped only when wrong.
+  - Renderer: a vault with a saved password opens on click (the login
+    screen shows why when it doesn't; a canceled Touch ID says nothing);
+    "Remember on this computer" on the login screen; "Password saved" and
+    "Forget password" on the vault card; "Forget all saved passwords" in
+    Settings for every vault, shown where the keychain can keep one.
+  - Guide (getting started, security) and CHANGELOG.
+- **Checked:** 1456 unit tests pass; `PasswordVaultIpc.js` 100% lines
+  on a real `VaultService`, `VaultSession` and `VaultKeychain`;
+  `VaultSelector.jsx` 37% → 95% (its delete dialog had no test);
+  `App.jsx` 94%, `VaultLogin.jsx` 96%, `AppSettingsSection.jsx` 99%.
+  Not yet seen on a real keychain (Touch ID prompt, Windows, Linux): a
+  hand check, as for New-24.
+
+### New-53: Password vaults: open one from any folder
+
+- **Status:** ⬜ next.
+- **Found:** the author, 2026-10-23.
+- **Goal:** "Open…" in the password vault list picks a `.vault` file
+  anywhere; it's listed (and remembered) like a vault in the app's folder.
+- **Decided (author, 2026-10-23):** for a vault opened from another folder,
+  delete becomes **Remove from list**: the file and its backups stay.
+  Vaults in the app's folder keep today's delete.
+- **Implementation guidance:** `VaultFileService._pathFor` is the one place
+  names become paths; mapping a listed name to the opened file there keeps
+  every channel (load, save, password change, recovery, backup) working
+  without changes. Backups go next to the file, as env vaults' `.bak`
+  does. Refuse a file that isn't a password vault (an `.env.vault` also
+  ends in `.vault`). A missing file shows as such and can be removed. The
+  CLI's password vault commands are unchanged.
+- **Validation:** open, unlock (typed and saved password), edit, change
+  password and remove from list on a vault outside the app's folder, in
+  unit tests on real files and in an e2e scenario.

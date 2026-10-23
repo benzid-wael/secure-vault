@@ -10,8 +10,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getVaults: () => ipcRenderer.invoke('get-vaults'),
   createVault: (vaultName, masterPassword) =>
     ipcRenderer.invoke('create-vault', vaultName, masterPassword),
-  unlockVault: (vaultName, password) =>
-    ipcRenderer.invoke('unlock-vault', vaultName, password),
+  // `options.remember`: true keeps the password on this computer, false
+  // forgets a kept one (New-52).
+  unlockVault: (vaultName, password, options) =>
+    ipcRenderer.invoke('unlock-vault', vaultName, password, options),
+  unlockVaultSaved: (vaultName) =>
+    ipcRenderer.invoke('unlock-vault-saved', vaultName),
+  forgetVaultPassword: (vaultName) =>
+    ipcRenderer.invoke('forget-vault-password', vaultName),
+  // Passwords kept on this computer, every vault kind (New-52).
+  savedPasswords: {
+    info: () => ipcRenderer.invoke('saved-passwords:info'),
+    forgetAll: () => ipcRenderer.invoke('saved-passwords:forget-all'),
+  },
   lockVault: () => ipcRenderer.invoke('lock-vault'),
   // Input in the window: keeps the unlocked vault from locking (Task 13).
   vaultActivity: () => ipcRenderer.invoke('vault-activity'),
@@ -144,7 +155,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Input on this vault's screen: keeps it from locking (New-42).
     activity: (id) => ipcRenderer.invoke('env-vaults:activity', id),
     forget: (id) => ipcRenderer.invoke('env-vaults:forget', id),
-    forgetPasswords: () => ipcRenderer.invoke('env-vaults:forget-passwords'),
     create: (options, password) =>
       ipcRenderer.invoke('env-vaults:create', options, password),
     unlock: (id, password, options) =>

@@ -27,6 +27,20 @@ import './App.css';
 
 const minutes = (n) => (n === 1 ? '1 minute' : `${n} minutes`);
 
+/**
+ * Saved passwords (New-52): whether this computer can keep one, and the
+ * password vaults that have one; null when unknown (nothing is offered).
+ */
+const savedPasswordInfo = async () => {
+  try {
+    const result = await window.electronAPI?.savedPasswords?.info?.();
+    if (!result?.success) return null;
+    return { available: result.available, vaults: result.vaults || [] };
+  } catch {
+    return null;
+  }
+};
+
 const darkTheme = createTheme({
   palette: {
     mode: 'dark',
@@ -72,6 +86,11 @@ function App() {
   // main says `envVaults`.
   const [features, setFeatures] = useState({ envVaults: false });
   const [selectorMode, setSelectorMode] = useState('passwords'); // passwords, environments
+  // Saved passwords (New-52): whether this computer can keep one, and the
+  // password vaults that have one.
+  const [kept, setKept] = useState({ available: false, vaults: [] });
+  // Why a saved password didn't unlock the vault; shown on the login screen.
+  const [loginError, setLoginError] = useState('');
   // `persist`: stays until dismissed.
   const [snackbar, setSnackbar] = useState(
     /** @type {{open: boolean, message: string, severity: string,
@@ -199,7 +218,13 @@ function App() {
     }
   }, [currentView]);
 
+  const loadSavedPasswords = async () => {
+    const info = await savedPasswordInfo();
+    if (info) setKept(info);
+  };
+
   const loadAvailableVaults = async () => {
+    savedPasswordInfo().then((info) => info && setKept(info));
     if (window.electronAPI) {
       try {
         const result = await window.electronAPI.getVaults();
@@ -222,22 +247,66 @@ function App() {
     }
   };
 
-  const handleVaultSelect = (vaultName) => {
+  const enterVault = (result) => {
+    setUsesDefaultPassword(Boolean(result.usesDefaultPassword));
+    setIsAuthenticated(true);
+    setCurrentView('manager');
+  };
+
+  // A vault with a saved password opens with it (after Touch ID where the
+  // Mac has it); if that fails, the login screen says why.
+  const handleVaultSelect = async (vaultName) => {
     setCurrentVault(vaultName);
+    setLoginError('');
+    if (kept.vaults.includes(vaultName)) {
+      let result;
+      try {
+        result = await window.electronAPI.unlockVaultSaved(vaultName);
+      } catch {
+        result = { success: false, error: 'Unlock failed. Type the password.' };
+      }
+      if (result.success) return enterVault(result);
+      if (result.code !== 'CANCELED') setLoginError(result.error);
+      loadSavedPasswords();
+    }
     setCurrentView('login');
   };
 
-  const handleVaultLogin = async (password) => {
+  const forgetSavedPassword = async (vaultName) => {
+    try {
+      await window.electronAPI.forgetVaultPassword(vaultName);
+      setSnackbar({
+        open: true,
+        message: `Forgot the saved password of ${vaultName}.`,
+        severity: 'success',
+      });
+    } catch {
+      setSnackbar({
+        open: true,
+        message: "The saved password couldn't be forgotten.",
+        severity: 'error',
+      });
+    }
+    loadSavedPasswords();
+  };
+
+  const handleVaultLogin = async (password, options) => {
     if (window.electronAPI && currentVault) {
       try {
-        const result = await window.electronAPI.unlockVault(
-          currentVault,
-          password
-        );
+        const result = await (options
+          ? window.electronAPI.unlockVault(currentVault, password, options)
+          : window.electronAPI.unlockVault(currentVault, password));
         if (result.success) {
-          setUsesDefaultPassword(Boolean(result.usesDefaultPassword));
-          setIsAuthenticated(true);
-          setCurrentView('manager');
+          if (options?.remember && result.remembered === false) {
+            setSnackbar({
+              open: true,
+              message:
+                "Unlocked, but the password couldn't be saved on this computer (the keychain refused it).",
+              severity: 'warning',
+            });
+          }
+          if (options) loadSavedPasswords();
+          enterVault(result);
           return { success: true };
         } else {
           return { success: false, error: result.error };
@@ -350,12 +419,17 @@ function App() {
             onVaultSelect={handleVaultSelect}
             onCreateNew={() => setCurrentView('create')}
             onVaultDeleted={handleVaultDeleted}
+            remembered={kept.vaults}
+            onForgetPassword={forgetSavedPassword}
           />
         );
       case 'login':
         return (
           <VaultLogin
             vaultName={currentVault}
+            canRemember={kept.available}
+            remembered={kept.vaults.includes(currentVault)}
+            initialError={loginError}
             onLogin={handleVaultLogin}
             onBack={goBack}
             onRecovery={handleRecovery}
