@@ -267,7 +267,7 @@ describe('Level3CardGrid', () => {
     fireEvent.click(screen.getByText('ABC123'));
     const input = screen.getByDisplayValue('ABC123');
     fireEvent.change(input, { target: { value: ' NEW1 ' } });
-    fireEvent.keyPress(input, { key: 'Enter', code: 'Enter', charCode: 13 });
+    fireEvent.keyDown(input, { key: 'Enter' });
     expect(onChange).toHaveBeenLastCalledWith({ A1: 'NEW1' });
 
     fireEvent.click(screen.getByText('ABC123'));
@@ -275,6 +275,25 @@ describe('Level3CardGrid', () => {
     fireEvent.change(again, { target: { value: '' } });
     fireEvent.blur(again);
     expect(onChange).toHaveBeenLastCalledWith({});
+  });
+
+  it('Escape cancels a cell edit and keeps the code (New-49)', () => {
+    const onChange = vi.fn();
+    render(
+      <Level3CardGrid
+        {...defaultProps}
+        gridData={{ A1: 'ABC123' }}
+        onChange={onChange}
+      />
+    );
+    fireEvent.click(screen.getByText('Edit Mode'));
+    fireEvent.click(screen.getByText('ABC123'));
+    const input = screen.getByDisplayValue('ABC123');
+    fireEvent.change(input, { target: { value: 'typo' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.queryByDisplayValue('typo')).toBeNull();
+    expect(screen.getByText('ABC123')).toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it('does not edit cells when read-only', () => {

@@ -90,6 +90,8 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Fixed
 
+- **Escape cancels editing a grid-card cell.** It did nothing before, and
+  leaving the field saved whatever was typed.
 - **A vault no longer disappears for a moment on every save.** Saves wrote a
   temp file, deleted the vault, then renamed the temp file into place. A
   command reading the vault in that moment (another `vault env` command,

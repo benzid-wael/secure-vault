@@ -281,7 +281,8 @@ const Level3CardGrid = ({
                         value={cellValue}
                         onChange={(e) => setCellValue(e.target.value)}
                         onBlur={handleCellSave}
-                        onKeyPress={(e) => {
+                        // keydown: React fires no keypress for Escape (New-49).
+                        onKeyDown={(e) => {
                           if (e.key === 'Enter') handleCellSave();
                           if (e.key === 'Escape') handleCellCancel();
                         }}

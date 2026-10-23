@@ -753,3 +753,13 @@ env init` writes; it's added to the remembered list.
   a username, wait, paste: still there. Copy a password, then copy text in
   another app within 30 s: that text stays.
 - **Rollback:** reinstall the previous app.
+
+### New-49: Escape cancels a grid-card cell edit
+
+- **Runtime change (every desktop user, not gated):** Escape in a grid-card
+  cell cancels the edit; before it did nothing.
+- **Schema or config change:** none.
+- **Before it ships:** the CHANGELOG "Fixed" entry (written).
+- **Verify after release:** edit a grid cell, type, press Escape: the old
+  code stays.
+- **Rollback:** reinstall the previous app.

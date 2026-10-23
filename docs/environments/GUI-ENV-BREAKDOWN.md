@@ -23,17 +23,17 @@ updated as each task finishes, not in a batch at the end.
 | 9      | `applyVarChanges` model method                                     | M2  | P0  | 🟡     | 6                                      |
 | 10     | Changeset apply + rebase in the service                            | M2  | P0  | ✅     | 9                                      |
 | 11     | Single-instance lock for the app                                   | M3  | P1  | ✅     | 0                                      |
-| 12     | Main-process `ClipboardService` + IPC                              | M3  | P1  | 🟡     | 0, New-3                               |
+| 12     | Main-process `ClipboardService` + IPC                              | M3  | P1  | ✅     | 0, New-3                               |
 | 13     | Idle lock for password vaults                                      | M3  | P1  | ✅     | New-2                                  |
-| 14     | `EnvVaultRegistry` (ids, dialogs, recents)                         | M3  | P0  | 🟡     | 6, 11, New-2                           |
+| 14     | `EnvVaultRegistry` (ids, dialogs, recents)                         | M3  | P0  | ✅     | 6, 11, New-2                           |
 | 15     | `EnvVaultSession` (keys, commit/recover, idle)                     | M3  | P0  | 🟡     | 5, 14, New-2                           |
 | 16     | `EnvVaultWatcher`                                                  | M3  | P1  | ✅     | 15                                     |
 | 17     | IPC gate + core channels + preload                                 | M3  | P0  | 🟡     | 10, 12, 14, 15                         |
 | 18     | IPC: structure, history, diff, import/export channels              | M3  | P2  | ✅     | 17                                     |
 | 19     | Renderer: Environments switch, vault list, open/new/unlock         | M4  | P0  | ✅     | 2, 17, New-4                           |
-| 20     | Renderer: env view (masked, reveal, copy, inline edit)             | M4  | P0  | 🟡     | 19                                     |
+| 20     | Renderer: env view (masked, reveal, copy, inline edit)             | M4  | P0  | ✅     | 19                                     |
 | 21     | Renderer: bulk edit (table + dotenv text), conflicts               | M4  | P0  | ✅     | 20                                     |
-| 22     | Renderer: move secret copy to `ClipboardService`                   | M4  | P1  | ⬜     | 12, New-3                              |
+| 22     | Renderer: move secret copy to `ClipboardService`                   | M4  | P1  | ✅     | 12, New-3                              |
 | 23     | Renderer: Settings for idle timeout and recents                    | M4  | P1  | ✅     | 13, 14, New-2                          |
 | 24     | Renderer: env structure ops                                        | M5  | P2  | ✅     | 18, 20                                 |
 | 25     | Renderer: history, rollback, squash                                | M5  | P2  | ✅     | 7, 18, 20                              |
@@ -42,10 +42,10 @@ updated as each task finishes, not in a batch at the end.
 | 28     | Renderer: env vault change-password                                | M5  | P2  | ✅     | 7, 18, 19                              |
 | 29     | e2e scenario `env-vault-concurrent`                                | M6  | P1  | 🟡     | 21                                     |
 | 30     | CI e2e job (ubuntu + xvfb)                                         | M6  | P1  | 🟡     | 1, 29                                  |
-| 31     | User guide `docs/guide/gui/env-vaults.md`                          | M6  | P2  | ⬜     | 21                                     |
+| 31     | User guide `docs/guide/gui/env-vaults.md`                          | M6  | P2  | ✅     | 21                                     |
 | New-1  | Coverage can't see the code this plan changes                      | —   | P1  | ✅     | — (blocks 1, 3)                        |
 | New-2  | App-wide settings store                                            | M3  | P1  | ✅     | 0                                      |
-| New-3  | Decide which secrets go through `ClipboardService`                 | —   | P1  | ⬜     | —                                      |
+| New-3  | Decide which secrets go through `ClipboardService`                 | —   | P1  | ✅     | —                                      |
 | New-4  | Feature gate for the Environments UI                               | M4  | P0  | ✅     | 0                                      |
 | New-5  | Verify async PBKDF2 in the Bun-compiled CLI binary                 | M1  | P1  | ✅     | 3                                      |
 | New-6  | Decide whether project coverage should include `src/electron/**`   | —   | P2  | ⬜     | New-1                                  |
@@ -73,20 +73,25 @@ updated as each task finishes, not in a batch at the end.
 | New-28 | Search password entries by their notes                             | —   | P2  | ✅     | —                                      |
 | New-29 | Recognise a newer vault format: warn, protect writes, show upgrade | M1  | P1  | ✅     | 8, New-25                              |
 | New-30 | Rename an env: update `{{env:NAME/KEY}}` references to it          | M5  | P2  | ✅     | 24                                     |
-| New-31 | Merge, not STALE, for reveal, copy, transfer and import            | M4  | P2  | ⬜     | 10                                     |
-| New-32 | `env import` keeps the flags of the keys it replaces               | M1  | P2  | ⬜     | 9                                      |
+| New-31 | Merge, not STALE, for reveal, copy, transfer and import            | M4  | P2  | ✅     | 10                                     |
+| New-32 | `env import` keeps the flags of the keys it replaces               | M1  | P2  | ✅     | 9                                      |
 | New-33 | Fix: a vault briefly vanished on every save                        | —   | P2  | ✅     | —                                      |
-| New-34 | Drop a pending import as soon as the vault locks                   | M5  | P2  | ⬜     | 27                                     |
-| New-35 | JSON export from the app                                           | M5  | P2  | ⬜     | 27                                     |
-| New-36 | Prune saved passwords of gone vaults; "forget all"                 | M5  | P2  | ⬜     | New-24                                 |
+| New-34 | Drop a pending import as soon as the vault locks                   | M5  | P2  | ✅     | 27                                     |
+| New-35 | JSON export from the app                                           | M5  | P2  | ✅     | 27                                     |
+| New-36 | Prune saved passwords of gone vaults; "forget all"                 | M5  | P2  | ✅     | New-24                                 |
 | New-37 | Authenticate the envelope header (GCM additional data)             | M5  | P2  | ⬜     | New-29                                 |
 | New-38 | Set Electron fuses in packaged builds                              | M0  | P1  | 🟡     | New-19                                 |
 | New-39 | Fix: a failed page load loops instead of showing the error page    | —   | P2  | ✅     | —                                      |
 | New-40 | Refuse `--remote-debugging-port` in packaged builds                | M0  | P2  | ⬜     | New-38                                 |
-| New-41 | Find the unit test that failed once in ten full runs               | —   | P2  | ⬜     | —                                      |
+| New-41 | Find the unit test that failed once in ten full runs               | —   | P2  | ✅     | —                                      |
 | New-42 | Decide whether input in the window keeps env vaults unlocked       | —   | P2  | ✅     | 13                                     |
 | New-43 | `npm run lint` lints the docs site's ignored build output          | —   | P3  | ⬜     | —                                      |
 | New-44 | CLI `env rename` leaves `extends` and references on the old name   | —   | P1  | ✅     | New-30                                 |
+| New-45 | `env import` of several files keeps only the last one              | M1  | P1  | ✅     | —                                      |
+| New-46 | The "Lock Vault" menu item doesn't lock env vaults                 | M3  | P1  | ✅     | —                                      |
+| New-47 | Say why an env vault locked                                        | M4  | P2  | ✅     | 15                                     |
+| New-48 | "Open…" won't select a project's `.env.vault`                      | M3  | P1  | ✅     | 14                                     |
+| New-49 | Escape doesn't cancel a grid-card cell edit                        | —   | P3  | ✅     | —                                      |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -214,7 +219,7 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 
 ### Task 1: Make the renderer sandbox explicit and verified
 
-- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22: its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** `sandbox: true` set explicitly in `WindowManager`.
 - **Proof:** the e2e driver registers a test-only preload
   (`e2e/probe-preload.cjs`) in the same renderer; it reports
@@ -238,7 +243,7 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 
 ### Task 2: Content-Security-Policy for the renderer
 
-- **Status:** 🟡 partial 2026-10-22. Uncommitted on `feat/vault-env-gui`; not merged, not released. Built and verified on the built app
+- **Status:** 🟡 partial 2026-10-22. On `feat/vault-env-gui`; not merged, not released. Built and verified on the built app
   (`file://`, as packaged), and in the packaged macOS app (New-19).
   Windows and Linux packaged builds wait on New-19's CI run.
 - **Built:** a build-only Vite plugin (`renderer-csp` in `vite.config.js`)
@@ -446,7 +451,7 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 - **Status:** ✅ done 2026-10-21: its own validation is met (two processes ×
   50 writes keep all 100 keys; every existing CLI integration test passes
-  unchanged). Uncommitted on `feat/vault-env-gui`; not merged, not released.
+  unchanged). On `feat/vault-env-gui`; not merged, not released.
   **This is the task that changes CLI behavior**: see the rollout plan before
   any release.
 - **Built:**
@@ -532,7 +537,7 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 7: `squash` snapshot, re-keyed by change-password
 
-- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** `EnvironmentVaultService.snapshot(vaultPath, kind)` copies the
   vault to `<vault>.<kind>.<ts>` inside the write's lock; `deleteEnv` and
   `squashEnv` (and the app's delete and squash) use it. `changePassword`
@@ -550,8 +555,7 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 8: CLI docs, CHANGELOG, `doctor` reports stale locks
 
-- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
-  `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22: its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Built:**
   - `VaultLock#inspect()`: read-only; `none`, `held` or `stale` by the same
     rule `acquire` uses, plus the `<vault>.lock.stale.*` files.
@@ -581,7 +585,7 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 9: `applyVarChanges` model method
 
-- **Status:** 🟡 partial 2026-10-22. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** 🟡 partial 2026-10-22. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** `EnvironmentVault.applyVarChanges(env, ops, { message, createEnv })`:
   `set`/`rm` ops as one version; `set` keeps a key's sensitivity unless
   the op sets it, new keys are secret; keys must match `ENV_KEY_PATTERN`
@@ -606,7 +610,7 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 10: Changeset apply + rebase in the service
 
-- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Built (in `env:commit`, not the service):** a view keeps a hash per own
   key (value, flags, comment) of what the page was shown (`stamps`); no
   plaintext. When the file changed since, the commit still applies if none
@@ -630,8 +634,7 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 11: Single-instance lock for the app
 
-- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
-  `feat/vault-env-gui`; not merged, not released. Ungated: every user gets
+- **Status:** ✅ done 2026-10-22: its own validation is met. On `feat/vault-env-gui`; not merged, not released. Ungated: every user gets
   it (CHANGELOG "Changed").
 - **Goal:** A second launch focuses the existing window instead of starting a
   second process.
@@ -658,7 +661,7 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 ### Task 12: Main-process `ClipboardService` + IPC
 
 - **Status:** ✅ done 2026-10-23 with Task 22 (was 🟡 partial 2026-10-22,
-  pulled into the MVP after testing). Uncommitted on `feat/vault-env-gui`; not merged, not released.
+  pulled into the MVP after testing). On `feat/vault-env-gui`; not merged, not released.
 - **Built:** `ClipboardService` (main): writes the clipboard; a sensitive
   copy is cleared after 30 s unless the clipboard has changed since; a new
   copy replaces the pending clear. `env:copy` takes a view, a key and a
@@ -681,8 +684,7 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 13: Idle lock for password vaults
 
-- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
-  `feat/vault-env-gui`; not merged, not released. Not gated: every user
+- **Status:** ✅ done 2026-10-22: its own validation is met. On `feat/vault-env-gui`; not merged, not released. Not gated: every user
   gets it (CHANGELOG "Changed").
 - **Decided (activity):** input in the window counts: keys, clicks,
   scrolling, touch. The page reports it on `vault-activity`, at most every
@@ -741,8 +743,7 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### Task 14: `EnvVaultRegistry`
 
-- **Status:** ✅ done 2026-10-23: `createFromDialog` added. Uncommitted on
-  `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-23: `createFromDialog` added. On `feat/vault-env-gui`; not merged, not released.
 - **Built 2026-10-23 (`createFromDialog`):** a native save dialog ("New
   Environment Vault", `.env.vault`, Create); an existing file is refused,
   never replaced (`… already exists. Open it with Open… instead, or choose
@@ -797,7 +798,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 15: `EnvVaultSession`
 
-- **Status:** 🟡 partial 2026-10-22. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** 🟡 partial 2026-10-22. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** `EnvVaultSession`: `unlock`, `run` (every op gets the key
   **and** the password, keeps the key the op returns, maps `AUTH` to
   `LOCKED`), `touch`, `lock`/`lockAll` (keys zeroed, views dropped,
@@ -824,7 +825,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 16: `EnvVaultWatcher`
 
-- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** `EnvVaultWatcher` watches the vault's directory while it's
   unlocked (started on unlock, stopped on any lock), debounces 250 ms,
   hashes the file and reports only a revision the app didn't read or write
@@ -846,7 +847,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 17: IPC gate + core channels + preload
 
-- **Status:** 🟡 partial 2026-10-22. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** 🟡 partial 2026-10-22. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** `createEnvVaultHandlers` (`EnvVaultIpc.js`), registered by main
   through the trusted-sender `handle`, only when the New-4 gate is on:
   `env-vaults:list/open/create`, `env-vault:unlock/lock`, `env:list`,
@@ -874,7 +875,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 18: IPC: structure, history, diff, import/export channels
 
-- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** `env:manage` (rename, duplicate, delete, extends, describe;
   against the list's revision), `env:history`, `env:rollback`, `env:squash`,
   `env:diff`, `env:validate`, `env:import-pick` / `-apply` / `-cancel`,
@@ -889,7 +890,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 19: Renderer: Environments switch, vault list, open/new/unlock
 
-- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22: its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** `App.jsx` asks main for features; with `envVaults` on, the
   selector shows a **Passwords | Environments** switch and Environments
   renders `EnvVaultsPanel` (list, Open…, New… in the app folder, unlock).
@@ -938,7 +939,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 21: Renderer: bulk edit (table + dotenv text), conflicts
 
-- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** "Edit as .env": the env's own keys as text (comments as `#`
   lines). Saving diffs the text against what was loaded (`dotenvChanges`)
   and sends one changeset: only changed or new keys, `rm` for removed ones,
@@ -957,7 +958,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 22: Renderer: move secret copy to `ClipboardService`
 
-- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+- **Status:** ✅ done 2026-10-23. On `feat/vault-env-gui`; not
   merged, not released. Not gated: a change for every desktop user,
   CHANGELOG "Changed".
 - **Built:** channel `clipboard:copy(text, {sensitive})`
@@ -994,8 +995,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 23: Renderer: Settings for idle timeout and recents
 
-- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
-  `feat/vault-env-gui`; not merged, not released. Since Task 13 the idle
+- **Status:** ✅ done 2026-10-22: its own validation is met. On `feat/vault-env-gui`; not merged, not released. Since Task 13 the idle
   timeout covers password vaults too, and the section is no longer gated
   (its env vault setting still is).
 - **Goal:** Settings UI for D1 (timeout) and D5 (recents toggle, which clears
@@ -1041,7 +1041,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 24: Renderer: env structure ops
 
-- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** a ⋮ per env: Rename (envs that extend it follow), Duplicate
   (values, flags, comments, parent; fresh history), Description, Parent
   (refuses a loop), Delete (refused while another env extends it; keeps a
@@ -1054,7 +1054,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 25: Renderer: history, rollback, squash
 
-- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** History (newest first; date, message, key count and +/− keys
   against the current version; no values), Roll back (as a new version) and
   Squash to N versions, each behind a confirm; the squash confirm names the
@@ -1065,7 +1065,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 26: Renderer: diff and validate
 
-- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** Compare with… another env, as they resolve: keys only in one,
   and different values masked until "Show values" asks main again with
   `reveal: true`. Validate shows `vault env validate`'s errors and
@@ -1077,7 +1077,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 27: Renderer: import, export, template
 
-- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** Import .env…: main opens the file and parses it
   (`parseDotenv`), the page gets key names with new / changed / same, the
   file's comments, and skipped lines. The user picks keys, merge or replace
@@ -1093,7 +1093,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 28: Renderer: env vault change-password
 
-- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** Change password (current, new, confirm). Main checks the
   current one, re-keys the snapshots, and the session keeps working with
   the new password (`setPassword`); the env on screen reloads quietly.
@@ -1106,7 +1106,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 29: e2e scenario `env-vault-concurrent`
 
-- **Status:** 🟡 partial 2026-10-22. Uncommitted on `feat/vault-env-gui`; not merged, not released. The `env-vault` e2e scenario covers
+- **Status:** 🟡 partial 2026-10-22. On `feat/vault-env-gui`; not merged, not released. The `env-vault` e2e scenario covers
   seed → open → unlock → reveal → edit → another tool writes → `STALE`, nothing
   overwritten → reload → save keeps both. The rebase and conflict steps wait
   on Task 10.
@@ -1120,7 +1120,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 ### Task 30: CI e2e job (ubuntu + xvfb)
 
 - **Status:** 🟡 built 2026-10-22; done when a push shows the `e2e` job
-  green. Uncommitted on `feat/vault-env-gui`.
+  green. On `feat/vault-env-gui`.
 - **Goal:** Every PR runs all e2e scenarios (D3).
 - **Constraints:** Must not make the existing CI job slower; run as a separate
   job.
@@ -1147,7 +1147,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 31: User guide `docs/guide/gui/env-vaults.md`
 
-- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+- **Status:** ✅ done 2026-10-23. On `feat/vault-env-gui`; not
   merged, not released.
 - **Built:** `docs/guide/gui/env-vaults.md`: the list, open/new, unlock and
   saved passwords, variables (secret/public, inherited, comments, copy,
@@ -1204,8 +1204,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-2: App-wide settings store
 
-- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
-  `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22: its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Found:** Task 0, 2026-10-21 (Correction 4).
 - **Goal:** Main can read and write non-secret app settings (idle timeout,
   recents toggle) while every vault is locked.
@@ -1259,7 +1258,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-4: Feature gate for the Environments UI
 
-- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22: its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** `readFeatures()` (`src/electron/utils/features.js`): the
   Environments UI is on in dev runs (`ELECTRON_IS_DEV=1` or
   `NODE_ENV=development`) and off in production and packaged builds;
@@ -1283,8 +1282,8 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-5: Verify async PBKDF2 in the Bun-compiled CLI binary
 
-- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted
-  on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22: its own validation is met. On
+  `feat/vault-env-gui`; not merged, not released.
 - **Found:** Task 0, 2026-10-21.
 - **Goal:** The standalone `vault` binaries (`scripts/build-cli.js`, Bun
   `--compile`) derive keys with the async path and produce the same keys as
@@ -1633,7 +1632,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
   `electron-builder --mac --dir`). Windows and Linux run in the release
   workflow's new smoke step; run it with "Run workflow" on the Release
   workflow (no tag needed) and the item is done when both are green.
-  Uncommitted on `feat/vault-env-gui`.
+  On `feat/vault-env-gui`.
 - **Found:** Task 2, 2026-10-22.
 - **Goal:** the packaged app on macOS, Windows and Linux starts, renders, and
   logs no CSP violation.
@@ -1676,7 +1675,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-20: Fix: reveal/edit fail with "Unknown view" in dev
 
-- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22: its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Found:** author testing `npm run dev:electron` on a real 194 KB vault:
   Reveal and Edit failed with "Unknown view" in some environments.
 - **Cause:** React StrictMode mounts `EnvView` twice in dev, so two
@@ -1694,7 +1693,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-21: Move or duplicate keys between environments
 
-- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22: its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Found:** author testing, 2026-10-22.
 - **Built:**
   - `env:transfer`: `{ viewId, keys, target, mode: 'copy'|'move', overwrite }`
@@ -1711,8 +1710,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-22: Open a folder and find the vault the CLI would use
 
-- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
-  `feat/vault-env-gui`; not merged, not released. Behind the env UI gate.
+- **Status:** ✅ done 2026-10-22: its own validation is met. On `feat/vault-env-gui`; not merged, not released. Behind the env UI gate.
 - **Found:** author testing, 2026-10-22: the app list showed an older
   `Superxpense.env.vault` in the app folder, while `pvault` used the
   project's hidden `.env.vault`.
@@ -1759,7 +1757,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-23: Unlock error says which file, without "corrupted" first
 
-- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** a wrong password reads "Wrong password for <file>. If you're
   sure it's right, the file may be damaged." The CLI message is unchanged.
 - **Found:** author testing, 2026-10-22.
@@ -1773,8 +1771,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 ### New-24: Unlock an env vault with the password a profile injects
 
 - **Status:** ✅ done 2026-10-22 with option B (the author's "go" on the
-  recommendation): its own validation is met. Uncommitted on
-  `feat/vault-env-gui`; not merged, not released. Option A (the launch
+  recommendation): its own validation is met. On `feat/vault-env-gui`; not merged, not released. Option A (the launch
   password) is not built.
 - **Found:** author testing, 2026-10-22: `pvault` gets the password from
   `VAULT_ENV_PASSWORD`, set by a profile wrapper, so it's never typed.
@@ -1818,8 +1815,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-25: Optional comment per key (env vaults) and notes on entry cards
 
-- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
-  `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22: its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Found:** author request, 2026-10-22: "add comment for each key
   (optional), for both kinds of vaults".
 - **Built:**
@@ -1851,7 +1847,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-26: Export and import key comments as `#` lines in a .env
 
-- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** `toDotenv(vars, { comments })`; `parseDotenv` keeps the `#`
   lines directly above a key (and an inline one) as its comment. CLI:
   `export --comments`, `import --comments` (both opt-in). The app's Export
@@ -1868,7 +1864,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-27: Fix: `env set` without `--public` makes a public key secret again
 
-- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** `setEnv`'s `isPublic` is now three-way; the CLI passes `true`
   for `--public`, `false` for the new `--secret`, nothing otherwise (keeps
   the flag). Both flags together are refused. CHANGELOG entry.
@@ -1883,7 +1879,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-28: Search password entries by their notes
 
-- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. Uncommitted on `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22 (second testing round): its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Built:** every entry type's search fields include `notes`.
 - **Found:** while building New-25: each entry type's `searchFields` leaves
   `notes` out, so a note is shown on the card but search can't find it.
@@ -1895,8 +1891,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-29: Recognise a newer vault format: warn, protect writes, show upgrade
 
-- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
-  `feat/vault-env-gui`; not merged, not released. Must still ship in the
+- **Status:** ✅ done 2026-10-22: its own validation is met. On `feat/vault-env-gui`; not merged, not released. Must still ship in the
   release that brings New-25, or an earlier one.
 - **Decided (author, 2026-10-22, all as recommended):**
   - Marker: a `features` list in the plaintext envelope, so a tool names
@@ -1976,8 +1971,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-30: Rename an env: update `{{env:NAME/KEY}}` references to it
 
-- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
-  `feat/vault-env-gui`; not merged, not released. Behind the env UI gate.
+- **Status:** ✅ done 2026-10-22: its own validation is met. On `feat/vault-env-gui`; not merged, not released. Behind the env UI gate.
 - **Built:**
   - Model: `referencesTo(env)` counts `{{env:env/KEY}}` per env in active
     versions; `renameReferences(old, new)` rewrites them, one new version
@@ -2017,7 +2011,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-31: Merge, not STALE, for reveal, copy, transfer and import
 
-- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+- **Status:** ✅ done 2026-10-23. On `feat/vault-env-gui`; not
   merged, not released.
 - **Built:** in `EnvVaultIpc`, a view keeps a hash per row it shows
   (`rowStampsOf`, inherited rows included) next to its own-key `stamps`,
@@ -2052,7 +2046,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-32: `env import` keeps the flags of the keys it replaces
 
-- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+- **Status:** ✅ done 2026-10-23. On `feat/vault-env-gui`; not
   merged, not released. CLI behavior change: CHANGELOG "Changed".
 - **Built:** `EnvironmentVault.importFromEnvFile` carries `nonSensitive` and
   `required` over for the keys still in the file. New keys are secret; a
@@ -2077,8 +2071,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-33: Fix: a vault briefly vanished on every save
 
-- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
-  `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22: its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Found:** "concurrent `vault env set` CLI processes keep every key"
   failed twice in four full runs, and 3 times in 25 runs on its own: one
   process exited 5 (vault not found).
@@ -2097,7 +2090,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-34: Drop a pending import as soon as the vault locks
 
-- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+- **Status:** ✅ done 2026-10-23. On `feat/vault-env-gui`; not
   merged, not released.
 - **Built:** `EnvVaultSession.onLock(listener)`: called on every lock
   (silent re-unlocks too), returns an unsubscribe. The IPC handlers
@@ -2119,7 +2112,7 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-35: JSON export from the app
 
-- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+- **Status:** ✅ done 2026-10-23. On `feat/vault-env-gui`; not
   merged, not released.
 - **Built:** `env:export(id, env, format = 'dotenv')`; `json` writes the
   resolved values exactly as `vault env export -f json` prints them
@@ -2150,7 +2143,7 @@ unknown format is `INVALID`. Preload passes `format`. The env ⋮ menu has
 
 ### New-36: Prune saved passwords of gone vaults; "forget all"
 
-- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+- **Status:** ✅ done 2026-10-23. On `feat/vault-env-gui`; not
   merged, not released.
 - **Decided:** "gone" means the file is missing but its folder is there; a
   missing folder (unmounted drive, disconnected share) keeps its password.
@@ -2202,7 +2195,7 @@ unknown format is `INVALID`. Preload passes `format`. The env ⋮ menu has
 
 - **Status:** 🟡 built 2026-10-22; passed on macOS. Windows and Linux are
   checked by the release workflow's smoke step (New-19); done when that run
-  is green. Uncommitted on `feat/vault-env-gui`.
+  is green. On `feat/vault-env-gui`.
 - **Goal:** the packaged app can't be turned into a debuggable or plain
   Node.js process by whoever launches it.
 - **Found:** `npx @electron/fuses read` on the packaged macOS app: every
@@ -2247,8 +2240,7 @@ unknown format is `INVALID`. Preload passes `format`. The env ⋮ menu has
 
 ### New-39: Fix: a failed page load loops instead of showing the error page
 
-- **Status:** ✅ done 2026-10-22: its own validation is met. Uncommitted on
-  `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-22: its own validation is met. On `feat/vault-env-gui`; not merged, not released.
 - **Found:** while doing New-19: reloading the page while the packaged
   app's first load was still running aborted it (`ERR_ABORTED`); the app
   then logged "Failed to load URL … ERR_FAILED" without end and never
@@ -2348,7 +2340,7 @@ unknown format is `INVALID`. Preload passes `format`. The env ⋮ menu has
 
 ### New-42: Decide whether input in the window keeps env vaults unlocked
 
-- **Status:** ✅ done 2026-10-22. Uncommitted on `feat/vault-env-gui`; not
+- **Status:** ✅ done 2026-10-22. On `feat/vault-env-gui`; not
   merged, not released. Behind the env UI gate.
 - **Found:** the password vault stays unlocked while there is input in the
   window (Task 13). Env vaults counted only their own calls (RFC §6.6), so
@@ -2395,7 +2387,7 @@ unknown format is `INVALID`. Preload passes `format`. The env ⋮ menu has
 
 ### New-44: CLI `env rename` leaves `extends` and references on the old name
 
-- **Status:** ✅ done 2026-10-22. Uncommitted on `feat/vault-env-gui`; not
+- **Status:** ✅ done 2026-10-22. On `feat/vault-env-gui`; not
   merged, not released. CLI behavior change: CHANGELOG "Changed".
 - **Decided:** references are updated by default, as in the app;
   `--keep-references` opts out. `extends` always follows: a parent that no
@@ -2435,7 +2427,7 @@ message})` renames and rewrites references in one write and returns
 
 ### New-45: `env import` of several files keeps only the last one
 
-- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+- **Status:** ✅ done 2026-10-23. On `feat/vault-env-gui`; not
   merged, not released. CLI behavior change: CHANGELOG "Changed".
 - **Built:** `EnvironmentVault.importFromEnvFile` takes one content or an
   array and writes one version; a later file wins on a repeated key, with
@@ -2466,7 +2458,7 @@ import` says it "creates a new version with all vars from the file(s)"
 
 ### New-46: The "Lock Vault" menu item doesn't lock env vaults
 
-- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+- **Status:** ✅ done 2026-10-23. On `feat/vault-env-gui`; not
   merged, not released.
 - **Decided:** it locks every unlocked env vault, not just the one on
   screen: the shortcut is what a user presses before stepping away, like
@@ -2494,7 +2486,7 @@ import` says it "creates a new version with all vars from the file(s)"
 
 ### New-47: Say why an env vault locked
 
-- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+- **Status:** ✅ done 2026-10-23. On `feat/vault-env-gui`; not
   merged, not released.
 - **Built:** `EnvVaultSession.lock(id, {reason})` and `lockAll(reason)`;
   `onLocked(id, {reason, minutes?})`: `user` (Lock, File → Lock Vault),
@@ -2525,7 +2517,7 @@ import` says it "creates a new version with all vars from the file(s)"
 
 ### New-48: "Open…" won't select a project's `.env.vault`
 
-- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+- **Status:** ✅ done 2026-10-23. On `feat/vault-env-gui`; not
   merged, not released.
 - **Found:** reported by the author: in "Open…", a repo's `.env.vault` (a
   valid env vault, format 1) was greyed out. The dialog allowed only the
@@ -2552,7 +2544,10 @@ import` says it "creates a new version with all vars from the file(s)"
 
 ### New-49: Escape doesn't cancel a grid-card cell edit
 
-- **Status:** ⬜ found 2026-10-23 while building Task 22.
+- **Status:** ✅ done 2026-10-23. On `feat/vault-env-gui`.
+  `onKeyDown` instead of `onKeyPress`; CHANGELOG "Fixed". Test: Escape
+  keeps the code and calls no `onChange` (fails on the previous code);
+  Enter still saves. `Level3CardGrid.jsx` 96.9% lines.
 - **Found:** `Level3CardGrid` handles Enter and Escape in the cell's
   `onKeyPress`; React fires no key-press event for Escape, so the cancel
   branch never runs (a test of it fails). Enter works.
