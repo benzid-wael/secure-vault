@@ -40,7 +40,7 @@ updated as each task finishes, not in a batch at the end.
 | 26     | Renderer: diff and validate                                        | M5  | P2  | ✅     | 18, 20                                 |
 | 27     | Renderer: import, export, template                                 | M5  | P2  | ✅     | 18, 20                                 |
 | 28     | Renderer: env vault change-password                                | M5  | P2  | ✅     | 7, 18, 19                              |
-| 29     | e2e scenario `env-vault-concurrent`                                | M6  | P1  | 🟡     | 21                                     |
+| 29     | e2e scenario `env-vault-concurrent`                                | M6  | P1  | ✅     | 21                                     |
 | 30     | CI e2e job (ubuntu + xvfb)                                         | M6  | P1  | 🟡     | 1, 29                                  |
 | 31     | User guide `docs/guide/gui/env-vaults.md`                          | M6  | P2  | ✅     | 21                                     |
 | New-1  | Coverage can't see the code this plan changes                      | —   | P1  | ✅     | — (blocks 1, 3)                        |
@@ -1108,16 +1108,26 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 29: e2e scenario `env-vault-concurrent`
 
-- **Status:** 🟡 partial 2026-10-22. On `feat/vault-env-gui`; not merged, not released. The `env-vault` e2e scenario covers
-  seed → open → unlock → reveal → edit → another tool writes → `STALE`, nothing
-  overwritten → reload → save keeps both. The rebase and conflict steps wait
-  on Task 10.
+- **Status:** ✅ done 2026-10-23: its own validation is met. On
+  `feat/vault-env-gui`; not merged, not released.
 - **Goal:** RFC goal 7 as an e2e scenario (seed → open → unlock → edit →
   CLI `set` → banner → disjoint commit rebased → overlapping commit conflicts).
 - **Dependencies:** 21.
 - **Implementation guidance:** The scenario has an isolated HOME; spawn the
   CLI with the same HOME so both resolve the same appdata.
 - **Validation:** `node e2e/run.mjs env-vault-concurrent` passes.
+- **Built:** `e2e/scenarios/env-vault-concurrent.cjs` and its seed. The
+  outside writer is the real CLI (`bin/cli.js env … -n app`), spawned with
+  Node and the scenario's HOME, so the vault is found by name in the same
+  app data as the app's; `run.mjs` passes Node's path as `E2E_NODE`. Steps:
+  unlock → CLI `set` → the app reloads and shows it → CLI `set` of another
+  key during an "Edit as .env" → the save is merged, both in the file → CLI
+  `rm` of a key the draft changes → the save is refused, the key listed as
+  removed, nothing written → Overwrite writes the draft → CLI `delete` of
+  the env during a one-key edit → the save is refused as env deleted, no
+  Overwrite offered, the env stays deleted. The `env-vault` scenario keeps
+  its in-process writes (reload, one-key merge and conflict).
+- **Checked:** 19/19 checks, 3 runs in a row; the full suite 9/9.
 
 ### Task 30: CI e2e job (ubuntu + xvfb)
 
