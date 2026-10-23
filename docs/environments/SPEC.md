@@ -1004,6 +1004,8 @@ Imports one or more .env files into an environment of an existing vault.
 The environment name is the first positional; one or more file paths follow.
 Parses KEY=VALUE lines (skips comments, blank lines, supports `export` prefix).
 Creates a new version with all vars from the file(s).
+Keys still in the file keep their public and required flags; new keys are
+secret.
 
 If the environment doesn't exist yet, it is created.
 

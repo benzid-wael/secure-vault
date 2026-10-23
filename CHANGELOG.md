@@ -38,6 +38,10 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Changed
 
+- **`vault env import` keeps the flags of the keys it replaces.** A key
+  still in the file stays public or required as it was; before, every
+  import made all keys secret and dropped `required`. New keys are secret,
+  and a key the file leaves out takes its flags with it.
 - **`vault env rename` no longer breaks what builds on the environment.**
   Environments that extend it now extend the new name (before, they were
   left pointing at a name that no longer existed), and `{{env:old/KEY}}`

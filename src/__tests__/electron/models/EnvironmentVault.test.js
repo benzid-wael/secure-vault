@@ -410,6 +410,20 @@ describe('EnvironmentVault', () => {
       expect(vault.getHistory('staging')).toHaveLength(3);
       expect(vault.getActiveVersion('staging').vars.NEW_KEY).toBe('new_val');
     });
+
+    it('keeps the flags of the keys still in the file (New-32)', () => {
+      const vault = new EnvironmentVault();
+      vault.addEnvironment('dev');
+      vault.addVersion(
+        'dev',
+        { URL: 'a', TOKEN: 't', OLD: 'o' },
+        { nonSensitive: ['URL', 'OLD'], required: ['TOKEN', 'OLD'] }
+      );
+      vault.importFromEnvFile('dev', 'URL=b\nTOKEN=t2\nNEW=n');
+      const active = vault.getActiveVersion('dev');
+      expect(active.nonSensitive).toEqual(['URL']);
+      expect(active.required).toEqual(['TOKEN']);
+    });
   });
 });
 describe('applyVarChanges', () => {

@@ -1955,7 +1955,20 @@ lockTimeoutMs, tool })` follows RFC §6.2: lock → read once → `STALE`
 
 ### New-32: `env import` keeps the flags of the keys it replaces
 
-- **Status:** ⬜ not started.
+- **Status:** ✅ done 2026-10-23. Uncommitted on `feat/vault-env-gui`; not
+  merged, not released. CLI behavior change: CHANGELOG "Changed".
+- **Built:** `EnvironmentVault.importFromEnvFile` carries `nonSensitive` and
+  `required` over for the keys still in the file. New keys are secret; a
+  key the file leaves out loses its flags with it. Kept in the model rather
+  than re-implemented on `applyVarChanges` (the dependency below): the
+  result is the same and every caller (`import`, `init --env`) gets it. The
+  app doesn't use this path (its import merges through `applyVarChanges`).
+  SPEC §`vault env import` says so.
+- **Validation done:** CLI integration test (`envImport.integration`): a
+  public key stays public and a required one required after `import`; a
+  new key is secret; a key left out and imported again comes back secret.
+  Both tests fail on the previous code. Model test for the same rule.
+  Coverage of `bin/commands/env.js` isn't measured (child process).
 - **Found:** building New-26, 2026-10-22: `importFromEnvFile` writes a
   version without `nonSensitive` or `required`, so every imported key turns
   secret and loses `required`. The app's import (merge) keeps them.
@@ -2245,3 +2258,20 @@ message})` renames and rewrites references in one write and returns
   `doctor` is clean.
 - **Cost of leaving it:** a rename from the CLI, the primary tool, can
   break `run` and exports for every env that built on the renamed one.
+
+### New-45: `env import` of several files keeps only the last one
+
+- **Status:** ⬜ found 2026-10-23 while building New-32.
+- **Found:** `vault env import prod a.env b.env` writes one version per
+  file, each replacing the env's variables, so only `b.env`'s keys remain
+  (v1 "Imported from a.env", v2 "Imported from b.env"). SPEC §`vault env
+import` says it "creates a new version with all vars from the file(s)"
+  and shows this exact use ("Import multiple files into one environment").
+- **Goal:** importing several files gives one version with the keys of all
+  of them, later files winning on a repeated key, as SPEC says.
+- **Constraints:** a CLI behavior change: CHANGELOG entry. Warnings keep
+  naming the file and line.
+- **Validation:** a CLI test: `import prod a.env b.env` leaves `A` and `B`,
+  in one new version.
+- **Cost of leaving it:** the documented multi-file import silently drops
+  every file but the last.

@@ -569,3 +569,18 @@ env show shop` resolves as before.
 HOST -e child` and the `shop` value resolve as before.
 - **Rollback:** reinstall the previous CLI. Vaults written by this one stay
   valid.
+
+### New-32: CLI `env import` keeps key flags
+
+- **Runtime change (every CLI user, not gated):** `vault env import` and
+  `init --env` keep the public and required flags of keys still in the
+  file; before, every key came out secret and not required.
+- **Schema or config change:** none.
+- **Before it ships:** the CHANGELOG "Changed" entry (written). A script
+  that re-ran `env set --public` after each import keeps working; it now
+  changes nothing.
+- **Gated by:** nothing; it fixes an import that changed flags silently.
+- **Verify after release:** mark a key `--public`, import a file that has
+  it: `vault env show <env>` still prints its value.
+- **Rollback:** reinstall the previous CLI. Vaults written by this one stay
+  valid.

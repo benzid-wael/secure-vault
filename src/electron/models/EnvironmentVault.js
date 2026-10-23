@@ -500,7 +500,8 @@ export class EnvironmentVault {
   /**
    * Replace `name`'s variables with a .env file's, as one new version.
    * With `comments`, the file's `#` comments above a key become its comment;
-   * otherwise keys keep the comments they had.
+   * otherwise keys keep the comments they had. Keys still in the file keep
+   * their public and required flags; new keys are secret.
    */
   importFromEnvFile(name, content, { message = null, comments = false } = {}) {
     const parsed = parseDotenv(content);
@@ -509,8 +510,12 @@ export class EnvironmentVault {
       this.addEnvironment(name);
     }
 
-    const kept = this.getActiveVersion(name)?.comments;
+    const active = this.getActiveVersion(name);
+    const inFile = (/** @type {string} */ key) => key in parsed.vars;
+    const kept = active?.comments;
     return this.addVersion(name, parsed.vars, {
+      nonSensitive: (active?.nonSensitive ?? []).filter(inFile),
+      required: (active?.required ?? []).filter(inFile),
       message,
       ...(comments && { comments: { ...kept, ...parsed.comments } }),
     });
