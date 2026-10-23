@@ -148,6 +148,9 @@ export default defineConfig({
       clean: true,
       skipFull: false,
       reportOnFailure: true,
+      // Every source file counts, the main process's included; one no test
+      // loads counts at 0% (New-6).
+      include: ['src/**/*.{js,jsx}'],
       exclude: [
         '**/node_modules/**',
         '**/public/**',
@@ -162,21 +165,18 @@ export default defineConfig({
         '**/*/testData.js',
         '**/scripts/**',
         '**/bin/**',
-        'src/electron/**',
         'src/__tests__/**',
         'src/**/__tests__/**',
         'src/**/*.test.{js,jsx,ts,tsx}',
       ],
-      // Recalibrated for vitest 4: its v8 provider switched to AST-aware
-      // remapping, which reports ~11 points lower than vitest 1's
-      // v8-to-istanbul mapping on the same tests. Coverage did not regress —
-      // the measurement got stricter. These values sit just below the current
-      // accurate numbers; raise them as real test coverage improves.
+      // About 2 points under the totals measured when src/electron/** came
+      // in (New-6, 2026-10-23: 89.6 / 86.2 / 88.6 / 84.0); raise them as
+      // coverage improves. Keep in sync with scripts/coverage-check.js.
       thresholds: {
-        lines: 68,
-        functions: 60,
-        statements: 67,
-        branches: 64,
+        lines: 87,
+        functions: 84,
+        statements: 86,
+        branches: 82,
       },
     },
   },

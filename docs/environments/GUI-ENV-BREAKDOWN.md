@@ -48,7 +48,7 @@ updated as each task finishes, not in a batch at the end.
 | New-3  | Decide which secrets go through `ClipboardService`                 | —   | P1  | ✅     | —                                      |
 | New-4  | Feature gate for the Environments UI                               | M4  | P0  | ✅     | 0                                      |
 | New-5  | Verify async PBKDF2 in the Bun-compiled CLI binary                 | M1  | P1  | ✅     | 3                                      |
-| New-6  | Decide whether project coverage should include `src/electron/**`   | —   | P2  | ⬜     | New-1                                  |
+| New-6  | Decide whether project coverage should include `src/electron/**`   | —   | P2  | ✅     | New-1                                  |
 | New-7  | Commit a way to measure coverage of excluded files                 | —   | P1  | ✅     | New-1                                  |
 | New-8  | `npm run lint` fails locally on gitignored build output            | —   | P2  | ✅     | —                                      |
 | New-9  | Type-check gate: confirm "no new errors" as this plan's rule       | —   | P1  | ✅     | —                                      |
@@ -104,7 +104,8 @@ with M0 (1, 2) required before 19 ships to anyone.
   statements 77.21%, branches 72.74%, functions 71.19%. Gate in
   `vite.config.js`: 68 / 67 / 64 / 60. These numbers must not drop.
 - The coverage gate excludes `src/electron/**`, `public/**` and `bin/**`:
-  see New-1.
+  see New-1. (Since New-6, 2026-10-23, `src/electron/**` is included and
+  the gate is 87 / 86 / 82 / 84.)
 - Suite time (`/usr/bin/time -p npx vitest run`, two runs): 25.9 s and 27.4 s.
 - Lint on tracked files
   (`git ls-files '*.js' '*.jsx' '*.mjs' '*.cjs' | xargs npx eslint`):
@@ -1346,7 +1347,29 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-6: Decide whether project coverage should include `src/electron/**`
 
-- **Status:** ⬜ not started (decision needed from the author; not blocking).
+- **Status:** ✅ decided and done 2026-10-23: option "include; raise the
+  floors", chosen by the author. On `feat/vault-env-gui`; not merged, not
+  released. Dev only.
+- **Built:** `vite.config.js` coverage has `include: ['src/**/*.{js,jsx}']`
+  (a file no test loads counts at 0%) and no longer excludes
+  `src/electron/**`; `public/**`, `bin/**` and `scripts/**` stay out.
+  Thresholds (lines / functions / statements / branches) go from
+  68 / 60 / 67 / 64 to 87 / 84 / 86 / 82, about 2 points under the new
+  totals; `scripts/coverage-check.js` matches. CI's diff coverage now
+  counts main-process changes too.
+- **Measured (2026-10-23, 1422 tests):**
+
+  | Scope                                  | Files | Lines | Functions | Statements | Branches |
+  | -------------------------------------- | ----- | ----- | --------- | ---------- | -------- |
+  | Before (loaded files, electron out)    | 43    | 87.22 | 81.10     | 86.03      | 81.09    |
+  | Electron in, loaded files only         | 79    | 90.38 | 86.48     | 89.32      | 84.39    |
+  | Electron in, every `src` file (chosen) | 79    | 89.61 | 86.20     | 88.62      | 84.04    |
+
+  The only `src` file no test loads is
+  `src/electron/services/ImportExportService.js` (used by `public/main.js`,
+  0/42 lines). Diff coverage of this branch against `main` (`diff-cover`,
+  `--fail-under=80`): 89.8% before, 94.7% with electron in; both pass.
+
 - **Found:** Task 0, 2026-10-21 (split from New-1 option (b)).
 - **Goal:** A recorded decision on whether `src/electron/**` comes out of the
   coverage `exclude` list in `vite.config.js`, and the thresholds that follow.
