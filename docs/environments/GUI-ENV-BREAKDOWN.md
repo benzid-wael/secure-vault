@@ -1766,11 +1766,12 @@ source)`; `vite.config.js` adds a serve-only plugin (`renderer-csp-dev`, `order:
 
 ### New-19: Verify the CSP and sandbox in packaged builds (asar)
 
-- **Status:** 🟡 partial 2026-10-22: passed on macOS (arm64, unsigned
-  `electron-builder --mac --dir`). Windows and Linux run in the release
-  workflow's new smoke step; run it with "Run workflow" on the Release
-  workflow (no tag needed) and the item is done when both are green.
-  On `feat/vault-env-gui`.
+- **Status:** 🟡 partial: passed on macOS (arm64, 2026-10-22, re-run
+  2026-10-24 at 14/14) and on Linux (arm64, Debian 12 in Docker,
+  2026-10-24, 14/14). Windows, and Linux x64 on Ubuntu 24.04, run in the
+  release workflow's smoke step: "Run workflow" on the Release workflow
+  (no tag needed); the item is done when both are green. On
+  `feat/vault-env-gui`.
 - **Found:** Task 2, 2026-10-22.
 - **Goal:** the packaged app on macOS, Windows and Linux starts, renders, and
   logs no CSP violation.
@@ -1801,7 +1802,13 @@ source)`; `vite.config.js` adds a serve-only plugin (`renderer-csp-dev`, `order:
     reports the violation in the page and in the log (8/10). A plain
     Electron window with `sandbox: false` gets `--no-sandbox`, with
     `sandbox: true` `--enable-sandbox`.
-  - Still to do: Windows and Linux green in the release workflow.
+  - Linux, 2026-10-24: `electron-builder --linux --dir` and the twin in a
+    `node:20-bookworm` container (Xvfb, a non-root user, seccomp
+    unconfined so Chromium's sandbox can start): 14/14. The script looked
+    only for `linux-unpacked`; arm64 builds land in
+    `linux-arm64-unpacked` (and `win-arm64-unpacked` on Windows), so it
+    now finds either.
+  - Still to do: Windows, and Linux x64, green in the release workflow.
 - **Found while doing it:**
   - New-38: the packaged app keeps Electron's default fuses.
   - New-39: a page load aborted at startup loops on `ERR_FAILED` (fixed).

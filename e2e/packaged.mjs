@@ -40,10 +40,14 @@ function defaultExecutable(out) {
       dir && path.join(dist, dir, `${product}.app/Contents/MacOS/${product}`)
     );
   }
+  // `<os>-unpacked` on x64, `<os>-<arch>-unpacked` on arm64.
+  const unpacked = (os) =>
+    dirs.find((d) => new RegExp(`^${os}(-\\w+)?-unpacked$`).test(d)) ??
+    `${os}-unpacked`;
   if (process.platform === 'win32') {
-    return path.join(dist, 'win-unpacked', `${product}.exe`);
+    return path.join(dist, unpacked('win'), `${product}.exe`);
   }
-  return path.join(dist, 'linux-unpacked', pkg.build.linux.executableName);
+  return path.join(dist, unpacked('linux'), pkg.build.linux.executableName);
 }
 
 /** A process's full command line. */
