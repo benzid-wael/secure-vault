@@ -14,6 +14,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { seedVault, removeSeed } from '../helpers/seedVault.js';
+import { currentPidNamespace } from '../../electron/services/VaultLock.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.resolve(__dirname, '../../../bin/cli.js');
@@ -144,6 +145,8 @@ describe('vault env doctor (integration)', () => {
         tool: 'cli',
         nonce: 'n',
         boot: new Date(Date.now() - os.uptime() * 1000).toISOString(),
+        // On Linux the CLI probes the pid only from the same namespace.
+        pidns: currentPidNamespace(),
         acquiredAt: new Date().toISOString(),
       })
     );

@@ -889,7 +889,10 @@ describe('env vault UI on the real handlers (StrictMode)', () => {
   });
 
   it('unlocks but says so when the keychain refuses the password', async () => {
-    safeStore.isEncryptionAvailable = () => false;
+    // Refused at the OS prompt: the box is offered on every platform.
+    safeStore.encryptString = () => {
+      throw new Error('keychain access denied');
+    };
     render(<EnvVaultsPanel />);
     fireEvent.click(await screen.findByText('app'));
     await typeUnlock({ remember: true });
