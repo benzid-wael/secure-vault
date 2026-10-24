@@ -38,9 +38,9 @@ vault file and the files next to it (`.bak`, `.lock`, `.deleted.<ts>`,
 
 ## Gates
 
-| Gate                                     | Default | Controls                                                                        | Flip on (evidence, not a date)                                                                                                                                                                                                                                       | Defined by |
-| ---------------------------------------- | ------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| Environments UI: `SECURE_VAULT_ENV_UI=1` | off     | Every env IPC channel in main, and everything env-related in the renderer (19+) | M0 done in packaged builds (New-19); Tasks 6 + 8 released; ✅ `env-vault` e2e green in CI (Task 30); Copy (Task 12) in; the CLI release carrying Task 6 has been out as `latest`. Bulk edit (21) is **not** required since the MVP cut (proposed, author to confirm) | New-4      |
+| Gate                                     | Default | Controls                                                                        | Flip on (evidence, not a date)                                                                                                                                                                                                                                                  | Defined by |
+| ---------------------------------------- | ------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| Environments UI: `SECURE_VAULT_ENV_UI=1` | off     | Every env IPC channel in main, and everything env-related in the renderer (19+) | ✅ M0 done in packaged builds (New-19, New-38); Tasks 6 + 8 released; ✅ `env-vault` e2e green in CI (Task 30); Copy (Task 12) in; the CLI release carrying Task 6 has been out as `latest`. Bulk edit (21) is **not** required since the MVP cut (proposed, author to confirm) | New-4      |
 
 The CLI-side changes (Tasks 3–10) ship **ungated**: they change concurrency
 behavior and add files, not features.
@@ -255,14 +255,13 @@ Known hazards so far, to be completed per task:
 - **Schema or config change:** none. Env vault files are written through
   Task 6's `transact` with `tool: 'gui'` in the lock.
 - **Before it ships:**
-  1. New-19: the packaged app on each OS starts with the CSP (blocks the
-     next tag, gated or not). _Status:_ passed on macOS; the release
-     workflow now runs `npm run test:packaged` after packaging on each OS
-     and stops the release if it fails. Run the workflow by hand once to
-     see Windows and Linux green before tagging.
+  1. ✅ New-19: the packaged app on each OS starts with the CSP. The
+     release workflow runs `npm run test:packaged` after packaging on each
+     OS and stops the release if it fails; a hand run on `main`
+     (2026-10-24, no tag) was green on macOS, Windows and Linux.
   2. "Must not ship early" 1–3 and 6 still hold for flipping the gate.
-  3. New-38, Electron fuses, before the gate flips (built; Windows and
-     Linux wait on the release workflow's smoke step).
+  3. ✅ New-38, Electron fuses, before the gate flips (green on all three
+     OSes in the same run).
 - **Gated by:** the Environments UI gate (table above). How to try it:
   `npm run dev:electron`, or `SECURE_VAULT_ENV_UI=1 npm run start:prod`
   after `npm run build:all`.

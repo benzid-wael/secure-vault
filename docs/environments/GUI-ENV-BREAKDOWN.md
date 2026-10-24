@@ -4,6 +4,10 @@ The plan of record for [`GUI-ENV-RFC.md`](GUI-ENV-RFC.md) (approved 2026-10-21).
 Rollout notes live in [`GUI-ENV-ROLLOUT.md`](GUI-ENV-ROLLOUT.md). This file is
 updated as each task finishes, not in a batch at the end.
 
+**Branch:** everything below marked "On `feat/vault-env-gui`" was merged to
+`main` on 2026-10-24 (PR #72). None of it is released yet: the last tag is
+`v0.2.0-rc.1`.
+
 **Status key:** ✅ done · 🟡 partial · ⛔ blocked · ⬜ not started · 🔶 ready to run · ⏸ deferred · ❌ dropped
 **Priority:** **P0** MVP path · **P1** production readiness, correctness, security, privacy · **P2** improvements
 
@@ -13,7 +17,7 @@ updated as each task finishes, not in a batch at the end.
 | ------ | ------------------------------------------------------------------ | --- | --- | ------ | -------------------------------------- |
 | 0      | Write this breakdown and the rollout plan                          | —   | P0  | ✅     | —                                      |
 | 1      | Make the renderer sandbox explicit and verified                    | M0  | P1  | ✅     | 0, New-1                               |
-| 2      | Content-Security-Policy for the renderer                           | M0  | P1  | 🟡     | 1                                      |
+| 2      | Content-Security-Policy for the renderer                           | M0  | P1  | ✅     | 1                                      |
 | 3      | Async key derivation (`deriveKeyAsync`)                            | M1  | P0  | ✅     | 0, New-1                               |
 | 4      | `VaultLock` module                                                 | M1  | P0  | ✅     | 3                                      |
 | 5      | `read()` / `transact()` with revisions and `REKEYED`               | M1  | P0  | ✅     | 3, 4                                   |
@@ -61,7 +65,7 @@ updated as each task finishes, not in a batch at the end.
 | New-16 | ESLint flags MUI components used only in JSX as unused             | —   | P2  | ✅     | —                                      |
 | New-17 | Shared test mock lacks `removeAllListeners` / `onVaultLocked`      | —   | P2  | ✅     | —                                      |
 | New-18 | Dev-mode Content-Security-Policy                                   | M0  | P2  | ✅     | 2                                      |
-| New-19 | Verify the CSP and sandbox in packaged builds (asar)               | M0  | P1  | 🟡     | 2 (blocks the next tag)                |
+| New-19 | Verify the CSP and sandbox in packaged builds (asar)               | M0  | P1  | ✅     | 2                                      |
 | New-20 | Fix: reveal/edit fail with "Unknown view" in dev                   | M4  | P0  | ✅     | 15, 20                                 |
 | New-21 | Move or duplicate keys between environments                        | M4  | P0  | ✅     | 9, 17, 20                              |
 | New-22 | Open a folder and find the vault the CLI would use                 | M3  | P1  | ✅     | 14                                     |
@@ -80,7 +84,7 @@ updated as each task finishes, not in a batch at the end.
 | New-35 | JSON export from the app                                           | M5  | P2  | ✅     | 27                                     |
 | New-36 | Prune saved passwords of gone vaults; "forget all"                 | M5  | P2  | ✅     | New-24                                 |
 | New-37 | Authenticate the envelope header (GCM additional data)             | M5  | P2  | ✅     | New-29                                 |
-| New-38 | Set Electron fuses in packaged builds                              | M0  | P1  | 🟡     | New-19                                 |
+| New-38 | Set Electron fuses in packaged builds                              | M0  | P1  | ✅     | New-19                                 |
 | New-39 | Fix: a failed page load loops instead of showing the error page    | —   | P2  | ✅     | —                                      |
 | New-40 | Refuse `--remote-debugging-port` in packaged builds                | M0  | P2  | ✅     | New-38                                 |
 | New-41 | Find the unit test that failed once in ten full runs               | —   | P2  | ✅     | —                                      |
@@ -252,9 +256,9 @@ Taken in the RFC (see its §12) and not to be relitigated without a new reason:
 
 ### Task 2: Content-Security-Policy for the renderer
 
-- **Status:** 🟡 partial 2026-10-22. On `feat/vault-env-gui`; not merged, not released. Built and verified on the built app
-  (`file://`, as packaged), and in the packaged macOS app (New-19).
-  Windows and Linux packaged builds wait on New-19's CI run.
+- **Status:** ✅ done 2026-10-24: verified on the built app (`file://`,
+  as packaged) and in the packaged app on macOS, Windows and Linux
+  (New-19). On `main`; not released.
 - **Built:** a build-only Vite plugin (`renderer-csp` in `vite.config.js`)
   injects the RFC §6.10 policy as the first `<meta>` in `build/index.html`,
   plus `font-src 'self' data:` and `form-action 'none'`.
@@ -1766,12 +1770,10 @@ source)`; `vite.config.js` adds a serve-only plugin (`renderer-csp-dev`, `order:
 
 ### New-19: Verify the CSP and sandbox in packaged builds (asar)
 
-- **Status:** 🟡 partial: passed on macOS (arm64, 2026-10-22, re-run
-  2026-10-24 at 14/14) and on Linux (arm64, Debian 12 in Docker,
-  2026-10-24, 14/14). Windows, and Linux x64 on Ubuntu 24.04, run in the
-  release workflow's smoke step: "Run workflow" on the Release workflow
-  (no tag needed); the item is done when both are green. On
-  `feat/vault-env-gui`.
+- **Status:** ✅ done 2026-10-24: passed on macOS (arm64), on Linux
+  (arm64, Debian 12 in Docker) and in the Release workflow on `main` (run
+  by hand, no tag), which packages and checks on macOS, Windows and
+  Linux x64 (Ubuntu 24.04). On `main`; not released.
 - **Found:** Task 2, 2026-10-22.
 - **Goal:** the packaged app on macOS, Windows and Linux starts, renders, and
   logs no CSP violation.
@@ -1808,7 +1810,8 @@ source)`; `vite.config.js` adds a serve-only plugin (`renderer-csp-dev`, `order:
     only for `linux-unpacked`; arm64 builds land in
     `linux-arm64-unpacked` (and `win-arm64-unpacked` on Windows), so it
     now finds either.
-  - Still to do: Windows, and Linux x64, green in the release workflow.
+  - Release workflow on `main`, 2026-10-24 (no tag): green on macOS,
+    Windows and Linux x64.
 - **Found while doing it:**
   - New-38: the packaged app keeps Electron's default fuses.
   - New-39: a page load aborted at startup loops on `ERR_FAILED` (fixed).
@@ -2375,9 +2378,9 @@ unknown format is `INVALID`. Preload passes `format`. The env ⋮ menu has
 
 ### New-38: Set Electron fuses in packaged builds
 
-- **Status:** 🟡 built 2026-10-22; passed on macOS. Windows and Linux are
-  checked by the release workflow's smoke step (New-19); done when that run
-  is green. On `feat/vault-env-gui`.
+- **Status:** ✅ done 2026-10-24: passed on macOS, then on Windows and
+  Linux in the Release workflow's smoke step (New-19) on `main`. On
+  `main`; not released.
 - **Goal:** the packaged app can't be turned into a debuggable or plain
   Node.js process by whoever launches it.
 - **Found:** `npx @electron/fuses read` on the packaged macOS app: every
@@ -2462,9 +2465,8 @@ unknown format is `INVALID`. Preload passes `format`. The env ⋮ menu has
 
 ### New-40: Refuse `--remote-debugging-port` in packaged builds
 
-- **Status:** ✅ done 2026-10-23 on macOS; Windows and Linux are checked
-  by the release workflow's smoke step, like New-38. On
-  `feat/vault-env-gui`; not merged, not released.
+- **Status:** ✅ done 2026-10-23 on macOS; Windows and Linux passed in the
+  Release workflow's smoke step on `main`, 2026-10-24. Not released.
 - **Decided (author, 2026-10-23):** refuse the switch, and run the driven
   smoke checks on a twin build. An environment variable or token that
   re-allowed it would be just as available to a same-user process, the
