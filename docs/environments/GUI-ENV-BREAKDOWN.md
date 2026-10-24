@@ -98,7 +98,7 @@ updated as each task finishes, not in a batch at the end.
 | New-53 | Password vaults: open one from any folder                          | —   | P1  | ✅     | New-52                                 |
 | New-54 | Password vaults: a key file as second factor                       | —   | P2  | ✅     | New-52                                 |
 | New-55 | Password vaults: import an export of a vault with a key file       | —   | P3  | ✅     | New-54                                 |
-| New-56 | Password vaults: spike a hardware key (FIDO2 PRF) as a factor      | —   | P3  | ⬜     | New-54                                 |
+| New-56 | Password vaults: spike a hardware key (FIDO2 PRF) as a factor      | —   | P3  | ✅     | New-54                                 |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -3105,8 +3105,18 @@ recoveryKey})`: a format-2 export opens through its `main` slot
 
 ### New-56: Password vaults: spike a hardware key (FIDO2 PRF) as a factor
 
-- **Status:** ⬜ found 2026-10-24 (RFC step 7, decided "after a spike").
+- **Status:** ✅ answered 2026-10-24 in
+  [`HARDWARE-KEY-SPIKE.md`](HARDWARE-KEY-SPIKE.md). Desk research; not
+  prototyped (needs a physical key and a native module).
 - **Goal:** know whether Electron can get a stable secret from a security
   key (`hmac-secret`/PRF) on macOS, Windows and Linux; if so, it would be
   another `main`-style slot.
-- **Validation:** a written answer per OS, with a prototype if it works.
+- **Answer:** possible on all three, but not through Electron's WebAuthn
+  (the packaged page is `file://`, which Chromium refuses as a relying
+  party; Electron 42 adds only Touch ID). It takes libfido2 on macOS and
+  Linux and `webauthn.dll` on Windows (raw HID needs elevation there), as
+  native modules in the app and the CLI, plus a touch/PIN UI. The secret
+  fits `mainKekOf` where the key file's key goes.
+- **Recommendation:** don't build it now; the key file covers the threat.
+  If wanted: a one-day libfido2 prototype on macOS, then Windows, then a
+  design note.
