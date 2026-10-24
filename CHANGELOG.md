@@ -16,14 +16,18 @@ Design detail for the environment-vault (`vault env`) features lives in
   Settings → **Key file** → **Require a Key File…** makes a small `.svkey`
   file (or uses one you have) that's needed with the master password to
   unlock the vault: a copied vault and its password open nothing without
-  it. Keep it away from the vault (a USB stick) and keep a copy. If the
-  key file or the password is lost, the vault's recovery key opens it
-  alone, then asks for a new password and key file; `vault recover` in
-  the CLI writes a copy that opens with a new password. The app remembers where the key file
-  was last used (never its content), so unlocking is one step while it's
-  there. It can be changed or turned off
-  again. The vault is rewritten in format 2, which older versions of
-  SecureVault can't open.
+  it. Keep it away from the vault (a USB stick) and keep a copy.
+  - The app remembers where the key file was last used (never its
+    content), so unlocking is one step while it's there; with a saved
+    password, one click.
+  - If the key file or the password is lost, the vault's recovery key
+    opens it alone, then asks for a new password and key file. In the
+    CLI, `vault recover` writes a copy that opens with a new password.
+  - The key file can be changed, or turned off again (back to the
+    password alone, with a new recovery key).
+  - The vault is rewritten in format 2, which older versions of
+    SecureVault can't open; turn the key file off before going back to
+    one. An export of such a vault can't be imported yet.
 - **Open a password vault from any folder** (desktop app). **Open…** in the
   vault list picks a `.vault` file anywhere (a shared drive, a USB stick); it's
   listed with its location, kept across restarts, and unlocked, saved and

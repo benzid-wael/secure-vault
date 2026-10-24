@@ -53,8 +53,9 @@ to set your own. The vault is otherwise unchanged.
 5. Click **Create Vault**.
 
 ::: tip Your master password is never stored, unless you ask
-SecureVault is zero-knowledge. If you forget the master password, the vault cannot
-be recovered — choose something long, unique, and memorable. The app keeps it only
+SecureVault is zero-knowledge. If you forget the master password, only the
+vault's recovery key opens it — choose something long, unique, and memorable,
+and keep the recovery key somewhere safe. The app keeps it only
 if you tick **Remember on this computer** when unlocking (below).
 :::
 
@@ -70,6 +71,11 @@ on a Mac that has it. Anyone using your account on this computer can then open
 the vault in the app, so leave it off on a shared account. The box is offered
 only where the system keychain can encrypt it (on Linux, a keyring such as GNOME
 Keyring or KWallet must be running).
+
+A vault that requires a [key file](/guide/gui/security#a-key-file-as-a-second-factor)
+asks for it after the password; after that the app reads it from where you last
+used it, so unlocking is one step while it's there. A saved password fills in the
+password only.
 
 A vault with a saved password is labeled **Password saved**. To drop it, unlock the
 vault and click **Forget saved password** in its header: as with environment vaults,

@@ -1,22 +1,26 @@
-// A key file as second factor (GUI-ENV-BREAKDOWN New-54, steps 3-4): turned
+// A key file as second factor (GUI-ENV-BREAKDOWN New-54, steps 3-6): turned
 // on in Settings, then needed with the password to unlock, read from where
 // it was last used; another key file can be chosen, a wrong one is refused;
-// turned off again. Native dialogs are played by the scenario.
+// the password and the key file are changed; turned off again. Native
+// dialogs are played by the scenario. Recovery: key-file-recovery.cjs.
 const fs = require('fs');
 const path = require('path');
 const { dialog } = require('electron');
 const scenario = require('../driver.cjs');
 
 const PASSWORD = 'Team-Pass-6&';
+const NEW_PASSWORD = 'Team-Pass-7&';
 
 scenario(async (t) => {
   const keyFile = path.join(t.OUT, 'keys', 'team.svkey');
   const otherKey = path.join(t.OUT, 'keys', 'other.svkey');
   const vaultFile = () =>
     JSON.parse(fs.readFileSync(path.join(t.VAULTS_DIR, 'team.vault'), 'utf8'));
+  const nextKey = path.join(t.OUT, 'keys', 'next.svkey');
   let picked = keyFile;
+  let saveTo = keyFile;
   let opened = 0;
-  dialog.showSaveDialog = async () => ({ canceled: false, filePath: keyFile });
+  dialog.showSaveDialog = async () => ({ canceled: false, filePath: saveTo });
   dialog.showOpenDialog = async () => {
     opened += 1;
     return { canceled: false, filePaths: [picked] };
@@ -87,12 +91,41 @@ scenario(async (t) => {
     (await t.waitText('Lock Vault', 15000)) && opened === 1
   );
 
-  picked = keyFile; // turning it off asks for the key file, in a dialog
+  picked = keyFile; // changes ask for the key file, in a dialog
   await t.click('Settings');
+  await t.waitText('Change Master Password');
+  await t.click('Change Master Password');
+  t.check(
+    'changing the password says the key file comes next',
+    await t.waitText('This vault requires a key file')
+  );
+  await t.fill('Current Password', PASSWORD);
+  await t.fill('New Password', NEW_PASSWORD);
+  await t.fill('Confirm New Password', NEW_PASSWORD);
+  await t.click('Change Password');
+  t.check(
+    'the password changes with the key file, the session goes on',
+    (await t.waitText('Master password changed successfully', 15000)) &&
+      opened === 2 &&
+      (await t.api("loadVault('team')")).success === true
+  );
+
+  saveTo = nextKey;
+  await t.click('Change Key File…');
+  await t.waitText('Change the key file');
+  await t.fill('Master Password', NEW_PASSWORD);
+  await t.click('Change Key File');
+  t.check(
+    'the key file is replaced by a new one',
+    (await t.waitText('team now uses next.svkey', 15000)) &&
+      fs.existsSync(nextKey)
+  );
+
+  picked = nextKey; // turning it off asks for the key file, in a dialog
   await t.waitText('Stop Requiring a Key File…');
   await t.click('Stop Requiring a Key File…');
   await t.waitText('Stop requiring a key file');
-  await t.fill('Master Password', PASSWORD);
+  await t.fill('Master Password', NEW_PASSWORD);
   await t.click('Stop Requiring It');
   t.check(
     'the key file is turned off',
@@ -101,7 +134,7 @@ scenario(async (t) => {
   t.check('the vault is format 1 again', vaultFile().version === undefined);
   t.check(
     'the password alone opens it again',
-    (await t.api(`unlockVault('team', ${JSON.stringify(PASSWORD)})`))
+    (await t.api(`unlockVault('team', ${JSON.stringify(NEW_PASSWORD)})`))
       .success === true
   );
 });

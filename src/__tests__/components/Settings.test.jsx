@@ -7,7 +7,7 @@ import {
   within,
 } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { vi } from 'vitest';
+import { vi, afterEach } from 'vitest';
 import Settings from '../../components/Settings';
 
 // window.electronAPI is mocked globally in setupTests via vi.fn()
@@ -111,6 +111,60 @@ describe('Settings', () => {
         'currentPass',
         'NewStrong123!'
       );
+    });
+  });
+
+  describe('for a vault with a key file (New-54)', () => {
+    beforeEach(() => {
+      global.mockElectronAPI.keyFile = {
+        status: vi.fn().mockResolvedValue({ success: true, enabled: true }),
+      };
+    });
+    afterEach(() => {
+      delete global.mockElectronAPI.keyFile;
+    });
+
+    const submitChange = async () => {
+      render(<Settings {...baseProps} />);
+      await screen.findByText(/Security Settings/i);
+      fireEvent.click(
+        screen.getByRole('button', { name: /Change Master Password/i })
+      );
+      const dialog = await screen.findByRole('dialog');
+      const [current, next, confirm] = within(dialog).getAllByLabelText(
+        /password/i,
+        { selector: 'input' }
+      );
+      fireEvent.change(current, { target: { value: 'currentPass' } });
+      fireEvent.change(next, { target: { value: 'NewStrong123!' } });
+      fireEvent.change(confirm, { target: { value: 'NewStrong123!' } });
+      fireEvent.click(
+        within(dialog).getByRole('button', { name: /change password/i })
+      );
+      return dialog;
+    };
+
+    it('says the key file comes next', async () => {
+      global.mockElectronAPI.changeMasterPassword.mockResolvedValueOnce({
+        success: true,
+      });
+      const dialog = await submitChange();
+      expect(
+        within(dialog).getByText(/This vault requires a key file/)
+      ).toBeInTheDocument();
+    });
+
+    it('stays quiet, dialog open, when the key file dialog is canceled', async () => {
+      global.mockElectronAPI.changeMasterPassword.mockResolvedValueOnce({
+        success: false,
+        canceled: true,
+      });
+      const dialog = await submitChange();
+      await waitFor(() =>
+        expect(global.mockElectronAPI.changeMasterPassword).toHaveBeenCalled()
+      );
+      expect(dialog).toBeInTheDocument();
+      expect(screen.queryByText(/Failed to change master password/)).toBeNull();
     });
   });
 

@@ -24,8 +24,9 @@ process only; the window you interact with never keeps it, and a saved one
 never reaches it. Locking the vault (manually, or automatically on sleep / screen
 lock) ends the session. This means:
 
-- Nobody — including the developers — can recover your data without the master password.
-- If you forget it, the vault is unrecoverable. This is the intended trade-off.
+- Nobody — including the developers — can recover your data without the
+  master password or the vault's recovery key.
+- If you lose both, the vault is unrecoverable. This is the intended trade-off.
 
 ### A key file as a second factor
 
@@ -36,7 +37,10 @@ the vault, so a copy of the vault file and its password, leaked or guessed,
 open nothing without the key file.
 
 - Keep the key file away from the vault: on a USB stick or another drive, not
-  in the vault's folder or the same synced folder. Keep a copy somewhere safe.
+  in the vault's folder or the same synced folder. Anyone who copies that
+  folder, or the sync service holding it, would get both, and the key file
+  would add nothing; the app warns when you save or pick one there. Keep a
+  copy somewhere safe.
 - Unlocking asks for the password, then the key file. After that the app
   remembers where the key file was (the location, never its content) and
   reads it from there, so unlocking is one step while the USB stick is in;
@@ -53,7 +57,11 @@ open nothing without the key file.
 - **Change Key File…** replaces it; **Stop Requiring a Key File…** goes back
   to the password alone and makes a new recovery key.
 - Older versions of SecureVault can't open a vault while it requires a key
-  file.
+  file: turn it off before going back to one. An export of such a vault
+  can't be imported yet; turn the key file off before exporting a vault you
+  want to move.
+- What it doesn't stop: someone who holds the recovery key (keep it offline),
+  or malware on your computer while the vault is unlocked.
 
 Why not codes from an authenticator app? There's no server to check them: the
 app would have to keep the code's secret next to the vault, and anyone with the
@@ -80,7 +88,11 @@ file and the password could decrypt it without the app.
    only as safe as the machine it sits on.
 4. **Don't share master passwords** — each person should have their own vault.
 5. **Back up your vault files** — copy the encrypted files from the storage
-   location somewhere safe. They're useless without your master password.
+   location somewhere safe. They're useless without your master password (and
+   key file, if the vault requires one).
+6. **Keep the recovery key and any key file apart** — away from the vault and
+   from each other: the recovery key opens the vault on its own, and a key file
+   needs only the password.
 
 ::: warning Local responsibility
 SecureVault stores your passwords locally. The encryption is strong, but you are

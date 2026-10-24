@@ -63,6 +63,8 @@ const Settings = ({ vaultName, onBack, onPasswordChanged = () => {} }) => {
   const [generatingRecoveryKey, setGeneratingRecoveryKey] = useState(false);
   const [loading, setLoading] = useState(true);
   const [hasBackup, setHasBackup] = useState(false);
+  // A vault with a key file asks for it after the passwords (New-54).
+  const [needsKeyFile, setNeedsKeyFile] = useState(false);
 
   useEffect(() => {
     loadVaultInfo();
@@ -230,6 +232,8 @@ const Settings = ({ vaultName, onBack, onPasswordChanged = () => {} }) => {
 
         // The main process re-keyed the session with the new password.
         loadVaultInfo();
+      } else if (result.canceled) {
+        // The key file dialog was closed: the form stays as it is.
       } else {
         showSnackbar(
           result.error || 'Failed to change master password',
@@ -238,6 +242,16 @@ const Settings = ({ vaultName, onBack, onPasswordChanged = () => {} }) => {
       }
     } catch (error) {
       showSnackbar('Error changing master password', 'error');
+    }
+  };
+
+  const openChangePassword = async () => {
+    setShowChangePasswordDialog(true);
+    try {
+      const status = await window.electronAPI.keyFile?.status(vaultName);
+      setNeedsKeyFile(Boolean(status?.success && status.enabled));
+    } catch {
+      setNeedsKeyFile(false);
     }
   };
 
@@ -338,7 +352,7 @@ const Settings = ({ vaultName, onBack, onPasswordChanged = () => {} }) => {
           <Button
             variant="contained"
             startIcon={<EditIcon />}
-            onClick={() => setShowChangePasswordDialog(true)}
+            onClick={openChangePassword}
             sx={{ mt: 1 }}
           >
             Change Master Password
@@ -576,6 +590,12 @@ const Settings = ({ vaultName, onBack, onPasswordChanged = () => {} }) => {
         </DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'grid', gap: 2, mt: 1 }}>
+            {needsKeyFile && (
+              <Alert severity="info">
+                This vault requires a key file: you’ll choose it next. It stays
+                the same; only the password changes.
+              </Alert>
+            )}
             <TextField
               label="Current Password"
               type="password"

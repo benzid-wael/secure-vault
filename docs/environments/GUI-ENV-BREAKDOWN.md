@@ -96,7 +96,9 @@ updated as each task finishes, not in a batch at the end.
 | New-51 | Coverage config uses `coverage.all`, gone in Vitest 4              | —   | P3  | ✅     | —                                      |
 | New-52 | Password vaults: remember the password on this computer            | —   | P1  | ✅     | New-24                                 |
 | New-53 | Password vaults: open one from any folder                          | —   | P1  | ✅     | New-52                                 |
-| New-54 | Password vaults: a key file as second factor                       | —   | P2  | 🟡     | New-52                                 |
+| New-54 | Password vaults: a key file as second factor                       | —   | P2  | ✅     | New-52                                 |
+| New-55 | Password vaults: import an export of a vault with a key file       | —   | P3  | ⬜     | New-54                                 |
+| New-56 | Password vaults: spike a hardware key (FIDO2 PRF) as a factor      | —   | P3  | ⬜     | New-54                                 |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -2867,11 +2869,12 @@ import` says it "creates a new version with all vars from the file(s)"
 
 ### New-54: Password vaults: a key file as second factor
 
-- **Status:** 🟡 steps 1 to 5 of 6 done 2026-10-24. Design approved
+- **Status:** ✅ steps 1 to 6 done 2026-10-24. Design approved
   ([`PASSWORD-VAULT-2FA-RFC.md`](PASSWORD-VAULT-2FA-RFC.md) rev. 2, Q1 and
   Q2 as proposed). On `feat/vault-env-gui`; not merged, not released.
-  Step 5 done: a vault with a key file is recovered with its recovery key
-  alone, in the app and the CLI.
+  Left out, logged: importing an export (New-55), the hardware key spike
+  (RFC step 7, New-56); a hand check of the native dialogs on Windows and
+  Linux (rollout).
 - **Step 1, built:** `src/electron/utils/passwordVaultEnvelope.js`, pure
   functions: key file (`createKeyFile`, `parseKeyFile`, `keyFileIdOf`),
   keys (`newDataKey`, `mainKekOf` = HKDF-SHA256 of PBKDF2 ‖ key file,
@@ -3033,9 +3036,26 @@ import` says it "creates a new version with all vars from the file(s)"
   `RecoveryKeyDisplay`'s `onRegenerateKey` is optional, as it always
   acted). Lines: `VaultService.js` 93%, `PasswordVaultIpc.js` 99.6%,
   `VaultRecoveryService.js` 97%, `VaultRecovery.jsx` 92%, `App.jsx` 93%.
-- **Next:** step 6, the guide and CHANGELOG pass and the e2e scenario's
-  completion; importing an export of a vault with a key file stays a
-  later item (refused with `UNSUPPORTED` for now).
+- **Step 6, built:**
+  - Guide: the unlock page says a key-file vault asks for it and reads it
+    from where it was last used, and that the recovery key opens a vault
+    whose password is forgotten (it said the vault was lost). The security
+    page says why a key file beside the vault adds nothing, what a key
+    file doesn't stop (the recovery key's holder, malware while
+    unlocked), that an export can't be imported yet and that an older
+    version needs the key file turned off first; best practices: back up
+    the key file, keep it and the recovery key apart. CHANGELOG entry
+    rewritten as a list.
+  - Found while extending the e2e, fixed: Settings → Change Master
+    Password didn't say a key-file vault asks for its key file next, and
+    closing that dialog showed "Failed to change master password". It now
+    says so up front (from `keyFile.status`) and a canceled dialog keeps
+    the form, quietly.
+- **Step 6, checked:** Settings (2 more); e2e `key-file` 15/15 (adds the
+  password change with the key file, with its note and the session going
+  on, and a key file change to a new file, then turning off with the new
+  key and the new password); docs build. Suite 1657 passed; e2e
+  12/12; type check 203; lint 0 errors. Lines: `Settings.jsx` 74%.
 
 - **Found:** the author, 2026-10-23: "for security reason I would like to
   support 2fa".
@@ -3045,3 +3065,21 @@ import` says it "creates a new version with all vars from the file(s)"
 - **Goal:** a stolen copy of a vault plus its password opens nothing
   without the key file.
 - **Validation:** per the RFC's plan (§10), each step its own task.
+
+### New-55: Password vaults: import an export of a vault with a key file
+
+- **Status:** ⬜ found 2026-10-24 (New-54, left out by plan).
+- **Goal:** an export of a format-2 vault imports, asking for its password
+  and key file, or its recovery key (RFC §6).
+- **Today:** refused with `UNSUPPORTED` ("isn't supported yet"); the guide
+  says to turn the key file off before exporting a vault to move.
+- **Validation:** an export imports with password + key file and with the
+  recovery key; a wrong one changes nothing.
+
+### New-56: Password vaults: spike a hardware key (FIDO2 PRF) as a factor
+
+- **Status:** ⬜ found 2026-10-24 (RFC step 7, decided "after a spike").
+- **Goal:** know whether Electron can get a stable secret from a security
+  key (`hmac-secret`/PRF) on macOS, Windows and Linux; if so, it would be
+  another `main`-style slot.
+- **Validation:** a written answer per OS, with a prototype if it works.
