@@ -81,6 +81,8 @@ function App() {
   const [openedVaults, setOpenedVaults] = useState([]);
   // Vaults that need a key file to unlock (New-54).
   const [keyFileVaults, setKeyFileVaults] = useState([]);
+  // Of those, the ones whose key file location main remembers.
+  const [keyFileRemembered, setKeyFileRemembered] = useState([]);
   // The unlocked vault still uses an older version's built-in password.
   const [usesDefaultPassword, setUsesDefaultPassword] = useState(false);
   const [currentView, setCurrentView] = useState('selector'); // selector, login, manager, create, recovery
@@ -236,6 +238,7 @@ function App() {
           setAvailableVaults(result.data || []);
           setOpenedVaults(result.opened || []);
           setKeyFileVaults(result.keyFile || []);
+          setKeyFileRemembered(result.keyFileRemembered || []);
         } else {
           console.error(
             'Failed to load vaults:',
@@ -498,6 +501,7 @@ function App() {
             canRemember={kept.available}
             remembered={kept.vaults.includes(currentVault)}
             needsKeyFile={keyFileVaults.includes(currentVault)}
+            keyFileRemembered={keyFileRemembered.includes(currentVault)}
             initialError={loginError}
             onLogin={handleVaultLogin}
             onBack={goBack}

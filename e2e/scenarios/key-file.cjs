@@ -1,6 +1,7 @@
-// A key file as second factor (GUI-ENV-BREAKDOWN New-54, step 3): turned on
-// in Settings, then needed with the password to unlock; a wrong key file is
-// refused; turned off again. Native dialogs are played by the scenario.
+// A key file as second factor (GUI-ENV-BREAKDOWN New-54, steps 3-4): turned
+// on in Settings, then needed with the password to unlock, read from where
+// it was last used; another key file can be chosen, a wrong one is refused;
+// turned off again. Native dialogs are played by the scenario.
 const fs = require('fs');
 const path = require('path');
 const { dialog } = require('electron');
@@ -14,11 +15,12 @@ scenario(async (t) => {
   const vaultFile = () =>
     JSON.parse(fs.readFileSync(path.join(t.VAULTS_DIR, 'team.vault'), 'utf8'));
   let picked = keyFile;
+  let opened = 0;
   dialog.showSaveDialog = async () => ({ canceled: false, filePath: keyFile });
-  dialog.showOpenDialog = async () => ({
-    canceled: false,
-    filePaths: [picked],
-  });
+  dialog.showOpenDialog = async () => {
+    opened += 1;
+    return { canceled: false, filePaths: [picked] };
+  };
   const unlockScreen = async () => {
     await t.click('team');
     await t.waitText('Master Password');
@@ -58,8 +60,8 @@ scenario(async (t) => {
   await t.waitText('team');
   await unlockScreen();
   t.check(
-    'the login asks for the key file',
-    await t.waitText('Choose Key File and Unlock')
+    'the login reads the key file from where it was last used',
+    await t.waitText('it’s read from where you last used it')
   );
 
   fs.mkdirSync(path.dirname(otherKey), { recursive: true });
@@ -72,19 +74,20 @@ scenario(async (t) => {
     })
   );
   picked = otherKey;
-  await t.click('Choose Key File and Unlock');
+  await t.click('Choose another key file…');
   t.check(
-    'a wrong key file is refused',
-    await t.waitText("This key file isn't the one this vault uses.", 15000)
+    'another key file can be chosen, and a wrong one is refused',
+    (await t.waitText("This key file isn't the one this vault uses.", 15000)) &&
+      opened === 1
   );
 
-  picked = keyFile;
-  await t.click('Choose Key File and Unlock');
+  await t.click('Unlock Vault');
   t.check(
-    'the password and key file unlock it',
-    await t.waitText('Lock Vault', 15000)
+    'the password and the remembered key file unlock it, no dialog',
+    (await t.waitText('Lock Vault', 15000)) && opened === 1
   );
 
+  picked = keyFile; // turning it off asks for the key file, in a dialog
   await t.click('Settings');
   await t.waitText('Stop Requiring a Key File…');
   await t.click('Stop Requiring a Key File…');

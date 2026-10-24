@@ -330,6 +330,7 @@ describe('a vault opened from another folder (New-53)', () => {
       data: ['work', 'team'],
       opened: [{ name: 'team', location: teamFile, exists: true }],
       keyFile: [],
+      keyFileRemembered: [],
     });
   });
 

@@ -42,6 +42,9 @@ const KEY_FILE_FILTER = {
  *   was built with as `links`.
  * @param {{showOpenDialog: Function, showSaveDialog?: Function}|null}
  *   [deps.dialog]
+ * @param {import('./KeyFileLocations.js').KeyFileLocations|null}
+ *   [deps.keyFileLocations] Where each vault's key file was last used
+ *   (New-54 step 4); unlocking reads it from there.
  * @param {() => any} [deps.getWindow]
  */
 export function createPasswordVaultHandlers({
@@ -52,6 +55,7 @@ export function createPasswordVaultHandlers({
   opened = null,
   dialog = null,
   getWindow = () => null,
+  keyFileLocations = null,
 }) {
   const fileService = vaultService.fileService;
   const pathOf = (vaultName) => fileService.getVaultPath(vaultName);
@@ -169,6 +173,70 @@ export function createPasswordVaultHandlers({
       ? createKeyFileFor(vaultName)
       : pickKeyFile(`Choose the key file for ${vaultName}`);
 
+  /**
+   * The key file to unlock with: from where it was last used, unless the
+   * user chooses another; else a dialog, saying when the remembered one
+   * isn't there (a drive not connected).
+   * @returns {Promise<KeyFileChoice & {remembered?: boolean}>}
+   */
+  const keyFileToUnlock = async (vaultName, chooseAnother) => {
+    const location = chooseAnother
+      ? null
+      : keyFileLocations?.get(pathOf(vaultName));
+    let title = `Choose the key file of ${vaultName}`;
+    if (location) {
+      try {
+        return {
+          success: true,
+          key: parseKeyFile(await fs.readFile(location)),
+          path: location,
+          remembered: true,
+        };
+      } catch (error) {
+        if (error.code === 'ENOENT') {
+          title = `${path.basename(location)} isn't there: connect its drive, or choose the key file of ${vaultName}`;
+        } else {
+          await keyFileLocations.forget(pathOf(vaultName)); // not a key file now
+        }
+      }
+    }
+    return pickKeyFile(title);
+  };
+
+  /**
+   * Open a vault that uses a key file into the session; the key file's
+   * location is kept for next time. A remembered key file that isn't the
+   * vault's any more is forgotten.
+   */
+  const unlockWithKeyFile = async (vaultName, password, chooseAnother) => {
+    const keyFile = await keyFileToUnlock(vaultName, chooseAnother);
+    if (!keyFile.success) return keyFile;
+    const result = await vaultService.openWithKeyFile(
+      vaultName,
+      password,
+      keyFile.key
+    );
+    if (!result.success) {
+      if (keyFile.remembered && result.code === 'KEY_FILE') {
+        await keyFileLocations.forget(pathOf(vaultName));
+        return {
+          ...result,
+          error: `The key file at ${keyFile.path} isn't this vault's any more. Choose its key file.`,
+        };
+      }
+      return explain(vaultName, result);
+    }
+    await keyFileLocations?.set(pathOf(vaultName), keyFile.path);
+    const unlocked = await entered(
+      vaultName,
+      password,
+      result,
+      result.credential
+    );
+    result.credential.dek.fill(0);
+    return unlocked;
+  };
+
   /** Drop a key file this call created, when what it was for failed. */
   const discard = async (keyFile) => {
     if (keyFile?.created) await fs.remove(keyFile.path).catch(() => {});
@@ -219,12 +287,30 @@ export function createPasswordVaultHandlers({
           }[saved.code],
         };
       }
-      const result = await vaultService.verifyPassword(
-        vaultName,
-        saved.password
-      );
-      if (result.success) return entered(vaultName, saved.password, result);
-      if (result.code !== 'AUTH') return explain(vaultName, result);
+      // A vault with a key file (D3): the saved password, then its key file
+      // from where it was last used (New-54 step 4).
+      if (await vaultService.usesKeyFile(vaultName)) {
+        const unlocked = await unlockWithKeyFile(
+          vaultName,
+          saved.password,
+          false
+        );
+        if (unlocked.canceled) {
+          return {
+            success: false,
+            code: 'CANCELED',
+            error: 'Unlock canceled.',
+          };
+        }
+        if (unlocked.success || unlocked.code !== 'AUTH') return unlocked;
+      } else {
+        const result = await vaultService.verifyPassword(
+          vaultName,
+          saved.password
+        );
+        if (result.success) return entered(vaultName, saved.password, result);
+        if (result.code !== 'AUTH') return explain(vaultName, result);
+      }
       await keychain.forget(pathOf(vaultName));
       return {
         success: false,
@@ -301,6 +387,7 @@ export function createPasswordVaultHandlers({
       if (!result.success) return result;
       if (session.isUnlocked(vaultName)) session.close();
       await keychain?.forget(vaultPath);
+      await keyFileLocations?.forget(vaultPath);
       return result;
     },
   };
@@ -314,22 +401,13 @@ export function createPasswordVaultHandlers({
     password,
     options = {}
   ) => {
-    const keyFile = await pickKeyFile(`Choose the key file of ${vaultName}`);
-    if (!keyFile.success) return keyFile;
-    const result = await vaultService.openWithKeyFile(
+    const unlocked = await unlockWithKeyFile(
       vaultName,
       password,
-      keyFile.key
+      options?.chooseAnother === true
     );
-    if (!result.success) return explain(vaultName, result);
-    const unlocked = await entered(
-      vaultName,
-      password,
-      result,
-      result.credential
-    );
-    result.credential.dek.fill(0);
-    // Only the password is kept (D3): the key file is asked for each time.
+    if (!unlocked.success) return unlocked;
+    // Only the password is kept (D3); the key file, only its location.
     if (keychain && options?.remember === true) {
       return {
         ...unlocked,
@@ -372,6 +450,7 @@ export function createPasswordVaultHandlers({
       }
       session.open(vaultName, result.credential);
       result.credential.dek.fill(0);
+      await keyFileLocations?.set(pathOf(vaultName), keyFile.path);
       return {
         success: true,
         keyFile: path.basename(keyFile.path),
@@ -395,6 +474,7 @@ export function createPasswordVaultHandlers({
       );
       if (!result.success) return result;
       session.open(vaultName, password);
+      await keyFileLocations?.forget(pathOf(vaultName));
       return result;
     });
 
@@ -430,6 +510,7 @@ export function createPasswordVaultHandlers({
         await discard(next);
         return result;
       }
+      await keyFileLocations?.set(pathOf(vaultName), next.path);
       return {
         success: true,
         keyFile: path.basename(next.path),
@@ -448,8 +529,9 @@ export function createPasswordVaultHandlers({
       return invalid('Lock the vault before removing it from the list');
     }
     const location = pathOf(vaultName);
-    // Nothing would offer its saved password again.
+    // Nothing would offer its saved password or key file location again.
     await keychain?.forget(location);
+    await keyFileLocations?.forget(location);
     await opened.remove(vaultName);
     return { success: true, location };
   };
@@ -481,6 +563,10 @@ export function createPasswordVaultHandlers({
           data: names,
           opened: openedVaults,
           keyFile,
+          // Of those, the ones whose key file location is remembered.
+          keyFileRemembered: keyFile.filter((name) =>
+            Boolean(keyFileLocations?.get(pathOf(name)))
+          ),
         };
       } catch (error) {
         return { success: false, error: error.message };

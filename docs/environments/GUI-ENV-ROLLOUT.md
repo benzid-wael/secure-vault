@@ -859,7 +859,8 @@ env init` writes; it's added to the remembered list.
   one asks for it after the password.
 - **Schema or config change:** password vault format 2 (data key wrapped
   by password + key file and by the recovery key), written only when a
-  user turns a key file on. Older versions refuse it with the "upgrade"
+  user turns a key file on; `key-file-locations.json` in the app data
+  folder (vault path → key file path, 0600, no key content). Older versions refuse it with the "upgrade"
   message (New-29); turning it off writes format 1 again.
 - **Must not ship before:** New-54 step 5 (recovery of a format-2 vault
   with its recovery key): the dialog and the guide promise it.

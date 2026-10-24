@@ -2867,8 +2867,7 @@ import` says it "creates a new version with all vars from the file(s)"
 
 ### New-54: Password vaults: a key file as second factor
 
-- **Status:** 🟡 steps 1 to 3 of 6 done 2026-10-23 (with a basic unlock
-  from step 4). Design approved
+- **Status:** 🟡 steps 1 to 4 of 6 done 2026-10-24. Design approved
   ([`PASSWORD-VAULT-2FA-RFC.md`](PASSWORD-VAULT-2FA-RFC.md) rev. 2, Q1 and
   Q2 as proposed). On `feat/vault-env-gui`; not merged, not released.
   **Must not ship before step 5:** a vault with a key file can't yet be
@@ -2958,8 +2957,36 @@ import` says it "creates a new version with all vars from the file(s)"
   `createMetadata` JSDoc said it returned a promise: fixed). Lines:
   `PasswordVaultIpc.js` 99%, `VaultService.js` 92%, `KeyFileSection.jsx`
   98%, `VaultLogin.jsx` 97%, `App.jsx` 94%.
-- **Next:** step 4, the remembered key file location (Q1) and the
-  saved-password path; step 5, recovery.
+- **Step 4, built:**
+  - `src/electron/services/KeyFileLocations.js`:
+    `<appdata>/key-file-locations.json`, `{vault path: key file path}`,
+    0600; locations only, never a key file's content (Q1).
+  - Unlocking a vault with a key file reads it from where it was last used;
+    "Choose another key file…" (`chooseAnother`) asks instead. When the
+    remembered file isn't there (a drive not connected) the dialog says
+    which file it expected; when it's there but isn't the vault's key file
+    any more, or isn't a key file, the location is forgotten. A successful
+    unlock keeps the location; turning a key file on or changing it sets
+    it; turning it off, deleting the vault and removing it from the list
+    forget it. Only unlocking uses it: password change, delete, change and
+    turning off still ask, as a deliberate confirmation.
+  - The saved-password path (D3): with a saved password, clicking a vault
+    with a key file uses Touch ID for the password and the remembered key
+    file, one click; a canceled dialog is quiet; a saved password that no
+    longer opens the vault is forgotten as before.
+  - `get-vaults` lists `keyFileRemembered`; the login screen says the key
+    file is read from where it was last used and offers "Choose another
+    key file…".
+- **Step 4, checked:** `KeyFileLocations` (3); handlers (11 more: no dialog
+  while the file is there, choose another, drive gone, file replaced or
+  damaged, saved password one click / canceled / stale / wrong key file,
+  change, off, delete); App (2); e2e `key-file` 12/12 three runs in a row
+  (after a restart the login reads the remembered key file; a wrong one
+  chosen via "Choose another" is refused; the remembered one unlocks with
+  no dialog). Suite 1623 passed; e2e 11/11; type check 204. Lines:
+  `KeyFileLocations.js` 100%, `PasswordVaultIpc.js` 99.5%.
+- **Next:** step 5, recovery of a vault with a key file with its recovery
+  key (app and CLI), then a new password and key file.
 
 - **Found:** the author, 2026-10-23: "for security reason I would like to
   support 2fa".

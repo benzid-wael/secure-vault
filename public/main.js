@@ -58,6 +58,7 @@ import { EnvVaultWatcher } from '../src/electron/services/EnvVaultWatcher.js';
 import { VaultKeychain } from '../src/electron/services/VaultKeychain.js';
 import { createPasswordVaultHandlers } from '../src/electron/services/PasswordVaultIpc.js';
 import { OpenedVaults } from '../src/electron/services/OpenedVaults.js';
+import { KeyFileLocations } from '../src/electron/services/KeyFileLocations.js';
 import { EnvVaultRecents } from '../src/electron/services/EnvVaultRecents.js';
 import { AppSettingsStore } from '../src/electron/services/AppSettingsStore.js';
 import {
@@ -393,6 +394,8 @@ class ElectronApp {
       opened: this.openedVaults,
       dialog,
       getWindow: () => this.mainWindow,
+      // Where each vault's key file was last used, never its content (New-54).
+      keyFileLocations: new KeyFileLocations(),
     });
     for (const [channel, fn] of Object.entries(passwordVaultHandlers.vault)) {
       handleVault(channel, fn);

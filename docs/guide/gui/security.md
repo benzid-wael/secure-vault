@@ -37,8 +37,12 @@ open nothing without the key file.
 
 - Keep the key file away from the vault: on a USB stick or another drive, not
   in the vault's folder or the same synced folder. Keep a copy somewhere safe.
-- Unlocking asks for the password, then the key file. A saved password
-  (**Remember on this computer**) fills in the password only.
+- Unlocking asks for the password, then the key file. After that the app
+  remembers where the key file was (the location, never its content) and
+  reads it from there, so unlocking is one step while the USB stick is in;
+  **Choose another key file…** on the unlock screen picks a different one.
+- A saved password (**Remember on this computer**) fills in the password
+  only: the key file is still read each time.
 - The vault's recovery key still opens it if the key file is lost.
 - **Change Key File…** replaces it; **Stop Requiring a Key File…** goes back
   to the password alone and makes a new recovery key.

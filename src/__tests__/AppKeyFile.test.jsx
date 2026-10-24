@@ -123,4 +123,44 @@ describe('App: a vault with a key file', () => {
     expect(await screen.findByText('manager home')).toBeInTheDocument();
     expect(api.unlockVaultWithKeyFile).toHaveBeenCalledWith('home', 'pw', {});
   });
+
+  describe('with its key file location remembered (step 4)', () => {
+    beforeEach(() => {
+      api.getVaults.mockResolvedValue({
+        success: true,
+        data: ['team'],
+        opened: [],
+        keyFile: ['team'],
+        keyFileRemembered: ['team'],
+      });
+    });
+
+    it('unlocks with one click, reading the key file from where it was used', async () => {
+      render(<App />);
+      await login('team');
+      expect(
+        screen.getByText(/it’s read from where you last used it/)
+      ).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Unlock Vault' }));
+      expect(await screen.findByText('manager team')).toBeInTheDocument();
+      expect(api.unlockVaultWithKeyFile).toHaveBeenCalledWith('team', 'pw', {});
+    });
+
+    it('offers another key file, once a password is typed', async () => {
+      render(<App />);
+      fireEvent.click(await screen.findByText('team'));
+      const another = await screen.findByRole('button', {
+        name: 'Choose another key file…',
+      });
+      expect(another).toBeDisabled();
+      fireEvent.change(screen.getByLabelText('Master Password'), {
+        target: { value: 'pw' },
+      });
+      fireEvent.click(another);
+      expect(await screen.findByText('manager team')).toBeInTheDocument();
+      expect(api.unlockVaultWithKeyFile).toHaveBeenCalledWith('team', 'pw', {
+        chooseAnother: true,
+      });
+    });
+  });
 });

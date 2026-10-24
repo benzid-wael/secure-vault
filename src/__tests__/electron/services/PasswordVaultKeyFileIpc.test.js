@@ -12,6 +12,7 @@ import { createPasswordVaultHandlers } from '../../../electron/services/Password
 import { VaultService } from '../../../electron/services/VaultService.js';
 import { VaultSession } from '../../../electron/services/VaultSession.js';
 import { VaultKeychain } from '../../../electron/services/VaultKeychain.js';
+import { KeyFileLocations } from '../../../electron/services/KeyFileLocations.js';
 import { createKeyFile } from '../../../electron/utils/passwordVaultEnvelope.js';
 import { fakeSafeStorage } from '../../helpers/fakeSafeStorage.js';
 
@@ -28,6 +29,7 @@ let saveTo; // what the save dialog picks (null: canceled)
 let dialog;
 let h;
 let general;
+let locations;
 
 const at = (...parts) => path.join(dir, ...parts);
 const vaultFile = () => fs.readJsonSync(at('vaults', 'team.vault'));
@@ -58,6 +60,7 @@ beforeEach(async () => {
       saveTo ? { canceled: false, filePath: saveTo } : { canceled: true }
     ),
   };
+  locations = new KeyFileLocations({ file: at('data', 'locations.json') });
   ({ vault: h, general } = createPasswordVaultHandlers({
     vaultService: vs,
     session,
@@ -65,6 +68,7 @@ beforeEach(async () => {
     keychain,
     dialog,
     getWindow: () => null,
+    keyFileLocations: locations,
   }));
   await h['unlock-vault'](ev, 'team', PW);
 });
@@ -201,6 +205,8 @@ describe('with a key file on', () => {
   beforeEach(async () => {
     await enable();
     session.close();
+    // These cover the dialog path; the remembered location has its own.
+    await locations.forget(at('vaults', 'team.vault'));
   });
 
   const unlock = (password = PW, options) =>
@@ -361,6 +367,134 @@ describe('with a key file on', () => {
       });
       expect(fs.existsSync(at('vaults', 'team.vault'))).toBe(true);
     });
+  });
+});
+
+describe('the remembered key file location (step 4)', () => {
+  const VAULT = () => at('vaults', 'team.vault');
+  const unlock = (options = {}) =>
+    h['unlock-vault-key-file'](ev, 'team', PW, options);
+
+  beforeEach(async () => {
+    await enable();
+    session.close();
+    dialog.showOpenDialog.mockClear();
+  });
+
+  it('is set when the key file is turned on, and listed', async () => {
+    expect(locations.get(VAULT())).toBe(saveTo);
+    expect((await general['get-vaults']()).keyFileRemembered).toEqual(['team']);
+  });
+
+  it('unlocks without a dialog while the key file is there', async () => {
+    expect(await unlock()).toEqual({
+      success: true,
+      usesDefaultPassword: false,
+    });
+    expect(dialog.showOpenDialog).not.toHaveBeenCalled();
+  });
+
+  it('asks when the user chooses another key file, and remembers that one', async () => {
+    const copy = at('usb', 'copy.svkey');
+    await fs.copy(saveTo, copy);
+    opens = [copy];
+    expect((await unlock({ chooseAnother: true })).success).toBe(true);
+    expect(dialog.showOpenDialog).toHaveBeenCalledTimes(1);
+    expect(locations.get(VAULT())).toBe(copy);
+  });
+
+  it('says which key file it expected when its drive is gone', async () => {
+    const moved = at('usb', 'team.svkey');
+    await fs.move(saveTo, moved);
+    opens = [moved];
+    expect((await unlock()).success).toBe(true);
+    expect(dialog.showOpenDialog.mock.calls[0][1].title).toBe(
+      "team.svkey isn't there: connect its drive, or choose the key file of team"
+    );
+    expect(locations.get(VAULT())).toBe(moved);
+  });
+
+  it('forgets a remembered file that is no longer this vault’s key file', async () => {
+    await fs.writeJson(saveTo, createKeyFile());
+    const result = await unlock();
+    expect(result).toMatchObject({ success: false, code: 'KEY_FILE' });
+    expect(result.error).toBe(
+      `The key file at ${saveTo} isn't this vault's any more. Choose its key file.`
+    );
+    expect(locations.get(VAULT())).toBeNull();
+    expect(await unlock()).toEqual({ success: false, canceled: true });
+    expect(dialog.showOpenDialog).toHaveBeenCalledTimes(1);
+  });
+
+  it('forgets a remembered file that is no longer a key file, and asks', async () => {
+    await fs.writeFile(saveTo, 'not a key file');
+    expect(await unlock()).toEqual({ success: false, canceled: true });
+    expect(dialog.showOpenDialog).toHaveBeenCalledTimes(1);
+    expect(locations.get(VAULT())).toBeNull();
+  });
+
+  describe('with a saved password', () => {
+    beforeEach(async () => {
+      await unlock({ remember: true });
+      session.close();
+    });
+    const saved = () => h['unlock-vault-saved'](ev, 'team');
+
+    it('opens with one click: the saved password and the remembered key file', async () => {
+      expect(await saved()).toEqual({
+        success: true,
+        usesDefaultPassword: false,
+      });
+      expect(dialog.showOpenDialog).not.toHaveBeenCalled();
+      expect(await loadsInSession()).toBe(true);
+    });
+
+    it('asks for the key file when it isn’t there, quietly on cancel', async () => {
+      await fs.move(saveTo, at('usb', 'team.svkey'));
+      expect(await saved()).toEqual({
+        success: false,
+        code: 'CANCELED',
+        error: 'Unlock canceled.',
+      });
+      expect(dialog.showOpenDialog).toHaveBeenCalledTimes(1);
+    });
+
+    it('forgets a saved password that no longer opens the vault', async () => {
+      await vs.changePassword('team', PW, NEW_PW, {
+        keyFileKey: await readKey(saveTo),
+      });
+      const result = await saved();
+      expect(result).toMatchObject({
+        success: false,
+        code: 'AUTH',
+        remembered: false,
+      });
+      expect(await keychain.count()).toBe(0);
+    });
+
+    it('reports a wrong remembered key file as such', async () => {
+      await fs.writeJson(saveTo, createKeyFile());
+      expect(await saved()).toMatchObject({ success: false, code: 'KEY_FILE' });
+      expect(await keychain.count()).toBe(1);
+    });
+  });
+
+  it('follows a key file change, and goes when it is turned off or the vault deleted', async () => {
+    await unlock();
+    const next = at('keys', 'next.svkey');
+    opens = [saveTo];
+    saveTo = next;
+    await h['key-file:change'](ev, 'team', PW, { create: true });
+    expect(locations.get(VAULT())).toBe(next);
+    opens = [next];
+    await h['key-file:disable'](ev, 'team', PW);
+    expect(locations.get(VAULT())).toBeNull();
+
+    await enable();
+    session.close();
+    opens = [saveTo];
+    await h['delete-vault'](ev, 'team', PW);
+    expect(locations.get(VAULT())).toBeNull();
   });
 });
 

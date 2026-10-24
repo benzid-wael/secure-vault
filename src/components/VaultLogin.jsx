@@ -27,6 +27,8 @@ import {
  * unlock the vault. `needsKeyFile`: the vault uses a key file (New-54);
  * the password is sent with `{keyFile: true}` and main asks for the file.
  * A "needs its key file" answer switches to that too.
+ * `keyFileRemembered`: main reads the key file from where it was last used
+ * (New-54 step 4); "Choose another key file…" sends `chooseAnother`.
  */
 const VaultLogin = ({
   vaultName,
@@ -37,6 +39,7 @@ const VaultLogin = ({
   remembered = false,
   initialError = '',
   needsKeyFile = false,
+  keyFileRemembered = false,
 }) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -45,8 +48,8 @@ const VaultLogin = ({
   const [keyFileMode, setKeyFileMode] = useState(needsKeyFile);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (e, { chooseAnother = false } = {}) => {
+    e?.preventDefault();
     if (!password.trim()) {
       setError('Please enter your vault password');
       return;
@@ -59,6 +62,7 @@ const VaultLogin = ({
       const options = {
         ...(canRemember && { remember: keep }),
         ...(keyFileMode && { keyFile: true }),
+        ...(chooseAnother && { chooseAnother: true }),
       };
       const result = await (Object.keys(options).length > 0
         ? onLogin(password, options)
@@ -136,9 +140,25 @@ const VaultLogin = ({
         />
 
         {keyFileMode && (
-          <Alert severity="info" sx={{ mt: 2 }}>
-            This vault also needs its key file. After you type the password,
-            choose the key file.
+          <Alert
+            severity="info"
+            sx={{ mt: 2 }}
+            action={
+              keyFileRemembered ? (
+                <Button
+                  color="inherit"
+                  size="small"
+                  disabled={loading || !password.trim()}
+                  onClick={() => handleSubmit(null, { chooseAnother: true })}
+                >
+                  Choose another key file…
+                </Button>
+              ) : null
+            }
+          >
+            {keyFileRemembered
+              ? 'This vault also needs its key file: it’s read from where you last used it.'
+              : 'This vault also needs its key file. After you type the password, choose the key file.'}
           </Alert>
         )}
 
@@ -197,7 +217,7 @@ const VaultLogin = ({
           >
             {loading ? (
               <CircularProgress size={24} color="inherit" />
-            ) : keyFileMode ? (
+            ) : keyFileMode && !keyFileRemembered ? (
               'Choose Key File and Unlock'
             ) : (
               'Unlock Vault'
