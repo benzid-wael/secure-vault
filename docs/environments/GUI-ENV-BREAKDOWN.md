@@ -99,6 +99,7 @@ updated as each task finishes, not in a batch at the end.
 | New-54 | Password vaults: a key file as second factor                       | —   | P2  | ✅     | New-52                                 |
 | New-55 | Password vaults: import an export of a vault with a key file       | —   | P3  | ✅     | New-54                                 |
 | New-56 | Password vaults: spike a hardware key (FIDO2 PRF) as a factor      | —   | P3  | ✅     | New-54                                 |
+| New-57 | Agent: run on Windows (named pipe with its own access control)     | —   | P3  | ⬜     | New-13                                 |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -1632,6 +1633,22 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
   Windows tests skipped). Windows: not run yet; the first run may surface
   path-separator or file-locking assumptions in older tests, to fix rather
   than skip.
+- **First run (2026-10-24):** macOS green; Windows 34 failures, in four
+  groups, all fixed or guarded on this branch:
+  - **The agent (19):** Node on Windows listens on named pipes, not socket
+    files, so `listen` failed with `EACCES` and every `vault env agent`
+    command reported "not running". It now says it isn't available on
+    Windows and points to `vault env run`; its tests skip there, and one
+    Windows-only test checks the refusal. Windows support is New-57.
+  - **File modes (5):** Windows has no POSIX modes (`0600` reads back as
+    `0666`). The mode checks skip there, as elsewhere in the suite.
+  - **A real bug (5):** vault names written with `/` weren't seen as paths
+    on Windows (`path.sep` is `\`), so the newer-format and tampered-header
+    messages named the whole path and lost the `.bak` hint.
+    `checkVaultFormat` and `openEnvVault` now take `/` as a separator too.
+  - **POSIX fixture paths (5):** the `resolveVaultPath` tests mocked
+    `/repo/...`; the code builds `D:\repo\...` there. The fixtures go
+    through `path.resolve` now.
 
 ### New-14: Remove the env `saveVault` and its mocked tests
 
@@ -3120,3 +3137,19 @@ recoveryKey})`: a format-2 export opens through its `main` slot
 - **Recommendation:** don't build it now; the key file covers the threat.
   If wanted: a one-day libfido2 prototype on macOS, then Windows, then a
   design note.
+
+### New-57: Agent: run on Windows (named pipe with its own access control)
+
+- **Status:** ⬜ open. Found by New-13's first Windows run, 2026-10-24.
+- **Goal:** `vault env agent` works on Windows as on macOS and Linux.
+- **Today:** it refuses on Windows (`agentUnsupportedReason`), pointing to
+  `vault env run`, which holds nothing resident.
+- **Why it isn't a path change:** Node listens on `\\.\pipe\...` there, not
+  a socket file, so the `0700` directory that guards the socket elsewhere
+  doesn't apply. A pipe's default access lets other accounts read from it;
+  it needs a DACL limited to the current user, which Node doesn't expose
+  (a native module, or a helper that sets it).
+- **Constraints:** the agent is a developer preview (`agent.md`); this
+  belongs with its hardening (peer credentials, `mlock`), not before.
+- **Validation:** the agent tests pass on the Windows CI job, and a second
+  Windows account can't connect to the pipe.

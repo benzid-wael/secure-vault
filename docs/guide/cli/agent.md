@@ -15,6 +15,12 @@ holds nothing resident. See
 for the full threat model.
 :::
 
+::: warning Not on Windows yet
+The agent needs a Unix socket. On Windows, `vault env agent` says it isn't
+available and suggests
+[`vault env run`](/guide/cli/env-vaults#running-commands-with-secrets) instead.
+:::
+
 ## Why it exists
 
 Injection with `vault env run` is safe and stateless, but it re-prompts (or needs a

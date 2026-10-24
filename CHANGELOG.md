@@ -134,6 +134,11 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Fixed
 
+- **`vault env agent` on Windows says it isn't available.** It failed to
+  start and every command reported "agent is not running". It points to
+  `vault env run` instead.
+- **Messages about an env vault name the file, not its whole path, on
+  Windows** when the path is written with `/`, and suggest its `.bak`.
 - **Importing a password vault reports how many entries it holds.** It
   always said "0 entries imported".
 - **Escape cancels editing a grid-card cell.** It did nothing before, and

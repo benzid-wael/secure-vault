@@ -107,8 +107,11 @@ describe('writeArtifact', () => {
   it('writes at mode 0600 by default', async () => {
     const out = path.join(dir, 'a.txt');
     await writeArtifact(out, 'x');
-    // eslint-disable-next-line no-bitwise
-    expect((await fs.stat(out)).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX modes.
+    if (process.platform !== 'win32') {
+      // eslint-disable-next-line no-bitwise
+      expect((await fs.stat(out)).mode & 0o777).toBe(0o600);
+    }
   });
 
   it('enforces the requested mode even when overwriting a wider-permission file', async () => {
@@ -116,8 +119,11 @@ describe('writeArtifact', () => {
     await fs.writeFile(out, 'old', { mode: 0o644 });
     await writeArtifact(out, 'new', { mode: 0o600 });
     expect(await fs.readFile(out, 'utf-8')).toBe('new');
-    // eslint-disable-next-line no-bitwise
-    expect((await fs.stat(out)).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX modes.
+    if (process.platform !== 'win32') {
+      // eslint-disable-next-line no-bitwise
+      expect((await fs.stat(out)).mode & 0o777).toBe(0o600);
+    }
   });
 
   it('writes decoded binary content byte-for-byte', async () => {

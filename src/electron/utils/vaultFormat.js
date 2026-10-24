@@ -51,7 +51,9 @@ export const UPGRADE_HINT =
  */
 export function checkVaultFormat(envelope, kind, name = 'This vault') {
   const known = VAULT_FORMATS[kind];
-  const label = name.includes(path.sep) ? path.basename(name) : name;
+  // `/` too: Windows takes it as a separator, and paths can be written so.
+  const label =
+    name.includes(path.sep) || name.includes('/') ? path.basename(name) : name;
   const version = Number.isInteger(envelope?.version) ? envelope.version : 1;
   const features = Array.isArray(envelope?.features)
     ? envelope.features.filter((f) => typeof f === 'string')

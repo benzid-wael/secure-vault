@@ -86,10 +86,14 @@ describe('EnvironmentVaultService', () => {
       }
     });
 
+    // Fixture paths are POSIX-style; resolved, they're absolute on Windows
+    // too (with the current drive), as the code under test builds them.
+    const P = (p) => path.resolve(p);
+
     // Drive fs.existsSync from a set of paths that "exist".
     function existsForPaths(...existing) {
-      const set = new Set(existing);
-      fsMock.existsSync.mockImplementation((p) => set.has(p));
+      const set = new Set(existing.map(P));
+      fsMock.existsSync.mockImplementation((p) => set.has(P(p)));
     }
 
     it('uses path.resolve when an explicit vault flag is given', () => {
@@ -109,32 +113,32 @@ describe('EnvironmentVaultService', () => {
     it('finds .env.vault in a parent directory up to the git root', () => {
       cwdSpy = vi
         .spyOn(process, 'cwd')
-        .mockReturnValue('/repo/packages/api/src');
+        .mockReturnValue(P('/repo/packages/api/src'));
       // .git lives at the repo root; the vault sits two levels up from cwd.
       existsForPaths('/repo/.git', '/repo/packages/.env.vault');
 
       const result = EnvironmentVaultService.resolveVaultPath({});
-      expect(result).toBe('/repo/packages/.env.vault');
+      expect(result).toBe(P('/repo/packages/.env.vault'));
     });
 
     it('finds .env.vault directly in cwd before walking up', () => {
-      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/app');
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(P('/repo/app'));
       existsForPaths('/repo/.git', '/repo/app/.env.vault', '/repo/.env.vault');
 
       const result = EnvironmentVaultService.resolveVaultPath({});
-      expect(result).toBe('/repo/app/.env.vault');
+      expect(result).toBe(P('/repo/app/.env.vault'));
     });
 
     it('finds .env.vault at the git root itself', () => {
-      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/app');
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(P('/repo/app'));
       existsForPaths('/repo/.git', '/repo/.env.vault');
 
       const result = EnvironmentVaultService.resolveVaultPath({});
-      expect(result).toBe('/repo/.env.vault');
+      expect(result).toBe(P('/repo/.env.vault'));
     });
 
     it('does NOT ascend above the git root', () => {
-      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/app');
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(P('/repo/app'));
       // Vault exists ABOVE the git root and must be ignored.
       existsForPaths('/repo/.git', '/.env.vault');
 
@@ -143,7 +147,7 @@ describe('EnvironmentVaultService', () => {
     });
 
     it('only checks cwd when no .git exists anywhere up the chain', () => {
-      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/no-git/app');
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(P('/no-git/app'));
       // A vault exists in a parent, but with no git root we must not walk up.
       existsForPaths('/no-git/.env.vault');
 
@@ -152,48 +156,51 @@ describe('EnvironmentVaultService', () => {
     });
 
     it('finds .env.vault in cwd when no .git exists', () => {
-      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/no-git/app');
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(P('/no-git/app'));
       existsForPaths('/no-git/app/.env.vault');
 
       const result = EnvironmentVaultService.resolveVaultPath({});
-      expect(result).toBe('/no-git/app/.env.vault');
+      expect(result).toBe(P('/no-git/app/.env.vault'));
     });
 
     // New-22: the app resolves a folder the user picked, not its own cwd.
     it('resolves from a given folder instead of the process cwd', () => {
-      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/elsewhere');
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(P('/elsewhere'));
       existsForPaths('/repo/.git', '/repo/.env.vault');
       expect(
-        EnvironmentVaultService.resolveVaultPath({ cwd: '/repo/svc/api' })
-      ).toBe('/repo/.env.vault');
+        EnvironmentVaultService.resolveVaultPath({ cwd: P('/repo/svc/api') })
+      ).toBe(P('/repo/.env.vault'));
 
       existsForPaths('/proj/config/.env.vault');
-      expect(EnvironmentVaultService.resolveVaultPath({ cwd: '/proj' })).toBe(
-        '/proj/config/.env.vault'
-      );
+      expect(
+        EnvironmentVaultService.resolveVaultPath({ cwd: P('/proj') })
+      ).toBe('/proj/config/.env.vault');
       expect(
         EnvironmentVaultService.resolveVaultPath({
           vault: 'x/.env.vault',
-          cwd: '/proj',
+          cwd: P('/proj'),
         })
-      ).toBe('/proj/x/.env.vault');
+      ).toBe(P('/proj/x/.env.vault'));
     });
 
     it('looks for the folder-named vault in a given envs dir', () => {
       existsForPaths('/data/envs/my_app.env.vault');
       expect(
         EnvironmentVaultService.resolveVaultPath({
-          cwd: '/work/My App',
-          envsDir: '/data/envs',
+          cwd: P('/work/My App'),
+          envsDir: P('/data/envs'),
         })
-      ).toBe('/data/envs/my_app.env.vault');
+      ).toBe(P('/data/envs/my_app.env.vault'));
       expect(
-        EnvironmentVaultService.defaultVaultPath('/work/My App', '/data/envs')
-      ).toBe('/data/envs/my_app.env.vault');
+        EnvironmentVaultService.defaultVaultPath(
+          P('/work/My App'),
+          P('/data/envs')
+        )
+      ).toBe(P('/data/envs/my_app.env.vault'));
     });
 
     it('falls back to config/.env.vault when no walk-up match', () => {
-      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/app');
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(P('/repo/app'));
       const configVault = path.resolve('config', '.env.vault');
       existsForPaths('/repo/.git', configVault);
 
@@ -202,7 +209,7 @@ describe('EnvironmentVaultService', () => {
     });
 
     it('falls back to the app-data path when it exists', () => {
-      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/app');
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(P('/repo/app'));
       const appDataVault = EnvironmentVaultService.getEnvVaultPath('app');
       existsForPaths('/repo/.git', appDataVault);
 
@@ -211,7 +218,7 @@ describe('EnvironmentVaultService', () => {
     });
 
     it('returns null when nothing is found', () => {
-      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/app');
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(P('/repo/app'));
       existsForPaths('/repo/.git');
 
       const result = EnvironmentVaultService.resolveVaultPath({});

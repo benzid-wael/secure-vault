@@ -13,6 +13,8 @@ import { seedVault, removeSeed } from '../helpers/seedVault.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.resolve(__dirname, '../../../bin/cli.js');
 export const NODE = process.execPath;
+// The agent refuses to run on Windows (New-57).
+export const ON_WINDOWS = process.platform === 'win32';
 export const PASSWORD = 'TestVault123!@#';
 
 export const delay = (ms) => new Promise((r) => setTimeout(r, ms));

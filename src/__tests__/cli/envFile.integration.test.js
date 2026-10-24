@@ -72,8 +72,11 @@ describe('vault env file (integration)', () => {
     ]);
     expect(r.status).toBe(0);
     expect(fs.readFileSync(out, 'utf-8')).toBe('https://api.example.com');
-    // eslint-disable-next-line no-bitwise
-    expect(fs.statSync(out).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX modes.
+    if (process.platform !== 'win32') {
+      // eslint-disable-next-line no-bitwise
+      expect(fs.statSync(out).mode & 0o777).toBe(0o600);
+    }
   });
 
   it('base64-decodes a binary secret byte-for-byte', () => {
@@ -110,8 +113,11 @@ describe('vault env file (integration)', () => {
       vaultPath,
     ]);
     expect(r.status).toBe(0);
-    // eslint-disable-next-line no-bitwise
-    expect(fs.statSync(out).mode & 0o777).toBe(0o640);
+    // Windows has no POSIX modes.
+    if (process.platform !== 'win32') {
+      // eslint-disable-next-line no-bitwise
+      expect(fs.statSync(out).mode & 0o777).toBe(0o640);
+    }
   });
 
   it('fails (non-zero) on an undefined key without writing a file', () => {

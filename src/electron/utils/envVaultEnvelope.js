@@ -128,7 +128,8 @@ export function openEnvVault(file, key, name = 'This vault') {
       return null;
     }
   };
-  const isPath = name.includes(path.sep);
+  // `/` too: Windows takes it as a separator, and paths can be written so.
+  const isPath = name.includes(path.sep) || name.includes('/');
   const label = isPath ? path.basename(name) : name;
   const changed = new EnvelopeError(
     'TAMPERED',

@@ -68,6 +68,7 @@ import {
 } from '../../src/agent/auditLog.js';
 import {
   agentPaths,
+  agentUnsupportedReason,
   startDaemonServer,
   sendRequest,
   streamRequest,
@@ -1333,6 +1334,13 @@ export function registerEnvCommand(program) {
   const agent = env
     .command('agent')
     .description('Background session daemon (start/stop/status/lock/unlock)');
+  agent.hook('preAction', () => {
+    const reason = agentUnsupportedReason();
+    if (reason) {
+      console.error(chalk.red(reason));
+      process.exit(1);
+    }
+  });
 
   agent
     .command('run')
