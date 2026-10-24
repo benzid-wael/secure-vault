@@ -26,6 +26,7 @@ coverage
 # build
 build/
 dist/
+dist-twin/
 dist-cli/
 config.bat
 

@@ -4,14 +4,6 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
 import Level3CardGrid from '../../components/Level3CardGrid';
 
-// Mock clipboard API
-Object.defineProperty(navigator, 'clipboard', {
-  value: {
-    writeText: vi.fn().mockResolvedValue(),
-  },
-  writable: true,
-});
-
 describe('Level3CardGrid', () => {
   const defaultProps = {
     gridData: {},
@@ -79,8 +71,12 @@ describe('Level3CardGrid', () => {
       expect(screen.getByText('A1: ABC123')).toBeInTheDocument();
     });
 
-    // Verify clipboard copy was called
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('ABC123');
+    // Main copies it, as a secret cleared after 30 s (New-3).
+    expect(
+      /** @type {any} */ (window).electronAPI.copyToClipboard
+    ).toHaveBeenCalledWith('ABC123', {
+      sensitive: true,
+    });
   });
 
   it('handles lookup with Enter key', async () => {
@@ -220,5 +216,91 @@ describe('Level3CardGrid', () => {
     // Note: Cell editing would require more complex interaction testing
     // This is a basic test to ensure edit mode is activated
     expect(screen.getByText('View Mode')).toBeInTheDocument();
+  });
+
+  it('copies the looked-up code again from its copy button (New-3)', async () => {
+    render(<Level3CardGrid {...defaultProps} gridData={{ A1: 'ABC123' }} />);
+    fireEvent.change(screen.getByLabelText(/Position/i), {
+      target: { value: 'A1' },
+    });
+    fireEvent.click(screen.getByText('Lookup'));
+    await screen.findByText('A1: ABC123');
+    const copy = /** @type {any} */ (window).electronAPI.copyToClipboard;
+    copy.mockClear();
+    fireEvent.click(screen.getByTestId('ContentCopyIcon').closest('button'));
+    expect(copy).toHaveBeenCalledWith('ABC123', { sensitive: true });
+  });
+
+  it('logs a failed copy without breaking the lookup', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const copy = /** @type {any} */ (window).electronAPI.copyToClipboard;
+    copy.mockResolvedValueOnce({ success: false, error: 'nope' });
+    render(<Level3CardGrid {...defaultProps} gridData={{ A1: 'ABC123' }} />);
+    fireEvent.change(screen.getByLabelText(/Position/i), {
+      target: { value: 'A1' },
+    });
+    fireEvent.click(screen.getByText('Lookup'));
+    expect(await screen.findByText('A1: ABC123')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(consoleSpy).toHaveBeenCalledWith('Failed to copy to clipboard')
+    );
+    copy.mockResolvedValueOnce({ success: false, error: 'nope' });
+    consoleSpy.mockClear();
+    fireEvent.click(screen.getByTestId('ContentCopyIcon').closest('button'));
+    await waitFor(() =>
+      expect(consoleSpy).toHaveBeenCalledWith('Failed to copy to clipboard')
+    );
+    consoleSpy.mockRestore();
+  });
+
+  it('edits a cell in edit mode: Enter saves, empty removes', () => {
+    const onChange = vi.fn();
+    render(
+      <Level3CardGrid
+        {...defaultProps}
+        gridData={{ A1: 'ABC123' }}
+        onChange={onChange}
+      />
+    );
+    fireEvent.click(screen.getByText('Edit Mode'));
+
+    fireEvent.click(screen.getByText('ABC123'));
+    const input = screen.getByDisplayValue('ABC123');
+    fireEvent.change(input, { target: { value: ' NEW1 ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onChange).toHaveBeenLastCalledWith({ A1: 'NEW1' });
+
+    fireEvent.click(screen.getByText('ABC123'));
+    const again = screen.getByDisplayValue('ABC123');
+    fireEvent.change(again, { target: { value: '' } });
+    fireEvent.blur(again);
+    expect(onChange).toHaveBeenLastCalledWith({});
+  });
+
+  it('Escape cancels a cell edit and keeps the code (New-49)', () => {
+    const onChange = vi.fn();
+    render(
+      <Level3CardGrid
+        {...defaultProps}
+        gridData={{ A1: 'ABC123' }}
+        onChange={onChange}
+      />
+    );
+    fireEvent.click(screen.getByText('Edit Mode'));
+    fireEvent.click(screen.getByText('ABC123'));
+    const input = screen.getByDisplayValue('ABC123');
+    fireEvent.change(input, { target: { value: 'typo' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.queryByDisplayValue('typo')).toBeNull();
+    expect(screen.getByText('ABC123')).toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('does not edit cells when read-only', () => {
+    render(
+      <Level3CardGrid {...defaultProps} gridData={{ A1: 'ABC123' }} readOnly />
+    );
+    fireEvent.click(screen.getByText('ABC123'));
+    expect(screen.queryByDisplayValue('ABC123')).toBeNull();
   });
 });

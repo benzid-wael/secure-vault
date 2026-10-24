@@ -64,6 +64,7 @@ function runScenario(name) {
     APPDATA: path.join(home, 'AppData', 'Roaming'),
     NODE_ENV: 'production',
     E2E_REPO: REPO,
+    E2E_NODE: process.execPath, // for scenarios that run the CLI
     E2E_OUT: out,
     E2E_VAULTS_DIR: vaultsDirFor(home),
   };

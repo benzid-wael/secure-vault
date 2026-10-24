@@ -44,6 +44,15 @@ describe('EnvironmentVaultService', () => {
   });
 
   describe('getAppDataPath', () => {
+    // Put the real platform back: later tests build paths with it.
+    const platform = process.platform;
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', {
+        value: platform,
+        configurable: true,
+      });
+    });
+
     it('should return macOS path', () => {
       Object.defineProperty(process, 'platform', {
         value: 'darwin',
@@ -86,10 +95,14 @@ describe('EnvironmentVaultService', () => {
       }
     });
 
+    // Fixture paths are POSIX-style; resolved, they're absolute on Windows
+    // too (with the current drive), as the code under test builds them.
+    const P = (p) => path.resolve(p);
+
     // Drive fs.existsSync from a set of paths that "exist".
     function existsForPaths(...existing) {
-      const set = new Set(existing);
-      fsMock.existsSync.mockImplementation((p) => set.has(p));
+      const set = new Set(existing.map(P));
+      fsMock.existsSync.mockImplementation((p) => set.has(P(p)));
     }
 
     it('uses path.resolve when an explicit vault flag is given', () => {
@@ -109,32 +122,32 @@ describe('EnvironmentVaultService', () => {
     it('finds .env.vault in a parent directory up to the git root', () => {
       cwdSpy = vi
         .spyOn(process, 'cwd')
-        .mockReturnValue('/repo/packages/api/src');
+        .mockReturnValue(P('/repo/packages/api/src'));
       // .git lives at the repo root; the vault sits two levels up from cwd.
       existsForPaths('/repo/.git', '/repo/packages/.env.vault');
 
       const result = EnvironmentVaultService.resolveVaultPath({});
-      expect(result).toBe('/repo/packages/.env.vault');
+      expect(result).toBe(P('/repo/packages/.env.vault'));
     });
 
     it('finds .env.vault directly in cwd before walking up', () => {
-      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/app');
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(P('/repo/app'));
       existsForPaths('/repo/.git', '/repo/app/.env.vault', '/repo/.env.vault');
 
       const result = EnvironmentVaultService.resolveVaultPath({});
-      expect(result).toBe('/repo/app/.env.vault');
+      expect(result).toBe(P('/repo/app/.env.vault'));
     });
 
     it('finds .env.vault at the git root itself', () => {
-      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/app');
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(P('/repo/app'));
       existsForPaths('/repo/.git', '/repo/.env.vault');
 
       const result = EnvironmentVaultService.resolveVaultPath({});
-      expect(result).toBe('/repo/.env.vault');
+      expect(result).toBe(P('/repo/.env.vault'));
     });
 
     it('does NOT ascend above the git root', () => {
-      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/app');
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(P('/repo/app'));
       // Vault exists ABOVE the git root and must be ignored.
       existsForPaths('/repo/.git', '/.env.vault');
 
@@ -143,7 +156,7 @@ describe('EnvironmentVaultService', () => {
     });
 
     it('only checks cwd when no .git exists anywhere up the chain', () => {
-      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/no-git/app');
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(P('/no-git/app'));
       // A vault exists in a parent, but with no git root we must not walk up.
       existsForPaths('/no-git/.env.vault');
 
@@ -152,15 +165,51 @@ describe('EnvironmentVaultService', () => {
     });
 
     it('finds .env.vault in cwd when no .git exists', () => {
-      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/no-git/app');
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(P('/no-git/app'));
       existsForPaths('/no-git/app/.env.vault');
 
       const result = EnvironmentVaultService.resolveVaultPath({});
-      expect(result).toBe('/no-git/app/.env.vault');
+      expect(result).toBe(P('/no-git/app/.env.vault'));
+    });
+
+    // New-22: the app resolves a folder the user picked, not its own cwd.
+    it('resolves from a given folder instead of the process cwd', () => {
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(P('/elsewhere'));
+      existsForPaths('/repo/.git', '/repo/.env.vault');
+      expect(
+        EnvironmentVaultService.resolveVaultPath({ cwd: P('/repo/svc/api') })
+      ).toBe(P('/repo/.env.vault'));
+
+      existsForPaths('/proj/config/.env.vault');
+      expect(
+        EnvironmentVaultService.resolveVaultPath({ cwd: P('/proj') })
+      ).toBe(P('/proj/config/.env.vault'));
+      expect(
+        EnvironmentVaultService.resolveVaultPath({
+          vault: 'x/.env.vault',
+          cwd: P('/proj'),
+        })
+      ).toBe(P('/proj/x/.env.vault'));
+    });
+
+    it('looks for the folder-named vault in a given envs dir', () => {
+      existsForPaths('/data/envs/my_app.env.vault');
+      expect(
+        EnvironmentVaultService.resolveVaultPath({
+          cwd: P('/work/My App'),
+          envsDir: P('/data/envs'),
+        })
+      ).toBe(P('/data/envs/my_app.env.vault'));
+      expect(
+        EnvironmentVaultService.defaultVaultPath(
+          P('/work/My App'),
+          P('/data/envs')
+        )
+      ).toBe(P('/data/envs/my_app.env.vault'));
     });
 
     it('falls back to config/.env.vault when no walk-up match', () => {
-      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/app');
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(P('/repo/app'));
       const configVault = path.resolve('config', '.env.vault');
       existsForPaths('/repo/.git', configVault);
 
@@ -169,7 +218,7 @@ describe('EnvironmentVaultService', () => {
     });
 
     it('falls back to the app-data path when it exists', () => {
-      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/app');
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(P('/repo/app'));
       const appDataVault = EnvironmentVaultService.getEnvVaultPath('app');
       existsForPaths('/repo/.git', appDataVault);
 
@@ -178,7 +227,7 @@ describe('EnvironmentVaultService', () => {
     });
 
     it('returns null when nothing is found', () => {
-      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/app');
+      cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(P('/repo/app'));
       existsForPaths('/repo/.git');
 
       const result = EnvironmentVaultService.resolveVaultPath({});
@@ -327,145 +376,6 @@ describe('EnvironmentVaultService', () => {
     });
   });
 
-  describe('saveVault', () => {
-    it('should save vault successfully', async () => {
-      const vault = createPopulatedVault(testEnvName, { KEY: 'value' });
-      const result = await EnvironmentVaultService.saveVault(
-        testVaultPath,
-        testPassword,
-        vault
-      );
-
-      expect(result.success).toBe(true);
-      expect(fsMock.writeJSON).toHaveBeenCalledTimes(1);
-    });
-
-    it('should handle save errors', async () => {
-      fsMock.writeJSON.mockRejectedValue(new Error('Permission denied'));
-
-      const result = await EnvironmentVaultService.saveVault(
-        testVaultPath,
-        testPassword,
-        new EnvironmentVault()
-      );
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('Permission denied');
-    });
-  });
-
-  describe('saveVault backup + atomic write', () => {
-    it('backs up the previous file then writes via a temp file + rename', async () => {
-      fsMock.pathExists.mockResolvedValue(true); // an existing vault to preserve
-      const vault = createPopulatedVault(testEnvName, { KEY: 'value' });
-
-      const result = await EnvironmentVaultService.saveVault(
-        testVaultPath,
-        testPassword,
-        vault
-      );
-
-      expect(result.success).toBe(true);
-      expect(fsMock.copy).toHaveBeenCalledWith(
-        testVaultPath,
-        `${testVaultPath}.bak`,
-        { overwrite: true }
-      );
-      expect(fsMock.writeJSON).toHaveBeenCalledWith(
-        `${testVaultPath}.tmp`,
-        expect.objectContaining({ type: 'environment-vault' }),
-        { spaces: 2 }
-      );
-      expect(fsMock.move).toHaveBeenCalledWith(
-        `${testVaultPath}.tmp`,
-        testVaultPath,
-        { overwrite: true }
-      );
-    });
-
-    it('skips the backup when no vault exists yet', async () => {
-      fsMock.pathExists.mockResolvedValue(false);
-
-      const result = await EnvironmentVaultService.saveVault(
-        testVaultPath,
-        testPassword,
-        new EnvironmentVault()
-      );
-
-      expect(result.success).toBe(true);
-      expect(fsMock.copy).not.toHaveBeenCalled();
-    });
-
-    it('leaves the original intact when the atomic write fails', async () => {
-      fsMock.pathExists.mockResolvedValue(true);
-      fsMock.writeJSON.mockRejectedValue(new Error('Disk full'));
-
-      const result = await EnvironmentVaultService.saveVault(
-        testVaultPath,
-        testPassword,
-        new EnvironmentVault()
-      );
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('Disk full');
-      // The temp file never finished, so it was never renamed over the target.
-      expect(fsMock.move).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('setExtends', () => {
-    async function seed(vault) {
-      await EnvironmentVaultService.createVault(
-        testVaultPath,
-        testPassword,
-        vault.toJSON()
-      );
-      const written = fsMock.writeJSON.mock.calls[0][1];
-      fsMock.pathExists.mockResolvedValue(true);
-      fsMock.readJSON.mockResolvedValue(written);
-    }
-
-    it('sets and persists the parent of an environment', async () => {
-      const vault = new EnvironmentVault();
-      vault.addEnvironment('base');
-      vault.addVersion('base', { PORT: '3000' });
-      vault.addEnvironment('staging');
-      vault.addVersion('staging', { API_URL: 'x' });
-      await seed(vault);
-
-      const result = await EnvironmentVaultService.setExtends(
-        testVaultPath,
-        testPassword,
-        'staging',
-        'base'
-      );
-      expect(result.success).toBe(true);
-
-      fsMock.readJSON.mockResolvedValue(fsMock.writeJSON.mock.calls[1][1]);
-      const load = await EnvironmentVaultService.loadVault(
-        testVaultPath,
-        testPassword
-      );
-      expect(load.data.environments.staging.extends).toBe('base');
-    });
-
-    it('fails when the parent does not exist', async () => {
-      const vault = new EnvironmentVault();
-      vault.addEnvironment('staging');
-      vault.addVersion('staging', { API_URL: 'x' });
-      await seed(vault);
-
-      const result = await EnvironmentVaultService.setExtends(
-        testVaultPath,
-        testPassword,
-        'staging',
-        'ghost'
-      );
-      expect(result.success).toBe(false);
-      expect(result.error).toMatch(/not found/i);
-    });
-  });
-
   describe('reserved environment names', () => {
     it('rejects creating an environment named "self"', () => {
       const vault = new EnvironmentVault();
@@ -482,27 +392,6 @@ describe('EnvironmentVaultService', () => {
       vault.addEnvironment('dev');
       vault.addVersion('dev', { A: '1' });
       expect(() => vault.renameEnvironment('dev', 'self')).toThrow(/reserved/i);
-    });
-
-    it('blocks a "self" environment through the service (setEnv auto-create)', async () => {
-      await EnvironmentVaultService.createVault(
-        testVaultPath,
-        testPassword,
-        new EnvironmentVault().toJSON()
-      );
-      const written = fsMock.writeJSON.mock.calls[0][1];
-      fsMock.pathExists.mockResolvedValue(true);
-      fsMock.readJSON.mockResolvedValue(written);
-
-      const result = await EnvironmentVaultService.setEnv(
-        testVaultPath,
-        testPassword,
-        'self',
-        'KEY',
-        'val'
-      );
-      expect(result.success).toBe(false);
-      expect(result.error).toMatch(/reserved/i);
     });
   });
 
@@ -551,82 +440,6 @@ describe('EnvironmentVaultService', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('Failed to import');
-    });
-  });
-
-  describe('setEnv', () => {
-    async function setupVault() {
-      const vault = createPopulatedVault(testEnvName, { EXISTING: 'val' });
-      await EnvironmentVaultService.createVault(
-        testVaultPath,
-        testPassword,
-        vault.toJSON()
-      );
-      return fsMock.writeJSON.mock.calls[0][1];
-    }
-
-    function setupReadMock(fileMock) {
-      fsMock.pathExists.mockResolvedValue(true);
-      fsMock.readJSON.mockResolvedValue(fileMock);
-    }
-
-    it('should set an environment variable', async () => {
-      setupReadMock(await setupVault());
-
-      const result = await EnvironmentVaultService.setEnv(
-        testVaultPath,
-        testPassword,
-        testEnvName,
-        'DB_HOST',
-        'localhost'
-      );
-
-      expect(result.success).toBe(true);
-
-      setupReadMock(fsMock.writeJSON.mock.calls[1][1]);
-      const loadResult = await EnvironmentVaultService.loadVault(
-        testVaultPath,
-        testPassword
-      );
-      expect(loadResult.data.getActiveVersion(testEnvName).vars).toEqual({
-        EXISTING: 'val',
-        DB_HOST: 'localhost',
-      });
-    });
-
-    it('should mark variable as public', async () => {
-      setupReadMock(await setupVault());
-
-      await EnvironmentVaultService.setEnv(
-        testVaultPath,
-        testPassword,
-        testEnvName,
-        'PORT',
-        '3000',
-        { isPublic: true }
-      );
-
-      setupReadMock(fsMock.writeJSON.mock.calls[1][1]);
-      const loadResult = await EnvironmentVaultService.loadVault(
-        testVaultPath,
-        testPassword
-      );
-      const version = loadResult.data.getActiveVersion(testEnvName);
-      expect(version.nonSensitive).toContain('PORT');
-    });
-
-    it('should handle load errors', async () => {
-      fsMock.pathExists.mockResolvedValue(false);
-
-      const result = await EnvironmentVaultService.setEnv(
-        '/nonexistent',
-        testPassword,
-        testEnvName,
-        'KEY',
-        'val'
-      );
-
-      expect(result.success).toBe(false);
     });
   });
 
@@ -740,182 +553,6 @@ describe('EnvironmentVaultService', () => {
     });
   });
 
-  describe('removeKey', () => {
-    it('should remove a key and create new version', async () => {
-      const vault = createPopulatedVault(testEnvName, {
-        KEEP: 'a',
-        REMOVE: 'b',
-      });
-      await EnvironmentVaultService.createVault(
-        testVaultPath,
-        testPassword,
-        vault.toJSON()
-      );
-
-      const writtenFile = fsMock.writeJSON.mock.calls[0][1];
-      fsMock.pathExists.mockResolvedValue(true);
-      fsMock.readJSON.mockResolvedValue(writtenFile);
-
-      const result = await EnvironmentVaultService.removeKey(
-        testVaultPath,
-        testPassword,
-        testEnvName,
-        'REMOVE'
-      );
-
-      expect(result.success).toBe(true);
-
-      const savedFile = fsMock.writeJSON.mock.calls[1][1];
-      fsMock.readJSON.mockResolvedValue(savedFile);
-      const loadResult = await EnvironmentVaultService.loadVault(
-        testVaultPath,
-        testPassword
-      );
-      const version = loadResult.data.getActiveVersion(testEnvName);
-      expect(version.vars).toEqual({ KEEP: 'a' });
-      expect(loadResult.data.getHistory(testEnvName)).toHaveLength(2);
-    });
-  });
-
-  describe('deleteEnv', () => {
-    it('should delete an environment', async () => {
-      const vault = createPopulatedVault(testEnvName, { KEY: 'val' });
-      await EnvironmentVaultService.createVault(
-        testVaultPath,
-        testPassword,
-        vault.toJSON()
-      );
-
-      const writtenFile = fsMock.writeJSON.mock.calls[0][1];
-      fsMock.pathExists.mockResolvedValue(true);
-      fsMock.readJSON.mockResolvedValue(writtenFile);
-
-      const result = await EnvironmentVaultService.deleteEnv(
-        testVaultPath,
-        testPassword,
-        testEnvName
-      );
-
-      expect(result.success).toBe(true);
-
-      const savedFile = fsMock.writeJSON.mock.calls[1][1];
-      fsMock.readJSON.mockResolvedValue(savedFile);
-      const loadResult = await EnvironmentVaultService.loadVault(
-        testVaultPath,
-        testPassword
-      );
-      expect(loadResult.data.listEnvironmentNames()).toEqual([]);
-    });
-  });
-
-  describe('renameEnv', () => {
-    it('should rename an environment', async () => {
-      const vault = createPopulatedVault(testEnvName, { KEY: 'val' });
-      await EnvironmentVaultService.createVault(
-        testVaultPath,
-        testPassword,
-        vault.toJSON()
-      );
-
-      const writtenFile = fsMock.writeJSON.mock.calls[0][1];
-      fsMock.pathExists.mockResolvedValue(true);
-      fsMock.readJSON.mockResolvedValue(writtenFile);
-
-      const result = await EnvironmentVaultService.renameEnv(
-        testVaultPath,
-        testPassword,
-        testEnvName,
-        'prod'
-      );
-
-      expect(result.success).toBe(true);
-
-      const savedFile = fsMock.writeJSON.mock.calls[1][1];
-      fsMock.readJSON.mockResolvedValue(savedFile);
-      const loadResult = await EnvironmentVaultService.loadVault(
-        testVaultPath,
-        testPassword
-      );
-      expect(loadResult.data.listEnvironmentNames()).toEqual(['prod']);
-    });
-  });
-
-  describe('copyEnv', () => {
-    async function seed(vault) {
-      await EnvironmentVaultService.createVault(
-        testVaultPath,
-        testPassword,
-        vault.toJSON()
-      );
-      const writtenFile = fsMock.writeJSON.mock.calls[0][1];
-      fsMock.pathExists.mockResolvedValue(true);
-      fsMock.readJSON.mockResolvedValue(writtenFile);
-    }
-
-    it('should copy an environment to a new name with the same vars', async () => {
-      await seed(createPopulatedVault(testEnvName, { KEY: 'val', HOST: 'h' }));
-
-      const result = await EnvironmentVaultService.copyEnv(
-        testVaultPath,
-        testPassword,
-        testEnvName,
-        'prod'
-      );
-
-      expect(result.success).toBe(true);
-
-      const savedFile = fsMock.writeJSON.mock.calls[1][1];
-      fsMock.readJSON.mockResolvedValue(savedFile);
-      const loadResult = await EnvironmentVaultService.loadVault(
-        testVaultPath,
-        testPassword
-      );
-      expect(loadResult.data.listEnvironmentNames().sort()).toEqual(
-        ['prod', testEnvName].sort()
-      );
-      // Destination has the source's vars, and the source is left intact.
-      expect(loadResult.data.getActiveVersion('prod').vars).toEqual({
-        KEY: 'val',
-        HOST: 'h',
-      });
-      expect(loadResult.data.getActiveVersion(testEnvName).vars).toEqual({
-        KEY: 'val',
-        HOST: 'h',
-      });
-    });
-
-    it('should fail when the destination already exists', async () => {
-      const vault = createPopulatedVault(testEnvName, { KEY: 'val' });
-      vault.addEnvironment('prod');
-      vault.addVersion('prod', { OTHER: 'x' });
-      await seed(vault);
-
-      const result = await EnvironmentVaultService.copyEnv(
-        testVaultPath,
-        testPassword,
-        testEnvName,
-        'prod'
-      );
-
-      expect(result.success).toBe(false);
-      expect(result.error).toMatch(/already exists/i);
-    });
-
-    it('should fail when the source does not exist', async () => {
-      await seed(createPopulatedVault(testEnvName, { KEY: 'val' }));
-
-      const result = await EnvironmentVaultService.copyEnv(
-        testVaultPath,
-        testPassword,
-        'nope',
-        'prod'
-      );
-
-      expect(result.success).toBe(false);
-      expect(result.error).toMatch(/not found/i);
-    });
-  });
-
   describe('exportEnv', () => {
     async function setup() {
       const vault = createPopulatedVault(testEnvName, { A: '1', B: '2' });
@@ -1012,104 +649,6 @@ describe('EnvironmentVaultService', () => {
     });
   });
 
-  describe('importEnvFile', () => {
-    it('should import from .env file', async () => {
-      const vault = createPopulatedVault(testEnvName, { KEY: 'old' });
-      await EnvironmentVaultService.createVault(
-        testVaultPath,
-        testPassword,
-        vault.toJSON()
-      );
-
-      const writtenFile = fsMock.writeJSON.mock.calls[0][1];
-      fsMock.pathExists.mockResolvedValue(true);
-      fsMock.readJSON.mockResolvedValue(writtenFile);
-      fsMock.readFile.mockResolvedValue('IMPORTED_KEY=imported_value');
-
-      const result = await EnvironmentVaultService.importEnvFile(
-        testVaultPath,
-        testPassword,
-        testEnvName,
-        '/path/to/.env'
-      );
-
-      expect(result.success).toBe(true);
-      expect(fsMock.readFile).toHaveBeenCalledWith('/path/to/.env', 'utf-8');
-    });
-  });
-
-  describe('squashEnv', () => {
-    it('should squash environment history', async () => {
-      const vault = new EnvironmentVault();
-      vault.addEnvironment(testEnvName);
-      vault.addVersion(testEnvName, { KEEP: 'a' });
-      vault.addVersion(testEnvName, { KEEP: 'a', ADD: 'b' });
-      vault.addVersion(testEnvName, { KEEP: 'a', ADD: 'b', ADD2: 'c' });
-      await EnvironmentVaultService.createVault(
-        testVaultPath,
-        testPassword,
-        vault.toJSON()
-      );
-
-      const writtenFile = fsMock.writeJSON.mock.calls[0][1];
-      fsMock.pathExists.mockResolvedValue(true);
-      fsMock.readJSON.mockResolvedValue(writtenFile);
-
-      const result = await EnvironmentVaultService.squashEnv(
-        testVaultPath,
-        testPassword,
-        testEnvName,
-        1
-      );
-
-      expect(result.success).toBe(true);
-
-      const savedFile = fsMock.writeJSON.mock.calls[1][1];
-      fsMock.readJSON.mockResolvedValue(savedFile);
-      const loadResult = await EnvironmentVaultService.loadVault(
-        testVaultPath,
-        testPassword
-      );
-      expect(loadResult.data.getHistory(testEnvName)).toHaveLength(1);
-    });
-  });
-
-  describe('rollbackEnv', () => {
-    it('should rollback to a previous version', async () => {
-      const vault = new EnvironmentVault();
-      vault.addEnvironment(testEnvName);
-      vault.addVersion(testEnvName, { VERSION: '1' });
-      vault.addVersion(testEnvName, { VERSION: '2' });
-      await EnvironmentVaultService.createVault(
-        testVaultPath,
-        testPassword,
-        vault.toJSON()
-      );
-
-      const writtenFile = fsMock.writeJSON.mock.calls[0][1];
-      fsMock.pathExists.mockResolvedValue(true);
-      fsMock.readJSON.mockResolvedValue(writtenFile);
-
-      const result = await EnvironmentVaultService.rollbackEnv(
-        testVaultPath,
-        testPassword,
-        testEnvName,
-        1
-      );
-
-      expect(result.success).toBe(true);
-
-      const savedFile = fsMock.writeJSON.mock.calls[1][1];
-      fsMock.readJSON.mockResolvedValue(savedFile);
-      const loadResult = await EnvironmentVaultService.loadVault(
-        testVaultPath,
-        testPassword
-      );
-      const activeVersion = loadResult.data.getActiveVersion(testEnvName);
-      expect(activeVersion.vars).toEqual({ VERSION: '1' });
-    });
-  });
-
   describe('getHistory', () => {
     it('should return version history', async () => {
       const vault = new EnvironmentVault();
@@ -1166,108 +705,6 @@ describe('EnvironmentVaultService', () => {
       expect(result.data.removed).toEqual(['C']);
       expect(result.data.changed).toEqual(['B']);
       expect(result.data.unchanged).toEqual(['A']);
-    });
-  });
-
-  describe('changePassword', () => {
-    const newPassword = 'NewStrongPass123!@#';
-
-    async function setup() {
-      const vault = createPopulatedVault(testEnvName, { KEY: 'val' });
-      await EnvironmentVaultService.createVault(
-        testVaultPath,
-        testPassword,
-        vault.toJSON()
-      );
-      const file = fsMock.writeJSON.mock.calls[0][1];
-      fsMock.pathExists.mockResolvedValue(true);
-      fsMock.readJSON.mockResolvedValue(file);
-    }
-
-    it('should change vault password', async () => {
-      await setup();
-
-      const result = await EnvironmentVaultService.changePassword(
-        testVaultPath,
-        testPassword,
-        newPassword
-      );
-
-      expect(result.success).toBe(true);
-
-      const savedFile = fsMock.writeJSON.mock.calls[1][1];
-      fsMock.readJSON.mockResolvedValue(savedFile);
-
-      const loadResult = await EnvironmentVaultService.loadVault(
-        testVaultPath,
-        newPassword
-      );
-      expect(loadResult.success).toBe(true);
-      expect(loadResult.data.getActiveVersion(testEnvName).vars).toEqual({
-        KEY: 'val',
-      });
-    });
-
-    it('should reject weak new password', async () => {
-      const result = await EnvironmentVaultService.changePassword(
-        testVaultPath,
-        testPassword,
-        'weak'
-      );
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('at least 8 characters');
-    });
-
-    it('should reject wrong current password', async () => {
-      const vault = createPopulatedVault(testEnvName, { KEY: 'val' });
-      await EnvironmentVaultService.createVault(
-        testVaultPath,
-        testPassword,
-        vault.toJSON()
-      );
-      const writtenFile = fsMock.writeJSON.mock.calls[0][1];
-      fsMock.pathExists.mockResolvedValue(true);
-      fsMock.readJSON.mockResolvedValue(writtenFile);
-
-      const result = await EnvironmentVaultService.changePassword(
-        testVaultPath,
-        'WrongPass123!@#',
-        newPassword
-      );
-
-      expect(result.success).toBe(false);
-    });
-  });
-
-  describe('setEnv with isRequired', () => {
-    it('marks a variable as required and persists it', async () => {
-      await EnvironmentVaultService.createVault(
-        testVaultPath,
-        testPassword,
-        new EnvironmentVault().toJSON()
-      );
-      let written = fsMock.writeJSON.mock.calls[0][1];
-      fsMock.pathExists.mockResolvedValue(true);
-      fsMock.readJSON.mockResolvedValue(written);
-
-      const result = await EnvironmentVaultService.setEnv(
-        testVaultPath,
-        testPassword,
-        'dev',
-        'API_URL',
-        'https://x',
-        { isRequired: true }
-      );
-      expect(result.success).toBe(true);
-
-      written = fsMock.writeJSON.mock.calls[1][1];
-      fsMock.readJSON.mockResolvedValue(written);
-      const load = await EnvironmentVaultService.loadVault(
-        testVaultPath,
-        testPassword
-      );
-      expect(load.data.getActiveVersion('dev').required).toContain('API_URL');
     });
   });
 

@@ -33,7 +33,7 @@ On Windows, rename `vault-windows-x64.exe` to `vault.exe` and add its folder to
 
 ```bash
 vault info                       # show version and vault location
-vault recover --name <vault>     # recover a vault with your master password
+vault recover --name <vault>     # recover a vault (password, or recovery key if it uses a key file)
 ```
 
 ### Environment vaults
@@ -198,6 +198,12 @@ Other commands: `rm`, `delete`, `rename`, `copy`, `squash`, `extends`,
 `change-password`. Run `vault env <command> --help` for the full options of any
 command.
 
+`vault env rename <old> <new>` carries the environment's dependents along:
+environments that extend it now extend the new name, and `{{env:old/KEY}}`
+references in every environment are rewritten (one new version per
+environment that had any). Pass `--keep-references` to leave references as
+they are; they then stop resolving.
+
 > **Safety:** every write keeps a `<vault>.bak` of the previous good state and
 > writes atomically, so an interrupted save can never corrupt the vault. After
 > `change-password` (or the 600k key upgrade) the `.bak` is refreshed from the
@@ -314,6 +320,7 @@ never touches your secrets:
 ```bash
 vault env doctor            # structural checks, no password needed
 vault env doctor -e dev     # + verify every manifest variable resolves (needs a password)
+vault env doctor -v ./app.env.vault   # just the vault, without a .vaultrc
 ```
 
 `doctor` reports:
@@ -323,12 +330,58 @@ vault env doctor -e dev     # + verify every manifest variable resolves (needs a
 - **.gitignore coverage** — every delivered artifact is ignored (a warning if not,
   so a decoded secret can't be committed by accident);
 - **vault present** — an environment vault is discoverable;
+- **write lock** — whether a command is writing the vault right now, a stale
+  `<vault>.lock` left by a process that died, and any leftover
+  `<vault>.lock.stale.*` file (see [Concurrent writes](#concurrent-writes));
 - **variable resolution** — when a password is available
   (`--password-stdin`/`--password-file`/`VAULT_ENV_PASSWORD`), every variable the
   manifest references actually exists in the environment.
 
 Only real breakage (invalid manifest, missing template, unresolved variables)
-makes `doctor` exit non-zero; coverage nits are warnings.
+makes `doctor` exit non-zero; coverage nits and lock findings are warnings.
+
+#### Concurrent writes
+
+Every command that changes a vault (`set`, `rm`, `import`, `rename`,
+`squash`, `change-password`, …) takes a lock file next to it,
+`<vault>.lock`, for the moment it reads, changes and saves the vault. Two
+commands, or a command and the desktop app, can't overwrite each other's
+changes. Reading commands (`show`, `run`, `export`, …) don't lock.
+
+If another writer holds the lock, a command waits up to 3 seconds, then
+fails:
+
+```
+Vault is busy (held by cli pid 4242 since 2026-10-22T10:00:00.000Z).
+Try again, or remove /path/app.env.vault.lock if no vault command is running.
+```
+
+A lock left by a process that died (a `kill -9`, a crash) is taken over by
+the next write on the same machine, so you rarely need to remove it. A lock
+from another machine (a vault in a synced folder) is taken over once it has
+gone 30 seconds without its holder refreshing it. `vault env doctor` shows
+the lock's state and names the file to remove; it never removes anything.
+
+Older versions of the CLI don't know about the lock and can still overwrite a
+concurrent change: upgrade every machine that writes the vault.
+
+#### Vaults written by a newer version
+
+A vault records the optional format features it uses (today: key comments)
+in its unencrypted header, and only when it uses them. When this version of
+the CLI meets a feature it doesn't know, written by a newer SecureVault:
+
+- reading commands (`show`, `get`, `run`, `export`, …) work and print a
+  warning on stderr (not with `--quiet`);
+- commands that change the vault exit with code **15**
+  (`[ENV_VAULT_NEWER_FORMAT]`) and change nothing, because saving would drop
+  the data this version doesn't understand. The message names the feature and
+  how to upgrade.
+
+A vault in a newer format version stops every command with code 15.
+`vault env doctor` shows the vault's format and the features it uses. The
+desktop app applies the same rule: it opens such a vault read-only, with a
+banner.
 
 ## Where data is stored
 

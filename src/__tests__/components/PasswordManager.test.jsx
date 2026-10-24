@@ -299,6 +299,13 @@ describe('PasswordManager', () => {
     loadVault: vi.fn(),
     saveVault: vi.fn(),
     getVaults: vi.fn(),
+    copyToClipboard: vi.fn(
+      async (text, { sensitive } = {}) =>
+        /** @type {any} */ ({
+          success: true,
+          clearsInMs: sensitive ? 30000 : null,
+        })
+    ),
   };
 
   beforeEach(() => {
@@ -319,6 +326,36 @@ describe('PasswordManager', () => {
 
   afterEach(() => {
     delete global.window.electronAPI;
+  });
+
+  describe('saved password (New-52)', () => {
+    it('offers to forget it when it is saved', async () => {
+      const onForgetPassword = vi.fn();
+      render(
+        React.createElement(PasswordManager, {
+          ...defaultProps,
+          passwordSaved: true,
+          onForgetPassword,
+        })
+      );
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'Forget saved password' })
+      );
+      expect(onForgetPassword).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers nothing when it is not saved', async () => {
+      render(
+        React.createElement(PasswordManager, {
+          ...defaultProps,
+          onForgetPassword: vi.fn(),
+        })
+      );
+      await screen.findByText('test-vault');
+      expect(
+        screen.queryByRole('button', { name: 'Forget saved password' })
+      ).toBeNull();
+    });
   });
 
   describe('Component Rendering', () => {
@@ -574,6 +611,37 @@ describe('PasswordManager', () => {
       });
     });
 
+    it('copies a password as a secret that main clears (New-3)', async () => {
+      render(React.createElement(PasswordManager, defaultProps));
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'Copy Password' })
+      );
+      await waitFor(() =>
+        expect(
+          /** @type {any} */ (window).electronAPI.copyToClipboard
+        ).toHaveBeenCalledWith('secretpass', { sensitive: true })
+      );
+      expect(
+        await screen.findByText(
+          'Password copied to clipboard. It is cleared from the clipboard in 30 s.'
+        )
+      ).toBeInTheDocument();
+    });
+
+    it('says so when the copy fails', async () => {
+      mockElectronAPI.copyToClipboard.mockResolvedValueOnce({
+        success: false,
+        error: 'Nothing to copy',
+      });
+      render(React.createElement(PasswordManager, defaultProps));
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'Copy Password' })
+      );
+      expect(
+        await screen.findByText('Failed to copy to clipboard')
+      ).toBeInTheDocument();
+    });
+
     it('copies username to clipboard', async () => {
       render(React.createElement(PasswordManager, defaultProps));
 
@@ -591,13 +659,14 @@ describe('PasswordManager', () => {
         fireEvent.click(usernameCopyButton);
 
         await waitFor(() => {
-          expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-            'user@gmail.com'
-          );
+          expect(
+            /** @type {any} */ (window).electronAPI.copyToClipboard
+          ).toHaveBeenCalledWith('user@gmail.com', { sensitive: false });
         });
 
+        // Not a secret: nothing about clearing (New-3).
         expect(
-          screen.getByText('Username/Email copied to clipboard')
+          await screen.findByText('Username/Email copied to clipboard.')
         ).toBeInTheDocument();
       }
     });
@@ -661,6 +730,28 @@ describe('PasswordManager', () => {
 
       fireEvent.click(screen.getByText('Simulate password change'));
       expect(onPasswordChanged).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('A vault from a newer version (New-29)', () => {
+    it('says it is read-only and why', async () => {
+      mockElectronAPI.loadVault.mockResolvedValue({
+        success: true,
+        data: { entries: [] },
+        readOnly: true,
+        formatMessage: 'test-vault uses features this version does not know.',
+      });
+      render(React.createElement(PasswordManager, defaultProps));
+      expect(await screen.findByText(/Read-only\./)).toBeInTheDocument();
+      expect(
+        screen.getByText(/uses features this version does not know/)
+      ).toBeInTheDocument();
+    });
+
+    it('shows no banner for a current vault', async () => {
+      render(React.createElement(PasswordManager, defaultProps));
+      await screen.findByText('test-vault');
+      expect(screen.queryByText(/Read-only\./)).toBeNull();
     });
   });
 

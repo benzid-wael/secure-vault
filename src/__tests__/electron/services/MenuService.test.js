@@ -3,12 +3,14 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // Mock the Electron module so MenuService can be exercised in a plain Node
 // (vitest) environment without a running Electron process.
 const getFocusedWindow = vi.fn();
+/** @type {import('vitest').Mock<(template: any[]) => object>} */
+const buildFromTemplate = vi.fn(() => ({}));
 const getAllWindows = vi.fn();
 
 vi.mock('electron', () => ({
   default: {
     Menu: {
-      buildFromTemplate: vi.fn(() => ({})),
+      buildFromTemplate: (template) => buildFromTemplate(template),
       setApplicationMenu: vi.fn(),
     },
     BrowserWindow: {
@@ -76,5 +78,32 @@ describe('MenuService.sendMenuEvent', () => {
     service.setMainWindow(null);
 
     expect(() => service.sendMenuEvent('menu-lock-vault')).not.toThrow();
+  });
+});
+
+describe('MenuService: File → Lock Vault (New-46)', () => {
+  const lockItem = () =>
+    /** @type {any[]} */ (buildFromTemplate.mock.lastCall)[0]
+      .find((menu) => menu.label === 'File')
+      .submenu.find((item) => item.label === 'Lock Vault');
+
+  it('locks in main first, then tells the page', () => {
+    const order = [];
+    const service = new MenuService({ onLock: () => order.push('main') });
+    const win = makeWindow();
+    win.webContents.send.mockImplementation((name) => order.push(name));
+    service.createMenu(win);
+
+    expect(lockItem().accelerator).toBe('CmdOrCtrl+L');
+    lockItem().click();
+    expect(order).toEqual(['main', 'menu-lock-vault']);
+  });
+
+  it('still tells the page without an onLock', () => {
+    const service = new MenuService();
+    const win = makeWindow();
+    service.createMenu(win);
+    lockItem().click();
+    expect(win.webContents.send).toHaveBeenCalledWith('menu-lock-vault');
   });
 });

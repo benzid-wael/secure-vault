@@ -3,8 +3,15 @@ import electron from 'electron';
 const { Menu, BrowserWindow } = electron;
 
 export class MenuService {
-  constructor() {
+  /**
+   * @param {Object} [options]
+   * @param {() => void} [options.onLock] Run in main by File → Lock Vault,
+   *   before the page hears of it: locks what the page doesn't (every env
+   *   vault, New-46), even if the page is stuck.
+   */
+  constructor({ onLock = () => {} } = {}) {
     this.mainWindow = null;
+    this.onLock = onLock;
   }
 
   createMenu(mainWindow) {
@@ -40,6 +47,7 @@ export class MenuService {
             label: 'Lock Vault',
             accelerator: 'CmdOrCtrl+L',
             click: () => {
+              this.onLock();
               this.sendMenuEvent('menu-lock-vault');
             },
           },

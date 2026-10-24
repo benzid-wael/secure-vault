@@ -4,7 +4,14 @@
 // everything else is the production main + renderer.
 const path = require('path');
 const fs = require('fs');
-const { app, dialog, BrowserWindow } = require('electron');
+const {
+  app,
+  dialog,
+  BrowserWindow,
+  ipcMain,
+  session,
+  clipboard,
+} = require('electron');
 
 const REPO = process.env.E2E_REPO;
 const OUT = process.env.E2E_OUT;
@@ -22,40 +29,12 @@ dialog.showOpenDialog = async () => ({
 dialog.showErrorBox = (title, message) =>
   console.log('ERRORBOX', title, message);
 
-// Installed in the page: find elements the way a user would, by visible text
-// or field label, and fire the events React listens to.
-const PAGE_HELPERS = `
-  window.__e2e = {
-    hasText: (t) => document.body.textContent.includes(t),
-    clickText: (t) => {
-      const els = [...document.querySelectorAll('button, [role=button], [role=tab], li, div, span, p, h5, h6')]
-        .filter((e) => e.textContent.trim() === t);
-      const el = els[els.length - 1];
-      if (!el) return false;
-      el.click();
-      return true;
-    },
-    fill: (label, value) => {
-      const clean = (s) => s.replace(/[\\s*\\u2009]+$/u, '').trim();
-      const labels = [...document.querySelectorAll('label')];
-      const l = labels.find((x) => clean(x.textContent) === label) ||
-        labels.find((x) => x.textContent.includes(label));
-      const input = l && document.getElementById(l.htmlFor);
-      if (!input) return false;
-      const proto = input instanceof HTMLTextAreaElement
-        ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-      Object.getOwnPropertyDescriptor(proto, 'value').set.call(input, value);
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      return true;
-    },
-    submit: () => {
-      const b = [...document.querySelectorAll('button[type=submit]')].pop();
-      if (!b) return false;
-      b.click();
-      return true;
-    },
-  };
-  true;`;
+const PAGE_HELPERS = require('./pageHelpers.cjs');
+
+// Electron's own data (the single-instance lock, saved env vault passwords,
+// Chromium's profile) per scenario too: on macOS userData ignores HOME.
+const USER_DATA = path.join(path.dirname(OUT), 'user-data');
+app.setPath('userData', USER_DATA);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -64,6 +43,28 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * passed, 1 when one failed, 2 when the scenario threw.
  */
 module.exports = function scenario(fn) {
+  // A test-only preload in the same renderer reports whether it runs
+  // sandboxed: that proves Electron honored `sandbox: true`, which reading
+  // the window's options wouldn't (GUI-ENV-BREAKDOWN Task 1).
+  const sandboxed = new Promise((resolve) =>
+    ipcMain.once('e2e-sandboxed', (event, value) => resolve(value))
+  );
+  // Registered before main's own whenReady handler creates the window.
+  app.whenReady().then(() =>
+    session.defaultSession.registerPreloadScript({
+      type: 'frame',
+      filePath: path.join(__dirname, 'probe-preload.cjs'),
+    })
+  );
+  // CSP violations the page reports (GUI-ENV-BREAKDOWN Task 2).
+  const cspViolations = [];
+  app.on('web-contents-created', (event, contents) =>
+    contents.on('console-message', (details) => {
+      const message = details?.message ?? String(details);
+      if (/Content Security Policy/i.test(message)) cspViolations.push(message);
+    })
+  );
+
   require(path.join(REPO, 'build/electron/main.cjs'));
 
   const results = [];
@@ -95,9 +96,22 @@ module.exports = function scenario(fn) {
       js,
       win,
       OUT,
+      USER_DATA,
       VAULTS_DIR,
       EXPORT_PATH,
+      ENVS_DIR: path.join(path.dirname(VAULTS_DIR), 'envs'),
+      sandboxed: () =>
+        Promise.race([sandboxed, sleep(5000).then(() => 'no report')]),
+      cspViolations,
+      clipboardText: () => clipboard.readText(),
       api: (call) => js(`window.electronAPI.${call}`),
+      clickLabel: (label) =>
+        js(`(() => {
+          const el = document.querySelector('[aria-label=${JSON.stringify(label)}]');
+          if (!el) return false;
+          el.click();
+          return true;
+        })()`),
       hasText: (text) => js(`__e2e.hasText(${JSON.stringify(text)})`),
       waitText: async (text, ms = 10000) => {
         for (let i = 0; i < ms / 100; i += 1) {
@@ -130,7 +144,13 @@ module.exports = function scenario(fn) {
       },
     };
 
-    await fn(t);
+    // Scenarios may copy to the real clipboard: give the user theirs back.
+    const savedClipboard = clipboard.readText();
+    try {
+      await fn(t);
+    } finally {
+      clipboard.writeText(savedClipboard);
+    }
 
     const failed = results.filter((ok) => !ok).length;
     console.log(`\n${results.length - failed}/${results.length} passed`);

@@ -6,6 +6,23 @@ import fs from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Chromium's net::ERR_ABORTED: a newer navigation (a reload, another
+// loadURL) replaced this one. Not a failure.
+const ERR_ABORTED = -3;
+
+/**
+ * Whether a `did-fail-load` means the app failed to load (New-39): the main
+ * frame, not aborted by a newer navigation, and not the error page itself.
+ * Answering the error page's own failure with the error page loops forever.
+ */
+export function isLoadFailure(errorCode, validatedURL, isMainFrame) {
+  return (
+    isMainFrame === true &&
+    errorCode !== ERR_ABORTED &&
+    !String(validatedURL ?? '').startsWith('data:')
+  );
+}
+
 export class WindowManager {
   constructor() {
     this.mainWindow = null;
@@ -67,6 +84,9 @@ export class WindowManager {
         minWidth: 800,
         minHeight: 600,
         webPreferences: {
+          // Pinned, not left to Electron's default (GUI-ENV-RFC §6.10): the
+          // preload only needs contextBridge and ipcRenderer.
+          sandbox: true,
           nodeIntegration: false,
           contextIsolation: true,
           enableRemoteModule: false,
@@ -132,9 +152,10 @@ export class WindowManager {
       // Set up error handling for the window
       this.mainWindow.webContents.on(
         'did-fail-load',
-        (event, errorCode, errorDescription) => {
+        (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+          if (!isLoadFailure(errorCode, validatedURL, isMainFrame)) return;
           console.error('Failed to load URL:', {
-            startUrl,
+            url: validatedURL,
             errorCode,
             errorDescription,
           });
@@ -164,6 +185,10 @@ export class WindowManager {
         this.mainWindow.focus();
       });
     } catch (error) {
+      // A navigation error (it has an errno) already reached did-fail-load,
+      // which shows the error page if it was a real failure. Showing it here
+      // too would start two error-page loads that abort each other.
+      if (error.errno !== undefined) return;
       console.error('Error in loadApp:', error);
       this.showErrorPage(`Failed to load application: ${error.message}`);
     }

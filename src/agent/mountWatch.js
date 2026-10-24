@@ -21,22 +21,36 @@ export function watchMount(absPath, rebuild) {
   let stopped = false;
   let watcher = null;
 
-  const arm = () => {
+  const restore = () => {
+    // File vanished — drop the dead watcher, rebuild, re-arm on the new inode.
+    if (watcher) watcher.close();
+    watcher = null;
+    Promise.resolve()
+      .then(rebuild)
+      .then(
+        () => arm({ rebuilt: true }),
+        () => arm() // locked session / transient error — just re-arm
+      );
+  };
+
+  const arm = ({ rebuilt = false } = {}) => {
     if (stopped) return;
     try {
       watcher = fs.watch(absPath, { persistent: false }, () => {
         if (stopped || fs.existsSync(absPath)) return;
-        // File vanished — drop the dead watcher, rebuild, re-arm on the new inode.
-        if (watcher) watcher.close();
-        watcher = null;
-        Promise.resolve()
-          .then(rebuild)
-          .catch(() => {}) // locked session / transient error — just re-arm
-          .then(arm);
+        restore();
       });
       watcher.on('error', () => {});
     } catch {
       /* path not present yet; a later rebuild + arm() will pick it up */
+    }
+    // Deleted again between rebuild() and here: the watch above threw or
+    // follows a dead inode, so nothing would fire. Restore again, after a
+    // pause so a rebuild that never writes the file can't spin.
+    if (rebuilt && !fs.existsSync(absPath)) {
+      setTimeout(() => {
+        if (!stopped && !fs.existsSync(absPath)) restore();
+      }, 100).unref();
     }
   };
 

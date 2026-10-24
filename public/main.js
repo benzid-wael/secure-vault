@@ -1,4 +1,13 @@
-import { app, BrowserWindow, ipcMain, dialog, powerMonitor } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  powerMonitor,
+  clipboard,
+  safeStorage,
+  systemPreferences,
+} from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -28,17 +37,40 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // Import services
-import {
-  VaultService,
-  LEGACY_DEFAULT_PASSWORD,
-} from '../src/electron/services/VaultService.js';
+import { VaultService } from '../src/electron/services/VaultService.js';
 import { ImportExportService } from '../src/electron/services/ImportExportService.js';
 import { VaultSettingsService } from '../src/electron/services/VaultSettingsService.js';
 import { VaultSession } from '../src/electron/services/VaultSession.js';
-import { WindowManager } from '../src/electron/services/WindowManager.js';
+import {
+  WindowManager,
+  isLoadFailure,
+} from '../src/electron/services/WindowManager.js';
 import { MenuService } from '../src/electron/services/MenuService.js';
 import { SecurityManager } from '../src/electron/services/SecurityManager.js';
 import { getVaultsDir } from '../src/electron/utils/appPaths.js';
+import { readFeatures } from '../src/electron/utils/features.js';
+import { EnvVaultRegistry } from '../src/electron/services/EnvVaultRegistry.js';
+import { EnvVaultSession } from '../src/electron/services/EnvVaultSession.js';
+import { ClipboardService } from '../src/electron/services/ClipboardService.js';
+import { createClipboardHandlers } from '../src/electron/services/ClipboardIpc.js';
+import { createEnvVaultHandlers } from '../src/electron/services/EnvVaultIpc.js';
+import { EnvVaultWatcher } from '../src/electron/services/EnvVaultWatcher.js';
+import { VaultKeychain } from '../src/electron/services/VaultKeychain.js';
+import { createPasswordVaultHandlers } from '../src/electron/services/PasswordVaultIpc.js';
+import { OpenedVaults } from '../src/electron/services/OpenedVaults.js';
+import { KeyFileLocations } from '../src/electron/services/KeyFileLocations.js';
+import { isFormat2 } from '../src/electron/utils/passwordVaultEnvelope.js';
+import { EnvVaultRecents } from '../src/electron/services/EnvVaultRecents.js';
+import { AppSettingsStore } from '../src/electron/services/AppSettingsStore.js';
+import {
+  createAppSettingsHandlers,
+  applyAppSettings,
+} from '../src/electron/services/AppSettingsIpc.js';
+import { claimSingleInstance } from '../src/electron/utils/singleInstance.js';
+import {
+  readAllowDebugPort,
+  refusedDebugSwitch,
+} from '../src/electron/utils/debugSwitches.js';
 
 class ElectronApp {
   constructor() {
@@ -54,23 +86,79 @@ class ElectronApp {
 
       console.log('Initializing services...');
       this.windowManager = new WindowManager();
-      this.menuService = new MenuService();
+      // File → Lock Vault locks every env vault in main (New-46); the page
+      // locks the password vault.
+      this.menuService = new MenuService({
+        onLock: () => this.envSession?.lockAll('user'),
+      });
       this.securityManager = new SecurityManager();
 
       console.log('Initializing vault services...');
       // The master password lives here, never in the renderer (see VaultSession).
-      this.session = new VaultSession();
+      // It locks itself after the idle time (Task 13); the page says why.
+      this.session = new VaultSession({
+        onIdle: (vaultName, idleMs) =>
+          this.sendToWindow('vault-locked', {
+            reason: 'idle',
+            minutes: Math.round(idleMs / 60000),
+          }),
+      });
       // Services derive keys through the session so they're reused while
       // the vault is unlocked instead of re-running PBKDF2 per call.
       const deriveKey = (password, salt, iterations) =>
         this.session.deriveKey(password, salt, iterations);
-      this.vaultService = new VaultService(vaultDir, { deriveKey });
-      this.importExportService = new ImportExportService(vaultDir);
+      // Password vaults opened from other folders (New-53): one list, so
+      // every service maps their names to the same files.
+      this.openedVaults = new OpenedVaults();
+      const links = this.openedVaults;
+      this.vaultService = new VaultService(vaultDir, { deriveKey, links });
+      this.importExportService = new ImportExportService(vaultDir, { links });
       this.vaultSettingsService = new VaultSettingsService(vaultDir, {
         deriveKey,
+        links,
       });
       // Set only by the native open dialog (`select-import-file`).
       this.selectedImportPath = null;
+
+      this.features = readFeatures();
+      // Non-secret app settings, readable while every vault is locked (New-2).
+      this.settings = new AppSettingsStore();
+      // Env vaults (GUI-ENV-RFC §6.6): main maps ids to paths and holds keys.
+      // Opened ones are remembered across runs unless turned off (D5).
+      this.envRegistry = new EnvVaultRegistry({
+        dialog,
+        recents: new EnvVaultRecents(),
+        remember: async () => (await this.settings.get()).rememberRecents,
+        extensions: async () => (await this.settings.get()).envVaultExtensions,
+      });
+      // Tells the page about changes made outside the app (Task 16).
+      this.envWatcher = new EnvVaultWatcher({
+        onChange: (id, change) =>
+          this.sendToWindow('env-vault-changed', { id, ...change }),
+      });
+      this.envSession = new EnvVaultSession({
+        // `info` says why (New-47); the page tells the user.
+        onLocked: (id, info) => {
+          this.envWatcher.stop(id);
+          this.sendToWindow('env-vault-locked', { id, ...info });
+        },
+      });
+
+      // The saved idle timeout, once read (Tasks 13, 23).
+      this.applySettings = (next, previous) =>
+        applyAppSettings(
+          {
+            vaultSession: this.session,
+            envSession: this.envSession,
+            registry: this.envRegistry,
+          },
+          next,
+          previous
+        );
+      this.settings
+        .get()
+        .then((saved) => this.applySettings(saved))
+        .catch((error) => console.error('Could not apply settings:', error));
 
       this.mainWindow = null;
       console.log('ElectronApp initialized successfully');
@@ -95,7 +183,8 @@ class ElectronApp {
 
       this.mainWindow.webContents.on(
         'did-fail-load',
-        (event, errorCode, errorDescription) => {
+        (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+          if (!isLoadFailure(errorCode, validatedURL, isMainFrame)) return;
           console.error('Window failed to load:', {
             errorCode,
             errorDescription,
@@ -125,6 +214,23 @@ class ElectronApp {
     }
   }
 
+  /** Bring the window up: a second launch (Task 11) or a dock click. */
+  showWindow() {
+    if (!app.isReady()) return;
+    const win = this.mainWindow;
+    if (!win || win.isDestroyed()) {
+      this.mainWindow = this.windowManager.createMainWindow();
+      // Re-point the application menu at the new window; otherwise its
+      // click handlers keep sending to the old, destroyed window and every
+      // menu item silently stops working after a reopen.
+      this.menuService.createMenu(this.mainWindow);
+      return;
+    }
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  }
+
   setupAppEventHandlers() {
     app.on('window-all-closed', () => {
       if (process.platform !== 'darwin') {
@@ -133,13 +239,7 @@ class ElectronApp {
     });
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        this.mainWindow = this.windowManager.createMainWindow();
-        // Re-point the application menu at the new window; otherwise its
-        // click handlers keep sending to the old, destroyed window and every
-        // menu item silently stops working after a reopen.
-        this.menuService.createMenu(this.mainWindow);
-      }
+      if (BrowserWindow.getAllWindows().length === 0) this.showWindow();
     });
 
     // Security: Prevent new window creation
@@ -174,6 +274,12 @@ class ElectronApp {
     return rest;
   }
 
+  sendToWindow(channel, payload) {
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send(channel, payload);
+    }
+  }
+
   /** Close the session and tell the renderer to drop back to the selector. */
   lockSession() {
     const wasUnlocked = this.session.vaultName !== null;
@@ -185,9 +291,17 @@ class ElectronApp {
 
   setupAutoLock() {
     // Lock whenever the user steps away from the machine.
-    powerMonitor.on('suspend', () => this.lockSession());
-    powerMonitor.on('lock-screen', () => this.lockSession());
-    app.on('before-quit', () => this.session.close());
+    const lockAll = (reason) => {
+      this.lockSession();
+      this.envSession.lockAll(reason);
+    };
+    powerMonitor.on('suspend', () => lockAll('sleep'));
+    powerMonitor.on('lock-screen', () => lockAll('screen-lock'));
+    app.on('before-quit', () => {
+      this.session.close();
+      this.envSession.lockAll('quit');
+      this.envWatcher.stopAll();
+    });
   }
 
   setupHandlers() {
@@ -209,18 +323,96 @@ class ElectronApp {
           : { success: false, error: check.error };
       });
 
-    // IPC Handlers using the new VaultService
-    handle('get-vaults', async () => {
-      try {
-        const vaults = await this.vaultService.getAvailableVaults();
-        return { success: true, data: vaults };
-      } catch (error) {
-        console.error('Error getting vaults:', error);
-        return { success: false, error: error.message };
-      }
+    handle('get-features', () => ({ success: true, ...this.features }));
+    // One clipboard service for every copy (New-3, Task 22): a new copy
+    // replaces a pending clear, whichever screen made either.
+    const clipboardService = new ClipboardService({ clipboard });
+    for (const [channel, fn] of Object.entries(
+      createClipboardHandlers({ clipboard: clipboardService })
+    )) {
+      handle(channel, fn);
+    }
+    // Saved passwords, opt-in per vault, for both vault kinds (New-24,
+    // New-52). The file sits in userData: safeStorage's key belongs to this
+    // app build, so other builds couldn't read it.
+    const keychain = new VaultKeychain({
+      file: path.join(app.getPath('userData'), 'vault-passwords.json'),
+      safeStorage,
+      confirmPresence: async (reason) => {
+        if (
+          process.platform !== 'darwin' ||
+          !systemPreferences.canPromptTouchID()
+        ) {
+          return true;
+        }
+        try {
+          await systemPreferences.promptTouchID(reason);
+          return true;
+        } catch {
+          return false;
+        }
+      },
     });
+    // Behind the New-4 gate: with it off, none of these channels exist.
+    if (this.features.envVaults) {
+      const envHandlers = createEnvVaultHandlers({
+        registry: this.envRegistry,
+        session: this.envSession,
+        getWindow: () => this.mainWindow,
+        dialog,
+        clipboard: clipboardService,
+        watcher: this.envWatcher,
+        keychain,
+      });
+      for (const [channel, fn] of Object.entries(envHandlers)) {
+        handle(channel, fn);
+      }
+    }
+    // App settings (Tasks 13, 23): the idle timeout covers password vaults
+    // too, so these exist with the env gate off.
+    const settingsHandlers = createAppSettingsHandlers({
+      settings: this.settings,
+      apply: this.applySettings,
+    });
+    for (const [channel, fn] of Object.entries(settingsHandlers)) {
+      handle(channel, fn);
+    }
+    // Input in the window (keys, clicks, scrolling), reported by the page:
+    // the only thing that keeps the password vault unlocked (Task 13).
+    handle('vault-activity', () => {
+      this.session.touch();
+      return { success: true };
+    });
+
     // Session lifecycle: these are the only handlers that receive the master
     // password from the renderer, and none of them sends it back.
+    const passwordVaultHandlers = createPasswordVaultHandlers({
+      vaultService: this.vaultService,
+      session: this.session,
+      openSession: (vaultName, password) =>
+        this.openSession(vaultName, password),
+      keychain,
+      opened: this.openedVaults,
+      dialog,
+      getWindow: () => this.mainWindow,
+      // Where each vault's key file was last used, never its content (New-54).
+      keyFileLocations: new KeyFileLocations(),
+      // Import reads only the file the user picked in `select-import-file`;
+      // the renderer cannot name another path.
+      importExportService: this.importExportService,
+      importSelection: {
+        get: () => this.selectedImportPath,
+        clear: () => {
+          this.selectedImportPath = null;
+        },
+      },
+    });
+    for (const [channel, fn] of Object.entries(passwordVaultHandlers.vault)) {
+      handleVault(channel, fn);
+    }
+    for (const [channel, fn] of Object.entries(passwordVaultHandlers.general)) {
+      handle(channel, fn);
+    }
     handleVault('create-vault', async (event, vaultName, masterPassword) => {
       const result = await this.vaultService.createVault(
         vaultName,
@@ -228,20 +420,6 @@ class ElectronApp {
       );
       if (result.success) this.session.open(vaultName, masterPassword);
       return result;
-    });
-    handleVault('unlock-vault', async (event, vaultName, password) => {
-      const result = await this.vaultService.verifyPassword(
-        vaultName,
-        password
-      );
-      if (!result.success) return result;
-      await this.openSession(vaultName, password);
-      // A vault created by an older version may still use its built-in
-      // password; the UI asks for it to be changed.
-      return {
-        ...result,
-        usesDefaultPassword: password === LEGACY_DEFAULT_PASSWORD,
-      };
     });
     handle('lock-vault', () => {
       this.session.close();
@@ -258,34 +436,6 @@ class ElectronApp {
       this.session.withPassword(vaultName, (password) =>
         this.vaultService.saveVault(vaultName, password, data)
       )
-    );
-    handleVault(
-      'change-master-password',
-      // The current password is still re-entered and checked here: holding a
-      // session must not be enough to take over the vault.
-      (event, vaultName, currentPassword, newPassword) =>
-        this.session.withPassword(vaultName, async () => {
-          const result = await this.vaultService.changePassword(
-            vaultName,
-            currentPassword,
-            newPassword
-          );
-          if (result.success) this.session.open(vaultName, newPassword);
-          return result;
-        })
-    );
-    handleVault(
-      'delete-vault',
-      async (event, vaultName, confirmationPassword) => {
-        const result = await this.vaultService.deleteVault(
-          vaultName,
-          confirmationPassword
-        );
-        if (result.success && this.session.isUnlocked(vaultName)) {
-          this.session.close();
-        }
-        return result;
-      }
     );
     handleVault('generate-recovery-key', (event, vaultName) =>
       this.session.withPassword(vaultName, (password) =>
@@ -365,21 +515,6 @@ class ElectronApp {
       })
     );
 
-    // Import reads only the file the user picked in `select-import-file`;
-    // the renderer cannot name another path.
-    handleVault('import-vault', (event, newVaultName, password) => {
-      const importPath = this.selectedImportPath;
-      if (!importPath) {
-        return { success: false, error: 'Choose a file to import first' };
-      }
-      return this.importExportService
-        .importVault(importPath, newVaultName, password)
-        .then((result) => {
-          if (result.success) this.selectedImportPath = null;
-          return result;
-        });
-    });
-
     handleVault(
       'recover-vault-with-old-password',
       async (event, vaultName, oldPassword) =>
@@ -421,28 +556,58 @@ class ElectronApp {
       }
 
       this.selectedImportPath = filePath;
-      return { success: true, filePath };
+      // Whether it's a vault that uses a key file (New-55), so the page can
+      // offer its recovery key; the import itself checks again.
+      let keyFile = false;
+      try {
+        keyFile = isFormat2(
+          JSON.parse(await fs.promises.readFile(filePath, 'utf8'))
+            .originalVaultData
+        );
+      } catch {
+        // Unreadable: the import says so.
+      }
+      return { success: true, filePath, keyFile };
     });
   }
 }
 
-// Initialize the application
-console.log('Starting application initialization...');
-const electronApp = new ElectronApp();
+// A packaged build started with a debugging switch quits before it opens
+// any window: it would expose the pages of unlocked vaults (New-40).
+const refusedSwitch = refusedDebugSwitch({
+  isPackaged: app.isPackaged,
+  allowDebugPort: app.isPackaged && readAllowDebugPort(app.getAppPath()),
+  hasSwitch: (name) => app.commandLine.hasSwitch(name),
+});
 
-app
-  .whenReady()
-  .then(() => {
-    console.log('Electron is ready, initializing app...');
-    electronApp.initialize();
-  })
-  .catch((error) => {
-    console.error('Error in app.whenReady():', error);
-    if (dialog && dialog.showErrorBox) {
-      dialog.showErrorBox(
-        'App Initialization Error',
-        `Failed to start application: ${error.message}`
-      );
-    }
-    app.quit();
-  });
+// One process per user: a second launch shows this one's window (Task 11).
+let electronApp = null;
+if (refusedSwitch) {
+  console.error(`--${refusedSwitch} is refused in this build; quitting.`);
+  app.exit(1);
+} else if (claimSingleInstance(app, () => electronApp?.showWindow())) {
+  startApp();
+}
+
+function startApp() {
+  // Initialize the application
+  console.log('Starting application initialization...');
+  electronApp = new ElectronApp();
+
+  app
+    .whenReady()
+    .then(() => {
+      console.log('Electron is ready, initializing app...');
+      electronApp.initialize();
+    })
+    .catch((error) => {
+      console.error('Error in app.whenReady():', error);
+      if (dialog && dialog.showErrorBox) {
+        dialog.showErrorBox(
+          'App Initialization Error',
+          `Failed to start application: ${error.message}`
+        );
+      }
+      app.quit();
+    });
+}

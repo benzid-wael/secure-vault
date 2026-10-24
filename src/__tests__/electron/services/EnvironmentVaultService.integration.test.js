@@ -5,47 +5,30 @@ import path from 'path';
 
 import { EnvironmentVaultService } from '../../../electron/services/EnvironmentVaultService.js';
 
-vi.mock('fs-extra');
-vi.mock('os');
-
-const fsMock = vi.mocked(fs);
-const osMock = vi.mocked(os);
-
 describe('EnvironmentVaultService Integration', () => {
   const testPassword = 'TestPass123!@#';
-  const vaultPath = '/tmp/test-env-vault/test.env.vault';
-
-  function writtenVault() {
-    return fsMock.writeJSON.mock.calls.slice(-1)[0][1];
-  }
-
-  function mockReadVault() {
-    fsMock.pathExists.mockResolvedValue(true);
-    fsMock.readJSON.mockResolvedValue(writtenVault());
-  }
+  // A real vault in a temp dir: since Task 6 writes lock and re-read the
+  // file, which a mocked fs-extra can't stand in for.
+  let dir;
+  let vaultPath;
 
   beforeEach(() => {
-    vi.clearAllMocks();
-    osMock.homedir.mockReturnValue('/Users/testuser');
-    fsMock.pathExists.mockResolvedValue(false);
-    fsMock.readFile.mockReset();
-    fsMock.readJSON.mockReset();
-    fsMock.writeJSON.mockReset();
-    fsMock.ensureDir.mockResolvedValue(undefined);
-    fsMock.existsSync.mockReturnValue(false);
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-env-integration-'));
+    vaultPath = path.join(dir, 'test.env.vault');
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 
   describe('Full CRUD workflow', () => {
     it('should init, set, get, list, export, and delete environments', async () => {
       // --- INIT: create empty vault ---
       const initResult = await EnvironmentVaultService.init({
-        name: 'test',
+        vault: vaultPath,
         password: testPassword,
       });
       expect(initResult.success).toBe(true);
-
-      // mock it for subsequent reads
-      mockReadVault();
 
       // --- SET: create env and set key via auto-create ---
       const setResult = await EnvironmentVaultService.setEnv(
@@ -57,8 +40,6 @@ describe('EnvironmentVaultService Integration', () => {
       );
       expect(setResult.success).toBe(true);
 
-      mockReadVault();
-
       // --- SET: add another key ---
       const set2Result = await EnvironmentVaultService.setEnv(
         vaultPath,
@@ -69,8 +50,6 @@ describe('EnvironmentVaultService Integration', () => {
         { isPublic: true }
       );
       expect(set2Result.success).toBe(true);
-
-      mockReadVault();
 
       // --- SHOW: inspect staging ---
       const showResult = await EnvironmentVaultService.showEnv(
@@ -150,8 +129,6 @@ describe('EnvironmentVaultService Integration', () => {
       );
       expect(renameResult.success).toBe(true);
 
-      mockReadVault();
-
       const renameCheck = await EnvironmentVaultService.listEnvs(
         vaultPath,
         testPassword
@@ -166,8 +143,6 @@ describe('EnvironmentVaultService Integration', () => {
       );
       expect(deleteResult.success).toBe(true);
 
-      mockReadVault();
-
       const deleteCheck = await EnvironmentVaultService.listEnvs(
         vaultPath,
         testPassword
@@ -179,7 +154,6 @@ describe('EnvironmentVaultService Integration', () => {
   describe('Version management', () => {
     it('should track versions, squash, and rollback', async () => {
       await EnvironmentVaultService.createVault(vaultPath, testPassword);
-      mockReadVault();
 
       // Add 4 versions
       await EnvironmentVaultService.setEnv(
@@ -189,7 +163,6 @@ describe('EnvironmentVaultService Integration', () => {
         'VERSION',
         '1'
       );
-      mockReadVault();
 
       await EnvironmentVaultService.setEnv(
         vaultPath,
@@ -199,7 +172,6 @@ describe('EnvironmentVaultService Integration', () => {
         '2',
         { message: 'Bump to 2' }
       );
-      mockReadVault();
 
       await EnvironmentVaultService.setEnv(
         vaultPath,
@@ -209,7 +181,6 @@ describe('EnvironmentVaultService Integration', () => {
         '3',
         { message: 'Bump to 3' }
       );
-      mockReadVault();
 
       await EnvironmentVaultService.setEnv(
         vaultPath,
@@ -221,7 +192,6 @@ describe('EnvironmentVaultService Integration', () => {
       );
 
       // Verify active version is v4
-      mockReadVault();
       const show4 = await EnvironmentVaultService.showEnv(
         vaultPath,
         testPassword,
@@ -232,7 +202,6 @@ describe('EnvironmentVaultService Integration', () => {
       expect(show4.data.keys.find((k) => k.key === 'VERSION').value).toBe('4');
 
       // Rollback to v2
-      mockReadVault();
       const rollbackResult = await EnvironmentVaultService.rollbackEnv(
         vaultPath,
         testPassword,
@@ -242,7 +211,6 @@ describe('EnvironmentVaultService Integration', () => {
       expect(rollbackResult.success).toBe(true);
 
       // Verify active version has v2's data (rollback creates a new version with v1 data)
-      mockReadVault();
       const afterRollback = await EnvironmentVaultService.showEnv(
         vaultPath,
         testPassword,
@@ -254,7 +222,6 @@ describe('EnvironmentVaultService Integration', () => {
       expect(afterRollback.data.totalVersions).toBe(5);
 
       // Squash to keep 1 version
-      mockReadVault();
       const squashResult = await EnvironmentVaultService.squashEnv(
         vaultPath,
         testPassword,
@@ -263,7 +230,6 @@ describe('EnvironmentVaultService Integration', () => {
       );
       expect(squashResult.success).toBe(true);
 
-      mockReadVault();
       const finalHistory = await EnvironmentVaultService.getHistory(
         vaultPath,
         testPassword,
@@ -276,7 +242,6 @@ describe('EnvironmentVaultService Integration', () => {
   describe('Diff environments', () => {
     it('should diff two environments', async () => {
       await EnvironmentVaultService.createVault(vaultPath, testPassword);
-      mockReadVault();
 
       await EnvironmentVaultService.setEnv(
         vaultPath,
@@ -285,7 +250,6 @@ describe('EnvironmentVaultService Integration', () => {
         'HOST',
         'staging.example.com'
       );
-      mockReadVault();
 
       await EnvironmentVaultService.setEnv(
         vaultPath,
@@ -294,7 +258,6 @@ describe('EnvironmentVaultService Integration', () => {
         'PORT',
         '3000'
       );
-      mockReadVault();
 
       await EnvironmentVaultService.setEnv(
         vaultPath,
@@ -303,7 +266,6 @@ describe('EnvironmentVaultService Integration', () => {
         'HOST',
         'prod.example.com'
       );
-      mockReadVault();
 
       await EnvironmentVaultService.setEnv(
         vaultPath,
@@ -313,8 +275,6 @@ describe('EnvironmentVaultService Integration', () => {
         '8080'
       );
 
-      mockReadVault();
-
       // Add a unique key to each
       await EnvironmentVaultService.setEnv(
         vaultPath,
@@ -323,7 +283,6 @@ describe('EnvironmentVaultService Integration', () => {
         'DEBUG',
         'true'
       );
-      mockReadVault();
 
       await EnvironmentVaultService.setEnv(
         vaultPath,
@@ -332,8 +291,6 @@ describe('EnvironmentVaultService Integration', () => {
         'CACHE_SIZE',
         '2048'
       );
-
-      mockReadVault();
 
       const diff = await EnvironmentVaultService.diffEnvs(
         vaultPath,
@@ -352,7 +309,6 @@ describe('EnvironmentVaultService Integration', () => {
   describe('Template generation', () => {
     it('should generate template with required markers', async () => {
       await EnvironmentVaultService.createVault(vaultPath, testPassword);
-      mockReadVault();
 
       await EnvironmentVaultService.setEnv(
         vaultPath,
@@ -361,26 +317,19 @@ describe('EnvironmentVaultService Integration', () => {
         'DB_HOST',
         'localhost'
       );
-      mockReadVault();
 
       // Manually set required via adding a version with required list
-      const loadResult = await EnvironmentVaultService.loadVault(
-        vaultPath,
-        testPassword
+      await EnvironmentVaultService.transact(vaultPath, testPassword, (vault) =>
+        vault.addVersion(
+          'app',
+          { DB_HOST: 'localhost', DB_PASS: 'secret' },
+          {
+            required: ['DB_HOST'],
+            nonSensitive: ['DB_HOST'],
+            message: 'Add required marker',
+          }
+        )
       );
-      const vault = loadResult.data;
-      vault.addVersion(
-        'app',
-        { DB_HOST: 'localhost', DB_PASS: 'secret' },
-        {
-          required: ['DB_HOST'],
-          nonSensitive: ['DB_HOST'],
-          message: 'Add required marker',
-        }
-      );
-      await EnvironmentVaultService.saveVault(vaultPath, testPassword, vault);
-
-      mockReadVault();
 
       const templateResult = await EnvironmentVaultService.templateEnv(
         vaultPath,
@@ -396,8 +345,9 @@ describe('EnvironmentVaultService Integration', () => {
   describe('Import from .env files', () => {
     it('should import .env file content into a new environment', async () => {
       await EnvironmentVaultService.createVault(vaultPath, testPassword);
-      mockReadVault();
-      fsMock.readFile.mockResolvedValue(
+      const envFile = path.join(dir, '.env.prod');
+      fs.writeFileSync(
+        envFile,
         'API_KEY=sk-123\nAPI_URL=https://api.example.com'
       );
 
@@ -405,16 +355,10 @@ describe('EnvironmentVaultService Integration', () => {
         vaultPath,
         testPassword,
         'production',
-        '/path/to/.env.prod'
+        envFile
       );
 
       expect(importResult.success).toBe(true);
-      expect(fsMock.readFile).toHaveBeenCalledWith(
-        '/path/to/.env.prod',
-        'utf-8'
-      );
-
-      mockReadVault();
 
       const showResult = await EnvironmentVaultService.showEnv(
         vaultPath,
@@ -431,7 +375,6 @@ describe('EnvironmentVaultService Integration', () => {
 
     it('should change password and still access data', async () => {
       await EnvironmentVaultService.createVault(vaultPath, testPassword);
-      mockReadVault();
 
       await EnvironmentVaultService.setEnv(
         vaultPath,
@@ -440,7 +383,6 @@ describe('EnvironmentVaultService Integration', () => {
         'KEY',
         'secret-value'
       );
-      mockReadVault();
 
       // Change password
       const changeResult = await EnvironmentVaultService.changePassword(
@@ -451,7 +393,6 @@ describe('EnvironmentVaultService Integration', () => {
       expect(changeResult.success).toBe(true);
 
       // Old password no longer works
-      mockReadVault();
       const oldLoad = await EnvironmentVaultService.loadVault(
         vaultPath,
         testPassword
@@ -473,9 +414,6 @@ describe('EnvironmentVaultService Integration', () => {
   describe('Error handling', () => {
     it('should handle wrong password for load', async () => {
       await EnvironmentVaultService.createVault(vaultPath, testPassword);
-      const file = writtenVault();
-      fsMock.pathExists.mockResolvedValue(true);
-      fsMock.readJSON.mockResolvedValue(file);
 
       const result = await EnvironmentVaultService.loadVault(
         vaultPath,
@@ -486,8 +424,6 @@ describe('EnvironmentVaultService Integration', () => {
     });
 
     it('should handle non-existent vault', async () => {
-      fsMock.pathExists.mockResolvedValue(false);
-
       const result = await EnvironmentVaultService.loadVault(
         '/nonexistent.vault',
         testPassword
@@ -498,7 +434,6 @@ describe('EnvironmentVaultService Integration', () => {
 
     it('should handle missing key in getEnv', async () => {
       await EnvironmentVaultService.createVault(vaultPath, testPassword);
-      mockReadVault();
 
       await EnvironmentVaultService.setEnv(
         vaultPath,
@@ -507,7 +442,6 @@ describe('EnvironmentVaultService Integration', () => {
         'EXISTS',
         'yes'
       );
-      mockReadVault();
 
       const result = await EnvironmentVaultService.getEnv(
         vaultPath,
@@ -529,9 +463,6 @@ describe('EnvironmentVaultService Integration', () => {
 
     it('should reject weak password on change', async () => {
       await EnvironmentVaultService.createVault(vaultPath, testPassword);
-      const file = writtenVault();
-      fsMock.pathExists.mockResolvedValue(true);
-      fsMock.readJSON.mockResolvedValue(file);
 
       const result = await EnvironmentVaultService.changePassword(
         vaultPath,
@@ -543,7 +474,6 @@ describe('EnvironmentVaultService Integration', () => {
 
     it('should handle delete of non-existent environment', async () => {
       await EnvironmentVaultService.createVault(vaultPath, testPassword);
-      mockReadVault();
 
       const result = await EnvironmentVaultService.deleteEnv(
         vaultPath,
@@ -555,7 +485,6 @@ describe('EnvironmentVaultService Integration', () => {
 
     it('should handle rename of non-existent environment', async () => {
       await EnvironmentVaultService.createVault(vaultPath, testPassword);
-      mockReadVault();
 
       const result = await EnvironmentVaultService.renameEnv(
         vaultPath,

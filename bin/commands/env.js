@@ -8,7 +8,11 @@ import fs from 'fs-extra';
 import password from '@inquirer/password';
 
 import { EnvironmentVaultService } from '../../src/electron/services/EnvironmentVaultService.js';
-import { EnvironmentVault } from '../../src/electron/models/EnvironmentVault.js';
+import {
+  EnvironmentVault,
+  ENV_KEY_PATTERN,
+  invalidKeyMessage,
+} from '../../src/electron/models/EnvironmentVault.js';
 import {
   INJECT_MODES,
   DEFAULT_ALLOWLIST_FILE,
@@ -39,7 +43,18 @@ import {
   renderDeliverEntry,
 } from './envDeliverHelpers.js';
 import { getPreset, scaffoldPreset } from './envScaffold.js';
-import { checkStructure, checkResolution, hasErrors } from './envDoctor.js';
+import {
+  checkStructure,
+  checkResolution,
+  checkLock,
+  checkFormat,
+  hasErrors,
+} from './envDoctor.js';
+import { VaultLock } from '../../src/electron/services/VaultLock.js';
+import {
+  checkVaultFormat,
+  VAULT_FORMATS,
+} from '../../src/electron/utils/vaultFormat.js';
 import { EnvironmentResolver } from '../../src/electron/services/EnvironmentResolver.js';
 import { SessionManager } from '../../src/agent/sessionManager.js';
 import { MountRegistry } from '../../src/agent/mountRegistry.js';
@@ -53,6 +68,7 @@ import {
 } from '../../src/agent/auditLog.js';
 import {
   agentPaths,
+  agentUnsupportedReason,
   startDaemonServer,
   sendRequest,
   streamRequest,
@@ -108,7 +124,54 @@ const EXIT = {
   VALIDATION_ERROR: { code: 12, symbol: 'VALIDATION_ERROR' },
   FILE_WRITE_FAILED: { code: 13, symbol: 'FILE_WRITE_FAILED' },
   INJECTION_FAILED: { code: 14, symbol: 'INJECTION_FAILED' },
+  ENV_VAULT_NEWER_FORMAT: { code: 15, symbol: 'ENV_VAULT_NEWER_FORMAT' },
 };
+
+// Subcommands that write the vault: refused on a vault using features this
+// build doesn't know, since the write would drop them (New-29).
+const WRITE_COMMANDS = new Set([
+  'import',
+  'set',
+  'rm',
+  'delete',
+  'rename',
+  'extends',
+  'copy',
+  'rollback',
+  'squash',
+  'change-password',
+]);
+
+/**
+ * Before any env subcommand: check the vault's format against this build
+ * (New-29). A format it can't read stops every command; unknown features
+ * stop writes and print a warning for reads. `doctor` reports it itself.
+ * Read-only: only the plaintext envelope is parsed, no password needed.
+ */
+function checkFormatBeforeAction(actionCmd) {
+  const name = actionCmd.name();
+  if (name === 'doctor' || name === 'init') return;
+  const options = actionCmd.opts();
+  const vaultPath = EnvironmentVaultService.resolveVaultPath({
+    vault: options.vault,
+    name: options.name,
+  });
+  if (!vaultPath) return; // the command reports a missing vault itself
+  let envelope;
+  try {
+    envelope = JSON.parse(fs.readFileSync(vaultPath, 'utf8'));
+  } catch {
+    return; // missing or unreadable: the command's own error is clearer
+  }
+  if (envelope?.type !== 'environment-vault') return;
+  const format = checkVaultFormat(envelope, 'env', vaultPath);
+  if (!format.readable || (!format.writable && WRITE_COMMANDS.has(name))) {
+    fail(EXIT.ENV_VAULT_NEWER_FORMAT, format.message);
+  }
+  if (!format.writable && !isQuiet) {
+    console.error(chalk.yellow(`Warning: ${format.message}`));
+  }
+}
 
 function fail(spec, message) {
   console.error(`[${spec.symbol}] ${message}`);
@@ -313,8 +376,9 @@ export function registerEnvCommand(program) {
     .description('Manage environment vaults')
     .option('--quiet', 'Suppress non-error output');
 
-  env.hook('preAction', (thisCmd) => {
+  env.hook('preAction', (thisCmd, actionCmd) => {
     isQuiet = !!thisCmd.opts().quiet;
+    checkFormatBeforeAction(actionCmd);
   });
 
   env
@@ -459,6 +523,10 @@ export function registerEnvCommand(program) {
     .option('--password <password>', 'Vault password (non-interactive)')
     .option('--password-file <path>', 'Read vault password from a file')
     .option('--password-stdin', 'Read vault password from stdin')
+    .option(
+      '--comments',
+      'Keep the # comment lines directly above a key as its comment'
+    )
     .action(async (envName, files, options) => {
       const spinner = oraQuiet('Importing .env files...').start();
 
@@ -475,20 +543,22 @@ export function registerEnvCommand(program) {
           process.exit(1);
         }
 
-        for (const file of files) {
-          spinner.text = `Importing ${file} as "${envName}"...`;
+        spinner.text = `Importing ${files.join(', ')} as "${envName}"...`;
+        // One version with every file's keys; a later file wins.
+        const result = await EnvironmentVaultService.importEnvFile(
+          vaultPath,
+          vaultPassword,
+          envName,
+          files,
+          { comments: !!options.comments }
+        );
 
-          const result = await EnvironmentVaultService.importEnvFile(
-            vaultPath,
-            vaultPassword,
-            envName,
-            file
-          );
-
-          if (!result.success) {
-            spinner.fail(chalk.red(`${file}: ${result.error}`));
-            process.exit(1);
-          }
+        if (!result.success) {
+          spinner.fail(chalk.red(result.error));
+          process.exit(1);
+        }
+        for (const w of result.warnings ?? []) {
+          console.error(chalk.yellow(`${w.file}:${w.line}: ${w.message}`));
         }
 
         spinner.succeed(
@@ -520,13 +590,29 @@ export function registerEnvCommand(program) {
       'Read the value from stdin (keeps it out of argv, shell history and temp files)'
     )
     .option('--encode <codec>', 'Encode the value before storing (base64)')
-    .option('--public', 'Mark variable as non-sensitive')
+    .option(
+      '--public',
+      'Mark variable as non-sensitive (kept on later sets until --secret)'
+    )
+    .option(
+      '--secret',
+      'Mark variable as sensitive (the default for a new key)'
+    )
     .option('--required', 'Mark variable as required (checked by validate)')
     .option('--extends <parent>', 'Set this environment to extend <parent>')
     .option('-m, --message <text>', 'Version message')
+    .option(
+      '--comment <text>',
+      'Note about the key, shown by show and the desktop app ("" removes it)'
+    )
     .option('--description <text>', 'Set environment description')
     .action(async (key, value, options) => {
       try {
+        // A key a .env file can't hold is refused before any prompt (Task 9).
+        if (!ENV_KEY_PATTERN.test(key)) {
+          console.error(chalk.red(invalidKeyMessage(key)));
+          process.exit(1);
+        }
         // Validate --encode before touching the vault so a typo fails fast.
         if (options.encode && !ENCODERS.includes(options.encode)) {
           console.error(
@@ -534,6 +620,10 @@ export function registerEnvCommand(program) {
               `Unknown encode "${options.encode}" (supported: ${ENCODERS.join(', ')})`
             )
           );
+          process.exit(1);
+        }
+        if (options.public && options.secret) {
+          console.error(chalk.red('Use --public or --secret, not both.'));
           process.exit(1);
         }
         const fromFile = options.in !== undefined;
@@ -636,9 +726,15 @@ export function registerEnvCommand(program) {
           key,
           value,
           {
-            isPublic: !!options.public,
+            // Neither flag keeps the key's current flag.
+            isPublic: options.public
+              ? true
+              : options.secret
+                ? false
+                : undefined,
             isRequired: !!options.required,
             message: options.message,
+            comment: options.comment,
           }
         );
 
@@ -785,6 +881,11 @@ export function registerEnvCommand(program) {
               : '****'
             : k.value;
           console.log(`  ${chalk.cyan(k.key)} = ${display}`);
+          if (k.comment) {
+            for (const line of k.comment.split('\n')) {
+              console.log(chalk.gray(`      # ${line}`));
+            }
+          }
         }
 
         console.log();
@@ -892,6 +993,7 @@ export function registerEnvCommand(program) {
       'dotenv'
     )
     .option('--clip', 'Copy output to clipboard')
+    .option('--comments', 'Write key comments as # lines (dotenv format)')
     .action(async (envName, options) => {
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
@@ -901,7 +1003,8 @@ export function registerEnvCommand(program) {
           vaultPath,
           vaultPassword,
           name,
-          options.format
+          options.format,
+          { comments: !!options.comments }
         );
 
         if (!result.success) {
@@ -1090,7 +1193,9 @@ export function registerEnvCommand(program) {
 
   env
     .command('doctor')
-    .description('Diagnose the .vaultrc delivery wiring (read-only)')
+    .description(
+      'Diagnose the .vaultrc delivery wiring and the vault lock (read-only)'
+    )
     .argument('[envName]', 'Environment to resolve variables against')
     .option('-n, --name <name>', 'Vault name')
     .option('-v, --vault <path>', 'Exact vault file path')
@@ -1100,7 +1205,7 @@ export function registerEnvCommand(program) {
     .action(async (envArg, options) => {
       try {
         const { config, dir } = findProjectConfig();
-        if (!dir) {
+        if (!dir && !options.vault && !options.name) {
           console.log(
             chalk.yellow('No .vaultrc found — nothing to diagnose.') +
               chalk.gray(
@@ -1120,11 +1225,10 @@ export function registerEnvCommand(program) {
           // No .gitignore — coverage checks will flag artifacts as unignored.
         }
 
-        const { results, manifest } = checkStructure({
-          config,
-          baseDir,
-          gitignore,
-        });
+        // Without a .vaultrc (only -v/--name), just the vault itself.
+        const { results, manifest } = dir
+          ? checkStructure({ config, baseDir, gitignore })
+          : { results: [], manifest: null };
 
         // A vault must exist for delivery to work at all.
         const vaultPath = EnvironmentVaultService.resolveVaultPath({
@@ -1140,6 +1244,23 @@ export function registerEnvCommand(program) {
             title: 'No environment vault found',
             fix: 'Create one with `vault env init` (or pass -v/--name).',
           });
+        } else {
+          try {
+            const envelope = await fs.readJSON(vaultPath);
+            results.push(
+              ...checkFormat(
+                checkVaultFormat(envelope, 'env', vaultPath),
+                VAULT_FORMATS.env.features
+              )
+            );
+          } catch (err) {
+            results.push({
+              level: 'error',
+              title: 'Vault file is not valid JSON',
+              detail: err.message,
+            });
+          }
+          results.push(...checkLock(await new VaultLock(vaultPath).inspect()));
         }
 
         // Deep check: only when the vault is unlockable without a prompt, so
@@ -1213,6 +1334,13 @@ export function registerEnvCommand(program) {
   const agent = env
     .command('agent')
     .description('Background session daemon (start/stop/status/lock/unlock)');
+  agent.hook('preAction', () => {
+    const reason = agentUnsupportedReason();
+    if (reason) {
+      console.error(chalk.red(reason));
+      process.exit(1);
+    }
+  });
 
   agent
     .command('run')
@@ -1731,6 +1859,10 @@ export function registerEnvCommand(program) {
     .option('--password <password>', 'Vault password (non-interactive)')
     .option('--password-file <path>', 'Read vault password from a file')
     .option('--password-stdin', 'Read vault password from stdin')
+    .option(
+      '--keep-references',
+      'Leave {{env:OLD/KEY}} references as they are (they stop resolving)'
+    )
     .action(async (oldName, newName, options) => {
       const spinner = oraQuiet(
         `Renaming "${oldName}" to "${newName}"...`
@@ -1739,11 +1871,13 @@ export function registerEnvCommand(program) {
       try {
         const { vaultPath, vaultPassword } = await loadVault(options);
 
+        // Envs extending it follow; references too unless kept (New-44).
         const result = await EnvironmentVaultService.renameEnv(
           vaultPath,
           vaultPassword,
           oldName,
-          newName
+          newName,
+          { updateReferences: !options.keepReferences }
         );
 
         if (!result.success) {
@@ -1751,7 +1885,17 @@ export function registerEnvCommand(program) {
           process.exit(1);
         }
 
-        spinner.succeed(chalk.green(`Renamed "${oldName}" to "${newName}".`));
+        const count = result.updated.reduce((n, r) => n + r.count, 0);
+        spinner.succeed(
+          chalk.green(
+            `Renamed "${oldName}" to "${newName}".` +
+              (count > 0
+                ? ` Updated ${count} ${count === 1 ? 'reference' : 'references'} in ${result.updated
+                    .map((r) => r.env)
+                    .join(', ')}.`
+                : '')
+          )
+        );
       } catch (error) {
         spinner.fail(chalk.red(error.message));
         process.exit(1);

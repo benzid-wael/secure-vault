@@ -8,8 +8,13 @@ password.
 
 ```bash
 vault info                       # show version and vault location
-vault recover --name <vault>     # recover a vault with your master password
+vault recover --name <vault>     # recover a vault (password, or recovery key if it uses a key file)
 ```
+
+For a vault that needs a key file (set in the desktop app), `vault recover`
+asks for its **recovery key** instead, then a new password, and writes
+`<vault>-recovered.vault`: a copy that opens with the new password alone, with
+a new recovery key it prints. The vault itself is left as it is.
 
 `vault info` prints the version and the on-disk location of your vaults — handy
 for confirming the CLI and the GUI point at the same place.

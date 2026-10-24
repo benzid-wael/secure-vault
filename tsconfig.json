@@ -23,6 +23,12 @@
       "@/*": ["src/*"]
     }
   },
-  "include": ["src/**/*.js", "src/**/*.jsx", "bin/**/*.js", "scripts/**/*.js"],
+  "include": [
+    "src/**/*.js",
+    "src/**/*.jsx",
+    "src/**/*.d.ts",
+    "bin/**/*.js",
+    "scripts/**/*.js"
+  ],
   "exclude": ["node_modules", "build", "dist", "coverage"]
 }

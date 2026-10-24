@@ -1,18 +1,55 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'module';
+import { readFileSync } from 'node:fs';
+import {
+  DEV_PORT,
+  RENDERER_CSP,
+  devRendererCsp,
+} from './src/electron/utils/rendererCsp.js';
 
 const require = createRequire(import.meta.url);
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const isDev = process.env.NODE_ENV === 'development';
 
+/** Serve only: the dev policy, first in <head>, over the final HTML. */
+const devCspMeta = () => ({
+  name: 'renderer-csp-dev',
+  apply: 'serve',
+  transformIndexHtml: {
+    order: 'post',
+    // The port the server was started on (`--port` included).
+    handler: (html, ctx) =>
+      html.replace(
+        /<head>/,
+        `<head>\n    <meta http-equiv="Content-Security-Policy" content="${devRendererCsp(
+          html,
+          ctx.server?.config.server.port ?? DEV_PORT,
+          readFileSync(resolve(root, 'index.html'), 'utf8')
+        )}" />`
+      ),
+  },
+});
+
+const cspMeta = () => ({
+  name: 'renderer-csp',
+  apply: 'build',
+  transformIndexHtml: () => [
+    {
+      tag: 'meta',
+      attrs: { 'http-equiv': 'Content-Security-Policy', content: RENDERER_CSP },
+      injectTo: 'head-prepend',
+    },
+  ],
+});
+
 export default defineConfig({
   root: '.',
   base: './',
-  plugins: [react()],
+  plugins: [react(), cspMeta(), devCspMeta()],
   build: {
     outDir: 'build',
     emptyOutDir: true,
@@ -50,7 +87,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 600, // Adjust limit to account for initial bundle
   },
   server: {
-    port: 3000,
+    port: DEV_PORT,
   },
   resolve: {
     alias: {
@@ -108,10 +145,12 @@ export default defineConfig({
         'lcov',
       ],
       reportsDirectory: './coverage',
-      all: true,
       clean: true,
       skipFull: false,
       reportOnFailure: true,
+      // Every source file counts, the main process's included; one no test
+      // loads counts at 0% (New-6).
+      include: ['src/**/*.{js,jsx}'],
       exclude: [
         '**/node_modules/**',
         '**/public/**',
@@ -126,21 +165,18 @@ export default defineConfig({
         '**/*/testData.js',
         '**/scripts/**',
         '**/bin/**',
-        'src/electron/**',
         'src/__tests__/**',
         'src/**/__tests__/**',
         'src/**/*.test.{js,jsx,ts,tsx}',
       ],
-      // Recalibrated for vitest 4: its v8 provider switched to AST-aware
-      // remapping, which reports ~11 points lower than vitest 1's
-      // v8-to-istanbul mapping on the same tests. Coverage did not regress —
-      // the measurement got stricter. These values sit just below the current
-      // accurate numbers; raise them as real test coverage improves.
+      // About 2 points under the totals measured when src/electron/** came
+      // in (New-6, 2026-10-23: 89.6 / 86.2 / 88.6 / 84.0); raise them as
+      // coverage improves. Keep in sync with scripts/coverage-check.js.
       thresholds: {
-        lines: 68,
-        functions: 60,
-        statements: 67,
-        branches: 64,
+        lines: 87,
+        functions: 84,
+        statements: 86,
+        branches: 82,
       },
     },
   },

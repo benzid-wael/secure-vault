@@ -111,12 +111,7 @@ export class VaultRecoveryService {
     }
 
     console.log(chalk.green('✅ Temporary vault is working as expected!'));
-    let idx = 0;
-    let fileName = `${vaultName}-recovered.vault`;
-    while (await fs.pathExists(path.join(this.vaultDir, fileName))) {
-      idx++;
-      fileName = `${vaultName}-recovered-${idx}.vault`;
-    }
+    const fileName = `${await this.#recoveredName(vaultName)}.vault`;
     // Move temp file to final location (atomic operation)
     await fs.move(tempPath, path.join(this.vaultDir, fileName), {
       overwrite: true,
@@ -125,5 +120,54 @@ export class VaultRecoveryService {
       chalk.green('✅ Vault recovered successfully, new Vault: ', fileName)
     );
     return true;
+  }
+
+  /**
+   * A vault that uses a key file, recovered with its recovery key alone
+   * (New-54 step 5, D2): a copy, `<name>-recovered.vault`, opens with
+   * `newPassword` alone and has a new recovery key. The vault itself is
+   * left as it is, as `recover` leaves it.
+   * @returns {Promise<{success: boolean, fileName?: string,
+   *   recoveryKey?: string, code?: string, error?: string}>}
+   */
+  async recoverWithRecoveryKey(vaultName, recoveryKey, newPassword) {
+    const vs = new VaultService(this.vaultDir);
+    const copy = await this.#recoveredName(vaultName);
+    const copyPath = vs.fileService.getVaultPath(copy);
+    try {
+      await fs.copy(vs.fileService.getVaultPath(vaultName), copyPath, {
+        overwrite: false,
+        errorOnExist: true,
+      });
+    } catch (error) {
+      return error.code === 'ENOENT'
+        ? { success: false, code: 'NOT_FOUND', error: 'Vault not found' }
+        : { success: false, error: 'Failed to copy the vault' };
+    }
+    const result = await vs.resetWithRecoveryKey(
+      copy,
+      recoveryKey,
+      newPassword
+    );
+    if (!result.success) {
+      await fs.remove(copyPath);
+      return result;
+    }
+    return {
+      success: true,
+      fileName: path.basename(copyPath),
+      recoveryKey: result.recoveryKey,
+    };
+  }
+
+  /** `<name>-recovered`, or `-recovered-<n>`: never an existing vault. */
+  async #recoveredName(vaultName) {
+    let idx = 0;
+    let name = `${vaultName}-recovered`;
+    while (await fs.pathExists(path.join(this.vaultDir, `${name}.vault`))) {
+      idx++;
+      name = `${vaultName}-recovered-${idx}`;
+    }
+    return name;
   }
 }

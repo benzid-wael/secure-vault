@@ -6,6 +6,7 @@ import path from 'path';
 
 import { VaultService } from '../../../electron/services/VaultService.js';
 import { VaultRecoveryService } from '../../../electron/services/VaultRecoveryService.js';
+import { RECOVERY_KEY, writeFormat2Vault } from '../../helpers/format2Vault.js';
 
 const PASSWORD = 'Correct-Horse-9!';
 
@@ -96,5 +97,61 @@ describe('VaultService logging', () => {
     await vs.loadVault('main', PASSWORD);
     const logged = logSpy.mock.calls.flat().map(String).join('\n');
     expect(logged).not.toContain(vaultFile.encrypted);
+  });
+});
+
+// New-54 step 5: the CLI's `recover` for a vault that uses a key file.
+describe('VaultRecoveryService.recoverWithRecoveryKey', () => {
+  const NEW_PW = 'Fresh-Pass-34!';
+  let dir;
+  let vs;
+
+  beforeEach(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-recover-kf-'));
+    vs = new VaultService(dir);
+    await writeFormat2Vault(vs, 'main', {
+      password: PASSWORD,
+      entries: { e1: { id: 'e1', title: 'Mail', password: 'secret' } },
+    });
+  });
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  it('writes a copy that opens with the new password alone, leaving the vault', async () => {
+    const original = fs.readFileSync(path.join(dir, 'main.vault'), 'utf8');
+    const svc = new VaultRecoveryService(dir);
+    const result = await svc.recoverWithRecoveryKey(
+      'main',
+      RECOVERY_KEY,
+      NEW_PW
+    );
+    expect(result).toEqual({
+      success: true,
+      fileName: 'main-recovered.vault',
+      recoveryKey: expect.any(String),
+    });
+    expect(fs.readFileSync(path.join(dir, 'main.vault'), 'utf8')).toBe(
+      original
+    );
+    const loaded = await vs.loadVault('main-recovered', NEW_PW);
+    expect(loaded.data.entries.e1.title).toBe('Mail');
+    expect(
+      (await vs.loadVaultWithRecoveryKey('main-recovered', result.recoveryKey))
+        .success
+    ).toBe(true);
+    expect(
+      (await svc.recoverWithRecoveryKey('main', RECOVERY_KEY, NEW_PW)).fileName
+    ).toBe('main-recovered-1.vault');
+  });
+
+  it.each([
+    ['a wrong recovery key', 'main', 'WXYZ-WXYZ-WXYZ', NEW_PW, 'AUTH'],
+    ['a weak password', 'main', RECOVERY_KEY, 'short', 'INVALID'],
+    ['a missing vault', 'ghost', RECOVERY_KEY, NEW_PW, 'NOT_FOUND'],
+  ])('refuses %s, leaving no copy', async (_, name, key, pw, code) => {
+    const before = fs.readdirSync(dir).sort();
+    expect(
+      await new VaultRecoveryService(dir).recoverWithRecoveryKey(name, key, pw)
+    ).toMatchObject({ success: false, code });
+    expect(fs.readdirSync(dir).sort()).toEqual(before);
   });
 });

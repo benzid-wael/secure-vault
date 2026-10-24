@@ -27,6 +27,19 @@ import fs from 'fs-extra';
 export const STREAMING = Symbol('vault-agent-streaming');
 
 /**
+ * Why the agent can't run on `platform`, or null when it can. On Windows,
+ * Node listens on named pipes rather than socket files, and a pipe isn't
+ * guarded by the 0700 directory the socket relies on: it needs its own
+ * access control first (New-57).
+ */
+export function agentUnsupportedReason(platform = process.platform) {
+  return platform === 'win32'
+    ? "The agent isn't available on Windows yet. Use `vault env run` " +
+        'to run a command with the environment instead.'
+    : null;
+}
+
+/**
  * Per-user runtime paths for the agent (socket + pidfile in a 0700 dir).
  * `VAULT_AGENT_DIR` overrides the location — useful for tests and for relocating
  * the runtime dir off a noexec/again tmpfs.

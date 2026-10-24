@@ -4,6 +4,8 @@ import os from 'os';
 import crypto from 'crypto';
 
 import { CryptographyService } from './CryptographyService.js';
+import { moveWithRetry } from '../utils/moveWithRetry.js';
+import { checkVaultFormat, newerFormatError } from '../utils/vaultFormat.js';
 
 /** Copies kept per vault name from deleting it; older ones are removed. */
 export const DELETED_COPIES_KEPT = 5;
@@ -12,11 +14,40 @@ export const DELETED_COPIES_KEPT = 5;
 // replaced, so names sort in time order.
 const DELETED_STAMP = /^\d{4}-\d{2}-\d{2}T[\d-]+Z$/;
 
+/**
+ * Whether `data` (a parsed vault file) is a password vault: encrypted
+ * content and its key settings, and not an env vault (whose files also end
+ * in `.vault`).
+ */
+export function isPasswordVaultFile(data) {
+  return (
+    data !== null &&
+    typeof data === 'object' &&
+    data.type === undefined &&
+    ['encrypted', 'iv', 'authTag', 'salt'].every(
+      (field) => typeof data[field] === 'string'
+    )
+  );
+}
+
 export class VaultFileService {
-  constructor(vaultDirectory) {
+  /**
+   * @param {string} vaultDirectory
+   * @param {{links?: {pathOf: (name: string) => string|null,
+   *   names: () => string[]}}} [options] Vaults opened from other folders
+   *   (New-53): a listed name maps to its file, and the files that go with
+   *   it (backup, temp) sit next to it.
+   */
+  constructor(vaultDirectory, { links = null } = {}) {
     // Resolve tilde and ensure absolute path
     this.vaultDirectory = this._resolvePath(vaultDirectory);
+    this.links = links;
     this._ensureVaultDirectory();
+  }
+
+  /** Whether `vaultName` is a vault opened from another folder. */
+  isOpened(vaultName) {
+    return Boolean(this.links?.pathOf(vaultName));
   }
 
   _resolvePath(inputPath) {
@@ -44,6 +75,14 @@ export class VaultFileService {
       /[/\\\0]/.test(vaultName)
     ) {
       throw new Error('Invalid vault name');
+    }
+    // An opened vault's file keeps its own name; `.vault.backup` becomes
+    // `<file>.backup` beside it.
+    const linked = this.links?.pathOf(vaultName);
+    if (linked) {
+      return suffix.startsWith('.vault')
+        ? `${linked}${suffix.slice('.vault'.length)}`
+        : `${linked}${suffix}`;
     }
     const filePath = path.resolve(this.vaultDirectory, `${vaultName}${suffix}`);
     if (path.dirname(filePath) !== this.vaultDirectory) {
@@ -91,6 +130,7 @@ export class VaultFileService {
 
   async atomicWriteVaultFile(vaultName, data) {
     const vaultPath = this.getVaultPath(vaultName);
+    await this.#refuseNewerFormat(vaultPath, vaultName);
     // A temp file per write: two writes in flight for the same vault must not
     // share one, or the first rename pulls it out from under the second.
     const tempPath = `${this.getTempPath(vaultName)}.${process.pid}.${crypto
@@ -104,12 +144,29 @@ export class VaultFileService {
       // Verify temp file can be read
       await fs.readJSON(tempPath);
 
-      // Move temp file to final location (atomic operation)
-      await fs.move(tempPath, vaultPath, { overwrite: true });
+      // Replace the vault in one step: it never stops existing.
+      await moveWithRetry(tempPath, vaultPath);
     } catch (error) {
       await fs.remove(tempPath).catch(() => {});
       throw error;
     }
+  }
+
+  /**
+   * Every write replaces the whole file, so overwriting a vault written by
+   * a newer SecureVault would drop what this build doesn't understand
+   * (New-29). Refused with `code: 'NEWER_FORMAT'`. A file that can't be
+   * parsed isn't ours to judge: the write goes ahead as before.
+   */
+  async #refuseNewerFormat(vaultPath, vaultName) {
+    let current;
+    try {
+      current = await fs.readJSON(vaultPath);
+    } catch {
+      return;
+    }
+    const check = checkVaultFormat(current, 'password', vaultName);
+    if (!check.writable) throw newerFormatError(check);
   }
 
   async createBackup(vaultName) {
@@ -156,6 +213,13 @@ export class VaultFileService {
   }
 
   async deleteVault(vaultName) {
+    // The decision for New-53: an opened vault is taken off the list, its
+    // file left where it is.
+    if (this.isOpened(vaultName)) {
+      throw new Error(
+        `${vaultName} was opened from another folder: remove it from the list instead`
+      );
+    }
     const vaultPath = this.getVaultPath(vaultName);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const deletedBackupPath = this._pathFor(
@@ -206,7 +270,15 @@ export class VaultFileService {
     }
   }
 
+  /** The app folder's vaults, then those opened from other folders. */
   async listVaults() {
+    const opened = this.links?.names() ?? [];
+    const own = await this.listOwnVaults();
+    return [...own.filter((name) => !opened.includes(name)), ...opened];
+  }
+
+  /** The vault names in the app's own folder, opened ones aside. */
+  async listOwnVaults() {
     try {
       const files = await fs.readdir(this.vaultDirectory);
       return files

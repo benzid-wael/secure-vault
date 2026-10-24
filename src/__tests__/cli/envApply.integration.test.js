@@ -134,10 +134,13 @@ describe('vault env apply / clean (integration)', () => {
       'API_URL = https://api.example.com\nSENTRY_DSN = https://sentry.example\n'
     );
 
-    // eslint-disable-next-line no-bitwise
-    const mode =
-      fs.statSync(path.join(projectDir, '.env.development')).mode & 0o777;
-    expect(mode).toBe(0o600);
+    // Windows has no POSIX modes.
+    if (process.platform !== 'win32') {
+      // eslint-disable-next-line no-bitwise
+      const mode =
+        fs.statSync(path.join(projectDir, '.env.development')).mode & 0o777;
+      expect(mode).toBe(0o600);
+    }
   });
 
   it('resolves the same manifest from a subdirectory', () => {

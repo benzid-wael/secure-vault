@@ -7,16 +7,49 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   // Session: the master password is sent once to unlock (or create / recover)
   // and then held by the main process; later calls name only the vault.
+  // `opened`: vaults opened from other folders, with their file (New-53).
   getVaults: () => ipcRenderer.invoke('get-vaults'),
+  openVaultFile: () => ipcRenderer.invoke('open-vault-file'),
+  removeVault: (vaultName) => ipcRenderer.invoke('remove-vault', vaultName),
   createVault: (vaultName, masterPassword) =>
     ipcRenderer.invoke('create-vault', vaultName, masterPassword),
-  unlockVault: (vaultName, password) =>
-    ipcRenderer.invoke('unlock-vault', vaultName, password),
+  // `options.remember`: true keeps the password on this computer, false
+  // forgets a kept one (New-52).
+  unlockVault: (vaultName, password, options) =>
+    ipcRenderer.invoke('unlock-vault', vaultName, password, options),
+  unlockVaultSaved: (vaultName) =>
+    ipcRenderer.invoke('unlock-vault-saved', vaultName),
+  // A vault with a key file (New-54): main asks for the file in a dialog.
+  unlockVaultWithKeyFile: (vaultName, password, options) =>
+    ipcRenderer.invoke('unlock-vault-key-file', vaultName, password, options),
+  keyFile: {
+    status: (vaultName) => ipcRenderer.invoke('key-file:status', vaultName),
+    // `options.create`: a new key file (save dialog) instead of an existing one.
+    enable: (vaultName, password, options) =>
+      ipcRenderer.invoke('key-file:enable', vaultName, password, options),
+    disable: (vaultName, password) =>
+      ipcRenderer.invoke('key-file:disable', vaultName, password),
+    change: (vaultName, password, options) =>
+      ipcRenderer.invoke('key-file:change', vaultName, password, options),
+  },
+  forgetVaultPassword: (vaultName) =>
+    ipcRenderer.invoke('forget-vault-password', vaultName),
+  // Passwords kept on this computer, every vault kind (New-52).
+  savedPasswords: {
+    info: () => ipcRenderer.invoke('saved-passwords:info'),
+    forgetAll: () => ipcRenderer.invoke('saved-passwords:forget-all'),
+  },
   lockVault: () => ipcRenderer.invoke('lock-vault'),
+  // Input in the window: keeps the unlocked vault from locking (Task 13).
+  vaultActivity: () => ipcRenderer.invoke('vault-activity'),
+  // Main writes the clipboard and clears a secret after 30 s (New-3).
+  copyToClipboard: (text, options) =>
+    ipcRenderer.invoke('clipboard:copy', text, options),
+  // `info.reason` is 'idle' (with `info.minutes`) after an idle lock.
   onVaultLocked: (callback) =>
-    ipcRenderer.on('vault-locked', () => {
+    ipcRenderer.on('vault-locked', (event, info) => {
       try {
-        callback();
+        callback(info ?? {});
       } catch (error) {
         console.error('Error in vault-locked handler:', error);
       }
@@ -53,6 +86,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('verify-vault-recovery-key', vaultName, recoveryKey),
   loadVaultWithRecoveryKey: (vaultName, recoveryKey) =>
     ipcRenderer.invoke('load-vault-with-recovery-key', vaultName, recoveryKey),
+  // A vault that uses a key file gets a new password (and key file) as it's
+  // recovered (New-54); `options.keyFile` is 'create', 'existing' or 'none'.
+  recoverVaultWithKeyFile: (vaultName, recoveryKey, newPassword, options) =>
+    ipcRenderer.invoke(
+      'recover-vault-key-file',
+      vaultName,
+      recoveryKey,
+      newPassword,
+      options
+    ),
 
   // Vault recovery with older passwords
   recoverVaultWithOldPassword: (vaultName, oldPassword) =>
@@ -65,8 +108,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Import/Export: file paths are chosen in native dialogs by the main
   // process; the page never names one.
   exportVault: (vaultName) => ipcRenderer.invoke('export-vault', vaultName),
-  importVault: (newVaultName, password) =>
-    ipcRenderer.invoke('import-vault', newVaultName, password),
+  // An export of a vault with a key file (New-55): main asks for the key
+  // file after the password; `{recoveryKey: true}` sends its recovery key.
+  importVault: (newVaultName, password, options) =>
+    ipcRenderer.invoke('import-vault', newVaultName, password, options),
   selectImportFile: () => ipcRenderer.invoke('select-import-file'),
   getVaultDirectory: () => ipcRenderer.invoke('get-vault-directory'),
 
@@ -118,6 +163,96 @@ contextBridge.exposeInMainWorld('electronAPI', {
         console.error('Error in menu-configuration handler:', error);
       }
     }),
+
+  // Feature gates, decided by main (New-4).
+  getFeatures: () => ipcRenderer.invoke('get-features'),
+
+  // App-wide settings, not secret (New-2, Task 23); main applies changes.
+  appSettings: {
+    get: () => ipcRenderer.invoke('app-settings:get'),
+    update: (patch) => ipcRenderer.invoke('app-settings:update', patch),
+  },
+
+  // Env vaults: the page holds opaque vault ids, never file paths, and gets
+  // a sensitive value only by revealing it (GUI-ENV-RFC §6.7).
+  envVaults: {
+    list: () => ipcRenderer.invoke('env-vaults:list'),
+    open: () => ipcRenderer.invoke('env-vaults:open'),
+    // The vault the CLI would use in a folder the user picks (New-22).
+    openFolder: () => ipcRenderer.invoke('env-vaults:open-folder'),
+    // Input on this vault's screen: keeps it from locking (New-42).
+    activity: (id) => ipcRenderer.invoke('env-vaults:activity', id),
+    forget: (id) => ipcRenderer.invoke('env-vaults:forget', id),
+    create: (options, password) =>
+      ipcRenderer.invoke('env-vaults:create', options, password),
+    unlock: (id, password, options) =>
+      ipcRenderer.invoke('env-vault:unlock', id, password, options),
+    // A password kept on this computer (opt-in) never comes to the page.
+    unlockSaved: (id) => ipcRenderer.invoke('env-vault:unlock-saved', id),
+    forgetPassword: (id) => ipcRenderer.invoke('env-vault:forget-password', id),
+    lock: (id) => ipcRenderer.invoke('env-vault:lock', id),
+    listEnvs: (id) => ipcRenderer.invoke('env:list', id),
+    createEnv: (id, name, expectedRevision) =>
+      ipcRenderer.invoke('env:create', id, name, expectedRevision),
+    view: (id, env) => ipcRenderer.invoke('env:view', id, env),
+    refresh: (id, viewId) => ipcRenderer.invoke('env:refresh', id, viewId),
+    reveal: (id, viewId, key) =>
+      ipcRenderer.invoke('env:reveal', id, viewId, key),
+    closeView: (id, viewId) => ipcRenderer.invoke('env:view-close', id, viewId),
+    commit: (id, changeset) => ipcRenderer.invoke('env:commit', id, changeset),
+    // Copy and export happen in main: no value comes back.
+    copy: (id, viewId, key, format) =>
+      ipcRenderer.invoke('env:copy', id, viewId, key, format),
+    transfer: (id, request) => ipcRenderer.invoke('env:transfer', id, request),
+    exportEnv: (id, env, format) =>
+      ipcRenderer.invoke('env:export', id, env, format),
+    manageEnv: (id, request) => ipcRenderer.invoke('env:manage', id, request),
+    // Envs that refer to `env` ({{env:env/KEY}}), with counts (New-30).
+    references: (id, env) => ipcRenderer.invoke('env:references', id, env),
+    templateEnv: (id, env) => ipcRenderer.invoke('env:template', id, env),
+    diff: (id, envA, envB, options) =>
+      ipcRenderer.invoke('env:diff', id, envA, envB, options),
+    validate: (id, env) => ipcRenderer.invoke('env:validate', id, env),
+    // Import: main reads the file; the page sees key names until applied.
+    importPick: (id, viewId) =>
+      ipcRenderer.invoke('env:import-pick', id, viewId),
+    importApply: (id, token, options) =>
+      ipcRenderer.invoke('env:import-apply', id, token, options),
+    importCancel: (id, token) =>
+      ipcRenderer.invoke('env:import-cancel', id, token),
+    changePassword: (id, current, next) =>
+      ipcRenderer.invoke('env-vault:change-password', id, current, next),
+    // Bulk edit: the env's own values as .env text, asked for explicitly.
+    editText: (id, viewId) => ipcRenderer.invoke('env:edit-text', id, viewId),
+    history: (id, viewId) => ipcRenderer.invoke('env:history', id, viewId),
+    rollback: (id, viewId, n) =>
+      ipcRenderer.invoke('env:rollback', id, viewId, n),
+    squash: (id, viewId, keep) =>
+      ipcRenderer.invoke('env:squash', id, viewId, keep),
+    // Changes made outside the app (the CLI, a sync tool).
+    onChanged: (callback) => {
+      const listener = (event, payload) => {
+        try {
+          callback(payload);
+        } catch (error) {
+          console.error('Error in env-vault-changed handler:', error);
+        }
+      };
+      ipcRenderer.on('env-vault-changed', listener);
+      return () => ipcRenderer.removeListener('env-vault-changed', listener);
+    },
+    onLocked: (callback) => {
+      const listener = (event, payload) => {
+        try {
+          callback(payload);
+        } catch (error) {
+          console.error('Error in env-vault-locked handler:', error);
+        }
+      };
+      ipcRenderer.on('env-vault-locked', listener);
+      return () => ipcRenderer.removeListener('env-vault-locked', listener);
+    },
+  },
 
   // Remove listeners
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),

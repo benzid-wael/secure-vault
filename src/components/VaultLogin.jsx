@@ -8,6 +8,8 @@ import {
   InputAdornment,
   Alert,
   CircularProgress,
+  Checkbox,
+  FormControlLabel,
 } from '@mui/material';
 import {
   Visibility,
@@ -17,14 +19,37 @@ import {
   Security as SecurityIcon,
 } from '@mui/icons-material';
 
-const VaultLogin = ({ vaultName, onLogin, onBack, onRecovery }) => {
+/**
+ * `canRemember`: this computer can keep the password (New-52); the box
+ * starts checked when `remembered`. `onLogin(password, options)` gets
+ * `{remember}` only when the box is offered: true keeps the password,
+ * false forgets a kept one. `initialError`: why a saved password didn't
+ * unlock the vault. `needsKeyFile`: the vault uses a key file (New-54);
+ * the password is sent with `{keyFile: true}` and main asks for the file.
+ * A "needs its key file" answer switches to that too.
+ * `keyFileRemembered`: main reads the key file from where it was last used
+ * (New-54 step 4); "Choose another key file…" sends `chooseAnother`.
+ */
+const VaultLogin = ({
+  vaultName,
+  onLogin,
+  onBack,
+  onRecovery,
+  canRemember = false,
+  remembered = false,
+  initialError = '',
+  needsKeyFile = false,
+  keyFileRemembered = false,
+}) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(initialError);
+  const [keep, setKeep] = useState(remembered);
+  const [keyFileMode, setKeyFileMode] = useState(needsKeyFile);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (e, { chooseAnother = false } = {}) => {
+    e?.preventDefault();
     if (!password.trim()) {
       setError('Please enter your vault password');
       return;
@@ -34,8 +59,17 @@ const VaultLogin = ({ vaultName, onLogin, onBack, onRecovery }) => {
     setError('');
 
     try {
-      const result = await onLogin(password);
-      if (!result.success) {
+      const options = {
+        ...(canRemember && { remember: keep }),
+        ...(keyFileMode && { keyFile: true }),
+        ...(chooseAnother && { chooseAnother: true }),
+      };
+      const result = await (Object.keys(options).length > 0
+        ? onLogin(password, options)
+        : onLogin(password));
+      if (result.code === 'KEY_FILE_REQUIRED') {
+        setKeyFileMode(true);
+      } else if (!result.success && !result.canceled) {
         setError(result.error || 'Invalid password');
       }
     } catch (error) {
@@ -105,6 +139,53 @@ const VaultLogin = ({ vaultName, onLogin, onBack, onRecovery }) => {
           }}
         />
 
+        {keyFileMode && (
+          <Alert
+            severity="info"
+            sx={{ mt: 2 }}
+            action={
+              keyFileRemembered ? (
+                <Button
+                  color="inherit"
+                  size="small"
+                  disabled={loading || !password.trim()}
+                  onClick={() => handleSubmit(null, { chooseAnother: true })}
+                >
+                  Choose another key file…
+                </Button>
+              ) : null
+            }
+          >
+            {keyFileRemembered
+              ? 'This vault also needs its key file: it’s read from where you last used it.'
+              : 'This vault also needs its key file. After you type the password, choose the key file.'}
+          </Alert>
+        )}
+
+        {canRemember && (
+          <Box sx={{ mt: 1 }}>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={keep}
+                  onChange={(e) => setKeep(e.target.checked)}
+                  disabled={loading}
+                />
+              }
+              label="Remember on this computer"
+              sx={{ color: 'white' }}
+            />
+            <Typography
+              variant="body2"
+              sx={{ color: 'rgba(255, 255, 255, 0.6)' }}
+            >
+              Kept encrypted by the system keychain. Anyone using your account
+              here can then open this vault in the app, after Touch ID where the
+              Mac has it.
+            </Typography>
+          </Box>
+        )}
+
         {error && (
           <Alert severity="error" sx={{ mt: 2 }}>
             {error}
@@ -136,6 +217,8 @@ const VaultLogin = ({ vaultName, onLogin, onBack, onRecovery }) => {
           >
             {loading ? (
               <CircularProgress size={24} color="inherit" />
+            ) : keyFileMode && !keyFileRemembered ? (
+              'Choose Key File and Unlock'
             ) : (
               'Unlock Vault'
             )}
@@ -164,7 +247,9 @@ const VaultLogin = ({ vaultName, onLogin, onBack, onRecovery }) => {
       <div className="security-indicator">
         <SecurityIcon sx={{ color: '#4caf50' }} />
         <Typography className="security-text">
-          Your password is never stored - only used to decrypt your vault
+          {keep
+            ? 'Your password is kept on this computer, encrypted by the system keychain'
+            : 'Your password is never stored - only used to decrypt your vault'}
         </Typography>
       </div>
     </div>

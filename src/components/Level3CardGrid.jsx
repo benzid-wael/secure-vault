@@ -26,6 +26,7 @@ import {
   parseGridPosition,
   getCodeAtPosition,
 } from '../utils/entryTypes';
+import { copyText } from '../utils/clipboard';
 
 const Level3CardGrid = ({
   gridData = {},
@@ -80,8 +81,8 @@ const Level3CardGrid = ({
     const code = getCodeAtPosition(gridData, lookupPosition.trim());
     if (code) {
       setLookupResult(code);
-      // Copy to clipboard automatically
-      navigator.clipboard.writeText(code).catch(() => {
+      // Copy to clipboard automatically; cleared after 30 s (New-3).
+      copyText(code, { sensitive: true }).catch(() => {
         console.error('Failed to copy to clipboard');
       });
     } else {
@@ -95,15 +96,11 @@ const Level3CardGrid = ({
     }
   };
 
+  // A grid code is a secret: main clears it after 30 s (New-3).
   const copyToClipboard = (text) => {
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        // Could show a snackbar here
-      })
-      .catch(() => {
-        console.error('Failed to copy to clipboard');
-      });
+    copyText(text, { sensitive: true }).catch(() => {
+      console.error('Failed to copy to clipboard');
+    });
   };
 
   const clearGrid = () => {
@@ -284,7 +281,8 @@ const Level3CardGrid = ({
                         value={cellValue}
                         onChange={(e) => setCellValue(e.target.value)}
                         onBlur={handleCellSave}
-                        onKeyPress={(e) => {
+                        // keydown: React fires no keypress for Escape (New-49).
+                        onKeyDown={(e) => {
                           if (e.key === 'Enter') handleCellSave();
                           if (e.key === 'Escape') handleCellCancel();
                         }}

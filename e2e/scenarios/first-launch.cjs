@@ -16,6 +16,13 @@ scenario(async (t) => {
   const list = await t.api('getVaults()');
   t.check('the vault list is empty', list.success && list.data.length === 0);
   t.check('no default password on screen', !(await t.hasText('changeme123')));
+  t.check(
+    'no Environments switch with the gate off',
+    !(await t.hasText('Environments'))
+  );
+  const features = await t.api('getFeatures()');
+  t.check('main reports the gate off', features.envVaults === false);
+  t.check('the renderer is sandboxed', (await t.sandboxed()) === true);
 
   // A default vault from an earlier version.
   const vs = await t.vaultService();

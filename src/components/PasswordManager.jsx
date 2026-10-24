@@ -18,12 +18,19 @@ import {
   getSearchFields,
   ENTRY_TYPE_DEFINITIONS,
 } from '../utils/entryTypes';
+import { copyText, clearsNote } from '../utils/clipboard';
 
+/**
+ * `passwordSaved`: this vault's password is kept on this computer (New-52);
+ * the header then offers `onForgetPassword`.
+ */
 const PasswordManager = ({
   vaultName,
   onLock,
   usesDefaultPassword = false,
   onPasswordChanged = () => {},
+  passwordSaved = false,
+  onForgetPassword = undefined,
 }) => {
   const [entries, setEntries] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -40,6 +47,8 @@ const PasswordManager = ({
   const [validationErrors, setValidationErrors] = useState({});
   const [showSettings, setShowSettings] = useState(false);
   const [selectedEntryType, setSelectedEntryType] = useState('password');
+  // A vault from a newer SecureVault (New-29): saves are refused in main.
+  const [readOnlyMessage, setReadOnlyMessage] = useState('');
   const [showImportExport, setShowImportExport] = useState(false);
   const [availableVaults, setAvailableVaults] = useState([]);
 
@@ -94,6 +103,7 @@ const PasswordManager = ({
           }
 
           setEntries(entriesArray);
+          setReadOnlyMessage(result.readOnly ? result.formatMessage : '');
         } else {
           console.error('Failed to load vault data:', result.error);
           showSnackbar(`Failed to load vault data: ${result.error}`, 'error');
@@ -126,7 +136,12 @@ const PasswordManager = ({
           setEntries(updatedEntries);
           return true;
         } else {
-          showSnackbar('Failed to save vault', 'error');
+          showSnackbar(
+            result.code === 'NEWER_FORMAT'
+              ? result.error
+              : 'Failed to save vault',
+            'error'
+          );
           return false;
         }
       } catch (error) {
@@ -220,11 +235,11 @@ const PasswordManager = ({
     }
   };
 
-  const copyToClipboard = (text, label) => {
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        showSnackbar(`${label} copied to clipboard`);
+  // Main writes the clipboard; a secret is cleared after 30 s (New-3).
+  const copyToClipboard = (text, label, { sensitive = false } = {}) => {
+    copyText(text, { sensitive })
+      .then((result) => {
+        showSnackbar(`${label} copied to clipboard.${clearsNote(result)}`);
       })
       .catch(() => {
         showSnackbar('Failed to copy to clipboard', 'error');
@@ -318,6 +333,11 @@ const PasswordManager = ({
           </Box>
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
+          {passwordSaved && onForgetPassword && (
+            <Button onClick={onForgetPassword} sx={{ color: 'white' }}>
+              Forget saved password
+            </Button>
+          )}
           <Button
             variant="outlined"
             startIcon={<ImportExportIcon />}
@@ -361,6 +381,12 @@ const PasswordManager = ({
         >
           This vault still uses the built-in password from an earlier version,
           which anyone can look up. Change it now.
+        </Alert>
+      )}
+
+      {readOnlyMessage && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          <strong>Read-only.</strong> {readOnlyMessage}
         </Alert>
       )}
 

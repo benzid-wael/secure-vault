@@ -22,13 +22,14 @@ import {
   Security as SecurityIcon,
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
+import { copyText } from '../utils/clipboard';
 
 const RecoveryKeyDisplay = ({
   open,
   onClose,
   recoveryKey,
   vaultName,
-  onRegenerateKey,
+  onRegenerateKey = null, // optional: offers a new key when given
   isNewVault = false,
 }) => {
   const [showKey, setShowKey] = useState(false);
@@ -38,7 +39,8 @@ const RecoveryKeyDisplay = ({
   const handleCopyKey = async () => {
     if (recoveryKey) {
       try {
-        await navigator.clipboard.writeText(recoveryKey);
+        // Main clears it after 30 s, like every secret (New-3).
+        await copyText(recoveryKey, { sensitive: true });
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       } catch (error) {
@@ -184,7 +186,7 @@ const RecoveryKeyDisplay = ({
 
             {copied && (
               <Chip
-                label="Copied to clipboard!"
+                label="Copied. Cleared in 30 s."
                 color="success"
                 size="small"
                 sx={{

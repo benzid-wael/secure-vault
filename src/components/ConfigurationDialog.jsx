@@ -26,9 +26,16 @@ import {
   Schedule as ScheduleIcon,
   Key as KeyIcon,
 } from '@mui/icons-material';
+import AppSettingsSection from './AppSettingsSection';
 
-// `vaultName` is set only while that vault is unlocked.
-const ConfigurationDialog = ({ open, onClose, vaultName }) => {
+// `vaultName` is set only while that vault is unlocked. `envVaults`: the env
+// vault gate is on, so the settings that concern only env vaults show too.
+const ConfigurationDialog = ({
+  open,
+  onClose,
+  vaultName,
+  envVaults = false,
+}) => {
   const [loading, setLoading] = useState(true);
   const [vaultDirectory, setVaultDirectory] = useState('');
   const [vaultInfo, setVaultInfo] = useState(null);
@@ -142,6 +149,8 @@ const ConfigurationDialog = ({ open, onClose, vaultName }) => {
           </Box>
         ) : (
           <Box sx={{ display: 'grid', gap: 3 }}>
+            <AppSettingsSection envVaults={envVaults} />
+            <Divider sx={{ borderColor: 'rgba(255, 255, 255, 0.1)' }} />
             {/* System Information */}
             <Box>
               <Typography

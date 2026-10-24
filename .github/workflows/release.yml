@@ -55,6 +55,27 @@ jobs:
           # SmartScreen per the README.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
+      - name: Package the smoke test's twin (allows --remote-debugging-port)
+        # The shipped build refuses the switch (New-40); the driven checks
+        # run on this twin from the same build, one packaged flag apart.
+        run: npm run package:twin
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Smoke-test the packaged app (CSP, sandbox, unlock)
+        # The installed app loads its renderer from inside app.asar, which
+        # `npm run test:e2e` never does (GUI-ENV-BREAKDOWN New-19).
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            # Ubuntu 24.04 blocks the unprivileged user namespaces Chromium's
+            # sandbox needs; an installed desktop allows them via AppArmor.
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            xvfb-run -a npm run test:packaged
+          else
+            npm run test:packaged
+          fi
+
       - name: Collect installers
         shell: bash
         run: |
@@ -98,6 +119,11 @@ jobs:
 
       - name: Build standalone binaries
         run: npm run package:cli
+
+      - name: Check the Linux binary against the Node CLI
+        # Env vaults derive keys with async PBKDF2, which the binaries run on
+        # Bun's node:crypto: each must open the other's vaults (New-5).
+        run: node scripts/verify-cli-binary.mjs dist-cli/vault-linux-x64
 
       - uses: actions/upload-artifact@v4
         with:

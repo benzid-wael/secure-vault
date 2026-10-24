@@ -49,7 +49,7 @@ export class KeyRecoveryService extends IRecoveryMethod {
    * @param {string} vaultName
    * @param {str} masterPassword
    * @param {Object} recoveryData
-   * @returns {Promise<Object>} - metadata object
+   * @returns {Object} - metadata object (not a promise: it's synchronous)
    */
   createMetadata(vaultName, masterPassword, recoveryData = {}) {
     const salt = CryptographyService.generateSalt();
@@ -178,6 +178,18 @@ export class KeyRecoveryService extends IRecoveryMethod {
       console.error('Failed to create metadata:', error);
       return { success: false, error: 'Failed to create metadata' };
     }
+  }
+
+  /**
+   * The recovery key `metadata` keeps, decrypted with the master password,
+   * or null (New-54: turning a key file on keeps the key the user saved).
+   */
+  recoveryKeyOf(metadata, masterPassword) {
+    if (!metadata?.encryptedRecoveryKey) return null;
+    const loaded = this.#loadRecoveryKey(null, metadata, masterPassword);
+    return loaded.success && typeof loaded.recoveryKey === 'string'
+      ? loaded.recoveryKey
+      : null;
   }
 
   #loadRecoveryKey(vaultName, metadata, masterPassword) {

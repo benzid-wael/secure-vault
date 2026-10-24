@@ -28,6 +28,7 @@ import {
   getCopyableFields,
   ENTRY_TYPES,
   FIELD_TYPES,
+  isSensitiveField,
 } from '../utils/entryTypes';
 
 const humanize = (fieldName) =>
@@ -78,7 +79,11 @@ const EntryCard = ({ entry, onEdit, onDelete, onCopy }) => {
 
   const copy = (fieldName) => {
     const value = entry[fieldName];
-    if (value) onCopy(String(value), fieldLabel(schema, fieldName));
+    if (value) {
+      onCopy(String(value), fieldLabel(schema, fieldName), {
+        sensitive: isSensitiveField(schema, fieldName),
+      });
+    }
     setAnchorEl(null);
   };
 
@@ -248,6 +253,25 @@ const EntryCard = ({ entry, onEdit, onDelete, onCopy }) => {
                 </Box>
               )}
             </Box>
+
+            {entry.notes && (
+              <Typography
+                variant="body2"
+                data-testid="entry-notes"
+                sx={{
+                  mt: 1.5,
+                  color: 'rgba(255, 255, 255, 0.6)',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 3,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }}
+              >
+                {entry.notes}
+              </Typography>
+            )}
           </Box>
 
           <IconButton

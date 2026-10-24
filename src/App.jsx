@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import { Snackbar, Alert } from '@mui/material';
+import {
+  Snackbar,
+  Alert,
+  Box,
+  ToggleButton,
+  ToggleButtonGroup,
+} from '@mui/material';
 import {
   BrowserRouter as Router,
   Routes,
@@ -15,7 +21,25 @@ import CreateVault from './components/CreateVault';
 import ConfigurationDialog from './components/ConfigurationDialog';
 import ImportExportDialog from './components/ImportExportDialog';
 import VaultRecovery from './components/VaultRecovery';
+import EnvVaultsPanel from './components/env/EnvVaultsPanel';
+import { useInputActivity } from './hooks/useInputActivity';
 import './App.css';
+
+const minutes = (n) => (n === 1 ? '1 minute' : `${n} minutes`);
+
+/**
+ * Saved passwords (New-52): whether this computer can keep one, and the
+ * password vaults that have one; null when unknown (nothing is offered).
+ */
+const savedPasswordInfo = async () => {
+  try {
+    const result = await window.electronAPI?.savedPasswords?.info?.();
+    if (!result?.success) return null;
+    return { available: result.available, vaults: result.vaults || [] };
+  } catch {
+    return null;
+  }
+};
 
 const darkTheme = createTheme({
   palette: {
@@ -53,16 +77,35 @@ function App() {
   const [currentVault, setCurrentVault] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [availableVaults, setAvailableVaults] = useState([]);
+  // Vaults opened from other folders, with their file (New-53).
+  const [openedVaults, setOpenedVaults] = useState([]);
+  // Vaults that need a key file to unlock (New-54).
+  const [keyFileVaults, setKeyFileVaults] = useState([]);
+  // Of those, the ones whose key file location main remembers.
+  const [keyFileRemembered, setKeyFileRemembered] = useState([]);
   // The unlocked vault still uses an older version's built-in password.
   const [usesDefaultPassword, setUsesDefaultPassword] = useState(false);
   const [currentView, setCurrentView] = useState('selector'); // selector, login, manager, create, recovery
   const [showConfiguration, setShowConfiguration] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
-  const [snackbar, setSnackbar] = useState({
-    open: false,
-    message: '',
-    severity: 'success',
-  });
+  // Gates decided by main (New-4); everything env-related is hidden until
+  // main says `envVaults`.
+  const [features, setFeatures] = useState({ envVaults: false });
+  const [selectorMode, setSelectorMode] = useState('passwords'); // passwords, environments
+  // Saved passwords (New-52): whether this computer can keep one, and the
+  // password vaults that have one.
+  const [kept, setKept] = useState({ available: false, vaults: [] });
+  // Why a saved password didn't unlock the vault; shown on the login screen.
+  const [loginError, setLoginError] = useState('');
+  // `persist`: stays until dismissed.
+  const [snackbar, setSnackbar] = useState(
+    /** @type {{open: boolean, message: string, severity: string,
+     *   persist?: boolean}} */ ({
+      open: false,
+      message: '',
+      severity: 'success',
+    })
+  );
 
   const resetToSelector = useCallback(() => {
     setIsAuthenticated(false);
@@ -80,6 +123,21 @@ function App() {
     }
     resetToSelector();
   }, [resetToSelector]);
+
+  useEffect(() => {
+    let active = true;
+    /** @type {any} */ (window).electronAPI
+      ?.getFeatures?.()
+      .then((result) => {
+        if (active && result?.success) {
+          setFeatures({ envVaults: result.envVaults === true });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     loadAvailableVaults();
@@ -108,10 +166,21 @@ function App() {
         setShowConfiguration(true);
       });
 
-      // The main process locked the session (sleep / screen lock).
+      // The main process locked the session (idle, sleep, screen lock).
       if (window.electronAPI.onVaultLocked) {
-        window.electronAPI.onVaultLocked(() => {
+        window.electronAPI.onVaultLocked((info) => {
           resetToSelector();
+          if (info?.reason === 'idle') {
+            // Stays until dismissed: the user was away when it happened.
+            setSnackbar({
+              open: true,
+              message: `Vault locked after ${minutes(
+                info.minutes
+              )} without activity.`,
+              severity: 'info',
+              persist: true,
+            });
+          }
         });
       }
     }
@@ -139,6 +208,15 @@ function App() {
     };
   }, [lockVault, resetToSelector]);
 
+  // While a vault is unlocked, input in the window keeps it so; main locks
+  // it after the idle time otherwise (Task 13).
+  const reportVaultActivity = useCallback(() => {
+    Promise.resolve(
+      /** @type {any} */ (window).electronAPI?.vaultActivity?.()
+    ).catch(() => {});
+  }, []);
+  useInputActivity(isAuthenticated ? reportVaultActivity : null);
+
   // Reload vaults when returning to selector view
   useEffect(() => {
     if (currentView === 'selector') {
@@ -146,12 +224,21 @@ function App() {
     }
   }, [currentView]);
 
+  const loadSavedPasswords = async () => {
+    const info = await savedPasswordInfo();
+    if (info) setKept(info);
+  };
+
   const loadAvailableVaults = async () => {
+    savedPasswordInfo().then((info) => info && setKept(info));
     if (window.electronAPI) {
       try {
         const result = await window.electronAPI.getVaults();
         if (result && result.success) {
           setAvailableVaults(result.data || []);
+          setOpenedVaults(result.opened || []);
+          setKeyFileVaults(result.keyFile || []);
+          setKeyFileRemembered(result.keyFileRemembered || []);
         } else {
           console.error(
             'Failed to load vaults:',
@@ -169,25 +256,127 @@ function App() {
     }
   };
 
-  const handleVaultSelect = (vaultName) => {
+  const enterVault = (result) => {
+    setUsesDefaultPassword(Boolean(result.usesDefaultPassword));
+    setIsAuthenticated(true);
+    setCurrentView('manager');
+  };
+
+  // A vault with a saved password opens with it (after Touch ID where the
+  // Mac has it); if that fails, the login screen says why.
+  const handleVaultSelect = async (vaultName) => {
     setCurrentVault(vaultName);
+    setLoginError('');
+    if (kept.vaults.includes(vaultName)) {
+      let result;
+      try {
+        result = await window.electronAPI.unlockVaultSaved(vaultName);
+      } catch {
+        result = { success: false, error: 'Unlock failed. Type the password.' };
+      }
+      if (result.success) return enterVault(result);
+      if (result.code !== 'CANCELED') setLoginError(result.error);
+      loadSavedPasswords();
+    }
     setCurrentView('login');
   };
 
-  const handleVaultLogin = async (password) => {
+  // "Open…": a vault file from any folder is listed, then unlocked as usual.
+  const openVaultFile = async () => {
+    let result;
+    try {
+      result = await window.electronAPI.openVaultFile();
+    } catch {
+      result = { success: false, error: "The vault file couldn't be opened." };
+    }
+    if (result.canceled) return;
+    if (!result.success) {
+      return setSnackbar({
+        open: true,
+        message: result.error,
+        severity: 'error',
+      });
+    }
+    await loadAvailableVaults();
+    await handleVaultSelect(result.name);
+  };
+
+  // Off the list; the file stays where it is (New-53).
+  const removeVault = async (vaultName) => {
+    let result;
+    try {
+      result = await window.electronAPI.removeVault(vaultName);
+    } catch {
+      result = {
+        success: false,
+        error: "The vault couldn't be removed from the list.",
+      };
+    }
+    setSnackbar(
+      result.success
+        ? {
+            open: true,
+            message: `Removed ${vaultName} from the list. Its file stays at ${result.location}.`,
+            severity: 'success',
+          }
+        : { open: true, message: result.error, severity: 'error' }
+    );
+    loadAvailableVaults();
+  };
+
+  // From the unlocked vault only, as for env vaults; main refuses it locked.
+  const forgetSavedPassword = async (vaultName) => {
+    let result;
+    try {
+      result = await window.electronAPI.forgetVaultPassword(vaultName);
+    } catch {
+      result = { success: false };
+    }
+    setSnackbar(
+      result?.success
+        ? {
+            open: true,
+            message: `Forgot the saved password of ${vaultName}. You'll type it the next time you unlock.`,
+            severity: 'success',
+          }
+        : {
+            open: true,
+            message: "The saved password couldn't be forgotten.",
+            severity: 'error',
+          }
+    );
+    loadSavedPasswords();
+  };
+
+  const handleVaultLogin = async (password, options) => {
     if (window.electronAPI && currentVault) {
       try {
-        const result = await window.electronAPI.unlockVault(
-          currentVault,
-          password
-        );
+        // A vault with a key file: main asks for the file, then unlocks.
+        const { keyFile = false, ...rest } = options ?? {};
+        const result = await (keyFile
+          ? window.electronAPI.unlockVaultWithKeyFile(
+              currentVault,
+              password,
+              rest
+            )
+          : options
+            ? window.electronAPI.unlockVault(currentVault, password, options)
+            : window.electronAPI.unlockVault(currentVault, password));
+        if (result.canceled) return { success: false, canceled: true };
         if (result.success) {
-          setUsesDefaultPassword(Boolean(result.usesDefaultPassword));
-          setIsAuthenticated(true);
-          setCurrentView('manager');
+          if (options?.remember && result.remembered === false) {
+            setSnackbar({
+              open: true,
+              message:
+                "Unlocked, but the password couldn't be saved on this computer (the keychain refused it).",
+              severity: 'warning',
+            });
+          }
+          if (options) loadSavedPasswords();
+          enterVault(result);
           return { success: true };
         } else {
-          return { success: false, error: result.error };
+          return { success: false, code: result.code, error: result.error };
         }
       } catch (error) {
         return { success: false, error: 'Authentication failed' };
@@ -239,10 +428,16 @@ function App() {
   };
 
   // Recovery already opened the session in the main process.
-  const handleVaultRecovered = (vaultData, recoveryMethod) => {
+  const handleVaultRecovered = (vaultData, recoveryMethod, notice) => {
     console.log('Successfully recovered vault with method: ', recoveryMethod);
     setIsAuthenticated(true);
     setCurrentView('manager');
+    // A key-file vault's recovery says what changed, and may change what
+    // it needs to unlock.
+    if (notice) {
+      setSnackbar({ open: true, ...notice });
+      loadAvailableVaults();
+    }
   };
 
   const handleVaultDeleted = (vaultName, message) => {
@@ -263,25 +458,57 @@ function App() {
     }
   };
 
-  const handleSnackbarClose = () => {
+  const handleSnackbarClose = (event, reason) => {
+    // A message that stays isn't dismissed by a click elsewhere.
+    if (snackbar.persist && reason === 'clickaway') return;
     setSnackbar({ ...snackbar, open: false });
   };
+
+  const modeSwitch = features.envVaults && (
+    <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
+      <ToggleButtonGroup
+        exclusive
+        size="small"
+        value={selectorMode}
+        onChange={(event, mode) => mode && setSelectorMode(mode)}
+        aria-label="Vault type"
+      >
+        <ToggleButton value="passwords">Passwords</ToggleButton>
+        <ToggleButton value="environments">Environments</ToggleButton>
+      </ToggleButtonGroup>
+    </Box>
+  );
 
   const renderCurrentView = () => {
     switch (currentView) {
       case 'selector':
+        if (features.envVaults && selectorMode === 'environments') {
+          return <EnvVaultsPanel header={modeSwitch} />;
+        }
         return (
           <VaultSelector
+            header={modeSwitch || null}
             vaults={availableVaults}
             onVaultSelect={handleVaultSelect}
             onCreateNew={() => setCurrentView('create')}
             onVaultDeleted={handleVaultDeleted}
+            remembered={kept.vaults}
+            opened={openedVaults}
+            onOpenFile={
+              window.electronAPI?.openVaultFile ? openVaultFile : undefined
+            }
+            onRemove={removeVault}
           />
         );
       case 'login':
         return (
           <VaultLogin
             vaultName={currentVault}
+            canRemember={kept.available}
+            remembered={kept.vaults.includes(currentVault)}
+            needsKeyFile={keyFileVaults.includes(currentVault)}
+            keyFileRemembered={keyFileRemembered.includes(currentVault)}
+            initialError={loginError}
             onLogin={handleVaultLogin}
             onBack={goBack}
             onRecovery={handleRecovery}
@@ -299,6 +526,7 @@ function App() {
         return (
           <VaultRecovery
             vaultName={currentVault}
+            needsKeyFile={keyFileVaults.includes(currentVault)}
             onRecover={handleVaultRecovered}
             onBack={goBack}
           />
@@ -310,6 +538,8 @@ function App() {
             onLock={lockVault}
             usesDefaultPassword={usesDefaultPassword}
             onPasswordChanged={() => setUsesDefaultPassword(false)}
+            passwordSaved={kept.vaults.includes(currentVault)}
+            onForgetPassword={() => forgetSavedPassword(currentVault)}
           />
         );
       default:
@@ -328,6 +558,7 @@ function App() {
           open={showConfiguration}
           onClose={() => setShowConfiguration(false)}
           vaultName={isAuthenticated ? currentVault : null}
+          envVaults={features.envVaults}
         />
 
         <ImportExportDialog
@@ -349,7 +580,7 @@ function App() {
         {/* Success/Error Messages */}
         <Snackbar
           open={snackbar.open}
-          autoHideDuration={6000}
+          autoHideDuration={snackbar.persist ? null : 6000}
           onClose={handleSnackbarClose}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
         >

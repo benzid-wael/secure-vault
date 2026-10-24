@@ -213,7 +213,7 @@ npm run start:prod
 ### Managing Passwords
 
 - **Search**: Use the search bar to quickly find passwords
-- **Copy**: Click the copy icon next to any field to copy it to clipboard
+- **Copy**: Click the copy icon next to any field to copy it to clipboard; secrets are cleared from the clipboard after 30 seconds
 - **View**: Click the eye icon to show/hide passwords
 - **Edit**: Click the menu (⋮) and select "Edit"
 - **Delete**: Click the menu (⋮) and select "Delete"

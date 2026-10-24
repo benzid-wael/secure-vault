@@ -1,4 +1,5 @@
 import { EnvironmentVault } from '../../../electron/models/EnvironmentVault.js';
+import { EnvironmentResolver } from '../../../electron/services/EnvironmentResolver.js';
 
 function createSampleVault() {
   const vault = new EnvironmentVault();
@@ -128,6 +129,19 @@ describe('EnvironmentVault', () => {
       expect(() => vault.renameEnvironment('missing', 'new')).toThrow(
         "Environment 'missing' not found"
       );
+    });
+
+    it('moves the envs that extend it along (New-44)', () => {
+      const vault = createSampleVault();
+      vault.addEnvironment('qa');
+      vault.setExtends('qa', 'staging');
+      vault.setExtends('production', 'staging');
+      vault.addEnvironment('other');
+      vault.setExtends('other', 'production');
+      vault.renameEnvironment('staging', 'stage');
+      expect(vault.environments.qa.extends).toBe('stage');
+      expect(vault.environments.production.extends).toBe('stage');
+      expect(vault.environments.other.extends).toBe('production');
     });
   });
 
@@ -396,5 +410,363 @@ describe('EnvironmentVault', () => {
       expect(vault.getHistory('staging')).toHaveLength(3);
       expect(vault.getActiveVersion('staging').vars.NEW_KEY).toBe('new_val');
     });
+
+    it('merges several files into one version; the last one wins (New-45)', () => {
+      const vault = new EnvironmentVault();
+      vault.importFromEnvFile(
+        'dev',
+        ['# from a\nX=a\nA=1', 'X=b\nB=2', '# from c\nC=3'],
+        { comments: true }
+      );
+      expect(vault.getHistory('dev')).toHaveLength(1);
+      const active = vault.getActiveVersion('dev');
+      expect(active.vars).toEqual({ X: 'b', A: '1', B: '2', C: '3' });
+      // X's value came from the second file, which gives it no comment.
+      expect(active.comments).toEqual({ C: 'from c' });
+    });
+
+    it('keeps the flags of the keys still in the file (New-32)', () => {
+      const vault = new EnvironmentVault();
+      vault.addEnvironment('dev');
+      vault.addVersion(
+        'dev',
+        { URL: 'a', TOKEN: 't', OLD: 'o' },
+        { nonSensitive: ['URL', 'OLD'], required: ['TOKEN', 'OLD'] }
+      );
+      vault.importFromEnvFile('dev', 'URL=b\nTOKEN=t2\nNEW=n');
+      const active = vault.getActiveVersion('dev');
+      expect(active.nonSensitive).toEqual(['URL']);
+      expect(active.required).toEqual(['TOKEN']);
+    });
+  });
+});
+describe('applyVarChanges', () => {
+  const withEnv = () => {
+    const vault = new EnvironmentVault();
+    vault.addEnvironment('dev');
+    vault.addVersion(
+      'dev',
+      { HOST: 'localhost', TOKEN: 's3cret', PORT: '5432' },
+      { nonSensitive: ['HOST', 'PORT'], required: ['TOKEN'] }
+    );
+    return vault;
+  };
+
+  it('applies every op as one new version', () => {
+    const vault = withEnv();
+    const version = vault.applyVarChanges(
+      'dev',
+      [
+        { op: 'set', key: 'HOST', value: 'db.internal' },
+        { op: 'set', key: 'NEW_KEY', value: 'v' },
+        { op: 'rm', key: 'PORT' },
+      ],
+      { message: 'bulk' }
+    );
+    expect(vault.getHistory('dev')).toHaveLength(2);
+    expect(version.n).toBe(2);
+    expect(version.message).toBe('bulk');
+    expect(version.vars).toEqual({
+      HOST: 'db.internal',
+      TOKEN: 's3cret',
+      NEW_KEY: 'v',
+    });
+  });
+
+  it("keeps a key's sensitivity unless the op sets it; new keys are secret", () => {
+    const vault = withEnv();
+    const version = vault.applyVarChanges('dev', [
+      { op: 'set', key: 'HOST', value: 'h' },
+      { op: 'set', key: 'TOKEN', value: 't', sensitive: false },
+      { op: 'set', key: 'PORT', value: '1', sensitive: true },
+      { op: 'set', key: 'FRESH', value: 'f' },
+    ]);
+    expect(version.nonSensitive.sort()).toEqual(['HOST', 'TOKEN']);
+  });
+
+  it('drops a removed key from required and nonSensitive', () => {
+    const vault = withEnv();
+    const version = vault.applyVarChanges('dev', [
+      { op: 'rm', key: 'TOKEN' },
+      { op: 'rm', key: 'HOST' },
+    ]);
+    expect(version.required).toEqual([]);
+    expect(version.nonSensitive).toEqual(['PORT']);
+  });
+
+  it('marks or unmarks a key required; left out, the mark is kept (Task 9)', () => {
+    const vault = withEnv();
+    let version = vault.applyVarChanges('dev', [
+      { op: 'set', key: 'HOST', value: 'h', required: true },
+      { op: 'set', key: 'TOKEN', value: 't' },
+    ]);
+    expect(version.required.sort()).toEqual(['HOST', 'TOKEN']);
+    version = vault.applyVarChanges('dev', [
+      { op: 'set', key: 'TOKEN', value: 't', required: false },
+    ]);
+    expect(version.required).toEqual(['HOST']);
+  });
+
+  it('removes a key a .env file could not hold, set by an older version', () => {
+    const vault = withEnv();
+    vault.addVersion('dev', { 'my-key': 'x', HOST: 'h' });
+    const version = vault.applyVarChanges('dev', [{ op: 'rm', key: 'my-key' }]);
+    expect(version.vars).toEqual({ HOST: 'h' });
+  });
+
+  it('says what a set key may hold', () => {
+    expect(() =>
+      withEnv().applyVarChanges('dev', [{ op: 'set', key: 'a.b', value: '' }])
+    ).toThrow(
+      "Invalid key 'a.b': use letters, digits and _, not starting with a digit"
+    );
+  });
+
+  it('refuses a missing env unless createEnv', () => {
+    const vault = new EnvironmentVault();
+    const ops = [{ op: 'set', key: 'A', value: '1' }];
+    expect(() => vault.applyVarChanges('prod', ops)).toThrow(
+      "Environment 'prod' not found"
+    );
+    expect(vault.listEnvironmentNames()).toEqual([]);
+    vault.applyVarChanges('prod', ops, { createEnv: true });
+    expect(vault.getActiveVersion('prod').vars).toEqual({ A: '1' });
+  });
+
+  it.each([
+    [[], 'No changes to apply'],
+    [null, 'No changes to apply'],
+    [[{ op: 'set', key: '1BAD', value: 'x' }], "Invalid key '1BAD'"],
+    [[{ op: 'set', key: 'A-B', value: 'x' }], "Invalid key 'A-B'"],
+    [[{ op: 'set', key: 'A', value: 3 }], "The value for 'A' must be a string"],
+    [[{ op: 'rm', key: 'NOPE' }], "Key 'NOPE' not found in environment 'dev'"],
+    [[{ op: 'move', key: 'HOST' }], "Unknown change 'move'"],
+    [[null], "Invalid key 'undefined'"],
+  ])('rejects %j and adds no version', (ops, message) => {
+    const vault = withEnv();
+    expect(() =>
+      vault.applyVarChanges('dev', /** @type {any} */ (ops))
+    ).toThrow(message);
+    expect(vault.getHistory('dev')).toHaveLength(1);
+  });
+
+  it('marks the version cap with code LIMIT', () => {
+    const vault = withEnv();
+    for (let i = 1; i < 1000; i++) {
+      vault.applyVarChanges('dev', [{ op: 'set', key: 'N', value: String(i) }]);
+    }
+    let error;
+    try {
+      vault.applyVarChanges('dev', [{ op: 'set', key: 'N', value: 'x' }]);
+    } catch (e) {
+      error = e;
+    }
+    expect(error.code).toBe('LIMIT');
+  });
+});
+
+describe('key comments', () => {
+  const withComment = () => {
+    const vault = new EnvironmentVault();
+    vault.addEnvironment('dev');
+    vault.applyVarChanges(
+      'dev',
+      [
+        { op: 'set', key: 'TOKEN', value: 't', comment: '  Rotated monthly ' },
+        { op: 'set', key: 'HOST', value: 'h' },
+      ],
+      { createEnv: true }
+    );
+    return vault;
+  };
+
+  it('sets, keeps, and removes a comment through applyVarChanges', () => {
+    const vault = withComment();
+    expect(vault.getActiveVersion('dev').comments).toEqual({
+      TOKEN: 'Rotated monthly',
+    });
+    vault.applyVarChanges('dev', [{ op: 'set', key: 'TOKEN', value: 't2' }]);
+    expect(vault.getActiveVersion('dev').comments).toEqual({
+      TOKEN: 'Rotated monthly',
+    });
+    vault.applyVarChanges('dev', [
+      { op: 'set', key: 'TOKEN', value: 't2', comment: '' },
+    ]);
+    expect(vault.getActiveVersion('dev')).not.toHaveProperty('comments');
+  });
+
+  it('drops the comment of a removed key', () => {
+    const vault = withComment();
+    vault.applyVarChanges('dev', [{ op: 'rm', key: 'TOKEN' }]);
+    expect(vault.getActiveVersion('dev')).not.toHaveProperty('comments');
+  });
+
+  it('carries comments over writes that know nothing of them', () => {
+    const vault = withComment();
+    vault.addVersion('dev', { TOKEN: 'x', HOST: 'y' });
+    expect(vault.getActiveVersion('dev').comments).toEqual({
+      TOKEN: 'Rotated monthly',
+    });
+    vault.importFromEnvFile('dev', 'HOST=z');
+    expect(vault.getActiveVersion('dev')).not.toHaveProperty('comments');
+  });
+
+  it('keeps comments through rollback, squash and a JSON round trip', () => {
+    const vault = withComment();
+    vault.applyVarChanges('dev', [
+      { op: 'set', key: 'TOKEN', value: 't', comment: 'newer' },
+    ]);
+    vault.rollback('dev', 1);
+    expect(vault.getActiveVersion('dev').comments.TOKEN).toBe(
+      'Rotated monthly'
+    );
+    vault.squash('dev');
+    const reloaded = EnvironmentVault.fromJSON(
+      JSON.parse(JSON.stringify(vault.toJSON()))
+    );
+    expect(reloaded.getActiveVersion('dev').comments.TOKEN).toBe(
+      'Rotated monthly'
+    );
+    expect(reloaded.getVersion('dev', 1).comments.TOKEN).toBe(
+      'Rotated monthly'
+    );
+  });
+
+  it('refuses a comment that is not a string or is too long', () => {
+    const vault = withComment();
+    expect(() =>
+      vault.applyVarChanges('dev', [
+        { op: 'set', key: 'HOST', value: 'h', comment: /** @type {any} */ (5) },
+      ])
+    ).toThrow("The comment for 'HOST' must be a string");
+    expect(() =>
+      vault.applyVarChanges('dev', [
+        { op: 'set', key: 'HOST', value: 'h', comment: 'x'.repeat(1001) },
+      ])
+    ).toThrow("Comment for 'HOST' exceeds maximum length");
+  });
+});
+
+describe('comments across envs and imports', () => {
+  it('commentsOf layers a child over the env it extends', () => {
+    const vault = new EnvironmentVault();
+    vault.addEnvironment('base');
+    vault.addVersion(
+      'base',
+      { A: '1', B: '2' },
+      { comments: { A: 'a', B: 'b' } }
+    );
+    vault.addEnvironment('prod');
+    vault.addVersion('prod', { B: 'x', C: '3' }, { comments: { C: 'c' } });
+    vault.setExtends('prod', 'base');
+    expect(vault.commentsOf('prod')).toEqual({ A: 'a', C: 'c' });
+  });
+
+  it('importFromEnvFile takes the file comments only when asked', () => {
+    const vault = new EnvironmentVault();
+    vault.addEnvironment('dev');
+    vault.addVersion(
+      'dev',
+      { A: '1', B: '2' },
+      { comments: { A: 'old', B: 'kept' } }
+    );
+    vault.importFromEnvFile('dev', '# new\nA=1\nB=2\n');
+    expect(vault.getActiveVersion('dev').comments).toEqual({
+      A: 'old',
+      B: 'kept',
+    });
+    vault.importFromEnvFile('dev', '# new\nA=1\nB=2\n', { comments: true });
+    expect(vault.getActiveVersion('dev').comments).toEqual({
+      A: 'new',
+      B: 'kept',
+    });
+  });
+});
+
+describe('references after a rename (New-30)', () => {
+  // `base` is referenced from shop, from itself and from `base-old` (whose
+  // name only starts the same); self refs and other names stay as they are.
+  const build = () => {
+    const vault = new EnvironmentVault();
+    vault.addEnvironment('base');
+    vault.addVersion('base', {
+      HOST: 'db.internal',
+      PORT: '5432',
+      URL: 'postgres://{{env:base/HOST}}:{{env:self/PORT}}',
+    });
+    vault.addEnvironment('base-old');
+    vault.addVersion('base-old', { HOST: 'old.internal' });
+    vault.addEnvironment('shop');
+    vault.addVersion(
+      'shop',
+      {
+        DB: '{{env:base/URL}}/shop',
+        BOTH: '{{ env:base/HOST }} and {{env:base-old/HOST}}',
+        PLAIN: 'no refs',
+      },
+      {
+        nonSensitive: ['PLAIN'],
+        required: ['DB'],
+        comments: { DB: 'from base' },
+      }
+    );
+    return vault;
+  };
+
+  it('counts references in active versions only', () => {
+    const vault = build();
+    expect(vault.referencesTo('base')).toEqual([
+      { env: 'base', count: 1 },
+      { env: 'shop', count: 2 },
+    ]);
+    expect(vault.referencesTo('base-old')).toEqual([{ env: 'shop', count: 1 }]);
+    expect(vault.referencesTo('nobody')).toEqual([]);
+    vault.addVersion('shop', { PLAIN: 'no refs' }); // the refs are history now
+    expect(vault.referencesTo('base')).toEqual([{ env: 'base', count: 1 }]);
+  });
+
+  it('after a rename every reference resolves to the same values', () => {
+    const vault = build();
+    const before = Object.fromEntries(
+      vault
+        .listEnvironmentNames()
+        .map((n) => [n, new EnvironmentResolver(vault).resolveEnvironment(n)])
+    );
+    vault.renameEnvironment('base', 'core');
+    const updated = vault.renameReferences('base', 'core', { message: 'm' });
+    expect(updated).toEqual([
+      { env: 'core', count: 1 },
+      { env: 'shop', count: 2 },
+    ]);
+    const resolver = new EnvironmentResolver(vault);
+    expect(resolver.resolveEnvironment('core')).toEqual(before.base);
+    expect(resolver.resolveEnvironment('shop')).toEqual(before.shop);
+    expect(resolver.resolveEnvironment('base-old')).toEqual(before['base-old']);
+    expect(vault.referencesTo('base')).toEqual([]);
+
+    const shop = vault.getActiveVersion('shop');
+    expect(shop.vars).toEqual({
+      DB: '{{env:core/URL}}/shop',
+      BOTH: '{{ env:core/HOST }} and {{env:base-old/HOST}}',
+      PLAIN: 'no refs',
+    });
+    expect(shop).toMatchObject({
+      n: 2,
+      message: 'm',
+      nonSensitive: ['PLAIN'],
+      required: ['DB'],
+      comments: { DB: 'from base' },
+    });
+    // History keeps what it said; base-old had nothing to change.
+    expect(vault.getVersion('shop', 1).vars.DB).toBe('{{env:base/URL}}/shop');
+    expect(vault.getHistory('base-old')).toHaveLength(1);
+  });
+
+  it('without the rename, references to the old name fail to resolve', () => {
+    const vault = build();
+    vault.renameEnvironment('base', 'core');
+    expect(() =>
+      new EnvironmentResolver(vault).resolveEnvironment('shop')
+    ).toThrow();
   });
 });

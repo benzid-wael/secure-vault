@@ -267,7 +267,7 @@ describe('CLI environment vaults', () => {
     const loaded = await EnvironmentVaultService.loadVault(vaultPath, PW);
     expect(loaded.success).toBe(true);
 
-    await EnvironmentVaultService.saveVault(vaultPath, PW, loaded.data);
+    await EnvironmentVaultService.transact(vaultPath, PW, () => {});
     expect(fs.readJSONSync(vaultPath).kdf).toEqual(
       CryptographyService.kdfHeader()
     );
@@ -294,7 +294,7 @@ describe('CLI environment vaults: key reuse', () => {
 
   it('a mutation derives the key once and keeps the salt', async () => {
     const { salt, kdf } = fs.readJSONSync(vaultPath);
-    const spy = vi.spyOn(CryptographyService, 'deriveKey');
+    const spy = vi.spyOn(CryptographyService, 'deriveKeyAsync');
 
     const result = await EnvironmentVaultService.setEnv(
       vaultPath,
