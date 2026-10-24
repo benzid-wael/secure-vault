@@ -30,7 +30,7 @@ From [`docs/RELEASING.md`](../RELEASING.md) and `.github/workflows/release.yml`:
 | Desktop app, macOS/Windows/Linux | Electron `^42.3.3`, packaged                                  | GitHub Release asset, manual install, no updater | Unsigned; the CSP must be tested on this build, not in dev   |
 | npm CLI                          | Node ≥ 20.10                                                  | `npm install -g @benzid.wael/secure-vault`       | Users upgrade on their own schedule                          |
 | Standalone CLI binaries          | Bun-compiled                                                  | GitHub Release asset, manual install             | Different `node:crypto` implementation (New-5)               |
-| CI                               | ubuntu-latest (unit tests also on Windows and macOS), Node 22 | `.github/workflows/ci.yml`                       | e2e job added (Task 30); waits on its first green run        |
+| CI                               | ubuntu-latest (unit tests also on Windows and macOS), Node 22 | `.github/workflows/ci.yml`                       | e2e job (Task 30) green since 2026-10-24                     |
 
 There is no server, no database and no remote config. "Schema" here means the
 vault file and the files next to it (`.bak`, `.lock`, `.deleted.<ts>`,
@@ -38,9 +38,9 @@ vault file and the files next to it (`.bak`, `.lock`, `.deleted.<ts>`,
 
 ## Gates
 
-| Gate                                     | Default | Controls                                                                        | Flip on (evidence, not a date)                                                                                                                                                                                                                                    | Defined by |
-| ---------------------------------------- | ------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| Environments UI: `SECURE_VAULT_ENV_UI=1` | off     | Every env IPC channel in main, and everything env-related in the renderer (19+) | M0 done in packaged builds (New-19); Tasks 6 + 8 released; `env-vault` e2e green in CI (Task 30); Copy (Task 12) in; the CLI release carrying Task 6 has been out as `latest`. Bulk edit (21) is **not** required since the MVP cut (proposed, author to confirm) | New-4      |
+| Gate                                     | Default | Controls                                                                        | Flip on (evidence, not a date)                                                                                                                                                                                                                                       | Defined by |
+| ---------------------------------------- | ------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| Environments UI: `SECURE_VAULT_ENV_UI=1` | off     | Every env IPC channel in main, and everything env-related in the renderer (19+) | M0 done in packaged builds (New-19); Tasks 6 + 8 released; ✅ `env-vault` e2e green in CI (Task 30); Copy (Task 12) in; the CLI release carrying Task 6 has been out as `latest`. Bulk edit (21) is **not** required since the MVP cut (proposed, author to confirm) | New-4      |
 
 The CLI-side changes (Tasks 3–10) ship **ungated**: they change concurrency
 behavior and add files, not features.
@@ -68,13 +68,12 @@ Known so far. Each entry says what breaks.
    app can't detect which CLI is installed.
 7. **Task 6 (CLI locking) not to Linux users before New-10.** A CLI in a
    container sharing the host kernel has the same boot time but its own pid
-   namespace, so the host can take over its live lock and overwrite its write. macOS and Windows are unaffected. _Status:_ New-10 is built; it clears this
-   item once its Linux-only test has passed in CI.
+   namespace, so the host can take over its live lock and overwrite its write. macOS and Windows are unaffected. _Status:_ cleared 2026-10-24: New-10's
+   Linux-only test passed in CI.
 8. **Task 6 (CLI locking) not to Windows users before New-12.** Every write
    then takes the lock and renames under it; without the rename retry, a scanner or reader holding the file makes the
-   write fail. _Status:_ New-12 is built and tested by simulation; real
-   Windows coverage waits on New-13, whose CI job is built and runs on the
-   next push.
+   write fail. _Status:_ cleared 2026-10-24: New-12 is built, and
+   New-13 runs the unit tests on Windows in CI, green.
 
 ## Rollback
 
@@ -218,9 +217,8 @@ Known hazards so far, to be completed per task:
 - **Before it ships (in order):**
   1. Task 8: docs, CHANGELOG and `doctor` in the **same** release ("must not
      ship early" item 3).
-  2. New-10's Linux CI run is green (item 7).
-  3. New-12 shipped with it (it is), and ideally New-13 has run Windows tests
-     (item 8).
+  2. ✅ New-10's Linux CI run is green (item 7).
+  3. ✅ New-12 shipped with it, and New-13 has run Windows tests (item 8).
   4. New-5 passed, because Task 3 rides in the same release.
 - **Gated by:** nothing. It's a correctness change to existing commands;
   there's no flag.

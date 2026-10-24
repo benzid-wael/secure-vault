@@ -41,7 +41,7 @@ updated as each task finishes, not in a batch at the end.
 | 27     | Renderer: import, export, template                                 | M5  | P2  | ✅     | 18, 20                                 |
 | 28     | Renderer: env vault change-password                                | M5  | P2  | ✅     | 7, 18, 19                              |
 | 29     | e2e scenario `env-vault-concurrent`                                | M6  | P1  | ✅     | 21                                     |
-| 30     | CI e2e job (ubuntu + xvfb)                                         | M6  | P1  | 🟡     | 1, 29                                  |
+| 30     | CI e2e job (ubuntu + xvfb)                                         | M6  | P1  | ✅     | 1, 29                                  |
 | 31     | User guide `docs/guide/gui/env-vaults.md`                          | M6  | P2  | ✅     | 21                                     |
 | New-1  | Coverage can't see the code this plan changes                      | —   | P1  | ✅     | — (blocks 1, 3)                        |
 | New-2  | App-wide settings store                                            | M3  | P1  | ✅     | 0                                      |
@@ -52,10 +52,10 @@ updated as each task finishes, not in a batch at the end.
 | New-7  | Commit a way to measure coverage of excluded files                 | —   | P1  | ✅     | New-1                                  |
 | New-8  | `npm run lint` fails locally on gitignored build output            | —   | P2  | ✅     | —                                      |
 | New-9  | Type-check gate: confirm "no new errors" as this plan's rule       | —   | P1  | ✅     | —                                      |
-| New-10 | Lock: a container sharing the kernel can look like this machine    | —   | P1  | 🟡     | 4 (blocks the release of 6)            |
+| New-10 | Lock: a container sharing the kernel can look like this machine    | —   | P1  | ✅     | 4 (blocks the release of 6)            |
 | New-11 | Bring RFC §6.5 in line with Corrections 6 and 7                    | —   | P2  | ✅     | 4                                      |
 | New-12 | Windows: retry the final rename on `EPERM`                         | M1  | P1  | ✅     | 5 (blocks the release of 6 on Windows) |
-| New-13 | CI runs the unit tests on Windows and macOS too                    | —   | P1  | 🟡     | — (verifies 4, New-12)                 |
+| New-13 | CI runs the unit tests on Windows and macOS too                    | —   | P1  | ✅     | — (verifies 4, New-12)                 |
 | New-14 | Remove the env `saveVault` and its mocked tests                    | —   | P2  | ✅     | 6                                      |
 | New-15 | Type `window.electronAPI` once for the type check                  | —   | P2  | ✅     | —                                      |
 | New-16 | ESLint flags MUI components used only in JSX as unused             | —   | P2  | ✅     | —                                      |
@@ -1158,8 +1158,8 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### Task 30: CI e2e job (ubuntu + xvfb)
 
-- **Status:** 🟡 built 2026-10-22; done when a push shows the `e2e` job
-  green. On `feat/vault-env-gui`.
+- **Status:** ✅ done 2026-10-24: the `e2e` job is green on
+  `feat/vault-env-gui`. Not merged.
 - **Goal:** Every PR runs all e2e scenarios (D3).
 - **Constraints:** Must not make the existing CI job slower; run as a separate
   job.
@@ -1465,11 +1465,10 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-10: Lock: a container sharing the kernel can look like this machine
 
-- **Status:** 🟡 partial 2026-10-21: built and unit-tested; committed as
-  `ac641ad`, approved by the author; not merged, not released. **Waiting on:** the first CI run on Ubuntu
-  (`ci.yml`, after the branch is pushed). That's the only place the real
-  `/proc/self/ns/pid` read runs; this machine is macOS, where the test is
-  skipped.
+- **Status:** ✅ done 2026-10-24: its Linux-only test passed in CI on
+  Ubuntu, where the real `/proc/self/ns/pid` read runs. Committed as
+  `ac641ad`; not merged, not released. The first run also caught a test
+  writing a lock without `pidns` (`envDoctor`), fixed in `5917c1e`.
 - **Built:**
   - `currentPidNamespace()` reads `/proc/self/ns/pid` on Linux and returns
     undefined elsewhere or when `/proc` is unreadable.
@@ -1596,8 +1595,8 @@ another name.`). `env-vaults:create {mode: 'dialog'}` checks the password
 
 ### New-13: CI runs the unit tests on Windows and macOS too
 
-- **Status:** 🟡 built 2026-10-22; waits on its first CI run. Done when a
-  push shows both new jobs green.
+- **Status:** ✅ done 2026-10-24: the Windows and macOS unit-test jobs
+  are green (after the fixes under "First run"). Not merged.
 - **Found:** New-12, 2026-10-21.
 - **Goal:** Every PR runs `npm run test:coverage` (or at least
   `npx vitest run`) on `windows-latest` and `macos-latest` as well as
