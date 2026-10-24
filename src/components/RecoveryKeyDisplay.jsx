@@ -29,7 +29,7 @@ const RecoveryKeyDisplay = ({
   onClose,
   recoveryKey,
   vaultName,
-  onRegenerateKey,
+  onRegenerateKey = null, // optional: offers a new key when given
   isNewVault = false,
 }) => {
   const [showKey, setShowKey] = useState(false);

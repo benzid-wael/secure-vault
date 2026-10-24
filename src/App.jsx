@@ -428,10 +428,16 @@ function App() {
   };
 
   // Recovery already opened the session in the main process.
-  const handleVaultRecovered = (vaultData, recoveryMethod) => {
+  const handleVaultRecovered = (vaultData, recoveryMethod, notice) => {
     console.log('Successfully recovered vault with method: ', recoveryMethod);
     setIsAuthenticated(true);
     setCurrentView('manager');
+    // A key-file vault's recovery says what changed, and may change what
+    // it needs to unlock.
+    if (notice) {
+      setSnackbar({ open: true, ...notice });
+      loadAvailableVaults();
+    }
   };
 
   const handleVaultDeleted = (vaultName, message) => {
@@ -520,6 +526,7 @@ function App() {
         return (
           <VaultRecovery
             vaultName={currentVault}
+            needsKeyFile={keyFileVaults.includes(currentVault)}
             onRecover={handleVaultRecovered}
             onBack={goBack}
           />

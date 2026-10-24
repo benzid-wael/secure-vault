@@ -86,6 +86,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('verify-vault-recovery-key', vaultName, recoveryKey),
   loadVaultWithRecoveryKey: (vaultName, recoveryKey) =>
     ipcRenderer.invoke('load-vault-with-recovery-key', vaultName, recoveryKey),
+  // A vault that uses a key file gets a new password (and key file) as it's
+  // recovered (New-54); `options.keyFile` is 'create', 'existing' or 'none'.
+  recoverVaultWithKeyFile: (vaultName, recoveryKey, newPassword, options) =>
+    ipcRenderer.invoke(
+      'recover-vault-key-file',
+      vaultName,
+      recoveryKey,
+      newPassword,
+      options
+    ),
 
   // Vault recovery with older passwords
   recoverVaultWithOldPassword: (vaultName, oldPassword) =>

@@ -2867,11 +2867,11 @@ import` says it "creates a new version with all vars from the file(s)"
 
 ### New-54: Password vaults: a key file as second factor
 
-- **Status:** 🟡 steps 1 to 4 of 6 done 2026-10-24. Design approved
+- **Status:** 🟡 steps 1 to 5 of 6 done 2026-10-24. Design approved
   ([`PASSWORD-VAULT-2FA-RFC.md`](PASSWORD-VAULT-2FA-RFC.md) rev. 2, Q1 and
   Q2 as proposed). On `feat/vault-env-gui`; not merged, not released.
-  **Must not ship before step 5:** a vault with a key file can't yet be
-  recovered with its recovery key.
+  Step 5 done: a vault with a key file is recovered with its recovery key
+  alone, in the app and the CLI.
 - **Step 1, built:** `src/electron/utils/passwordVaultEnvelope.js`, pure
   functions: key file (`createKeyFile`, `parseKeyFile`, `keyFileIdOf`),
   keys (`newDataKey`, `mainKekOf` = HKDF-SHA256 of PBKDF2 ‖ key file,
@@ -2985,8 +2985,57 @@ import` says it "creates a new version with all vars from the file(s)"
   chosen via "Choose another" is refused; the remembered one unlocks with
   no dialog). Suite 1623 passed; e2e 11/11; type check 204. Lines:
   `KeyFileLocations.js` 100%, `PasswordVaultIpc.js` 99.5%.
-- **Next:** step 5, recovery of a vault with a key file with its recovery
-  key (app and CLI), then a new password and key file.
+- **Step 5, built:**
+  - `VaultService.openWithRecoveryKey` (the recovery slot, then the
+    payload; resolves to `{dek}`; `AUTH` "Invalid recovery key",
+    `TAMPERED`, `NO_KEY_FILE`, `NOT_FOUND`, `NEWER_FORMAT`) and
+    `resetWithRecoveryKey(name, recoveryKey, newPassword, newKeyFileKey)`:
+    with a key file, a new salt and `main` slot for the new password + key
+    file, the recovery slot kept (the same recovery key still works), the
+    result re-opened before it replaces the vault; without one, format 1
+    under the new password with a new recovery key (as turning it off
+    does). The new password meets the usual policy. `verifyRecoveryKey`
+    answers `{keyFile: true}` for format 2; `loadVaultWithRecoveryKey`
+    refuses it (`NEW_PASSWORD_REQUIRED`: it has no password to hand back);
+    recovery with an old password says only the recovery key works
+    (format 2 keeps no password history copy).
+  - `PasswordVaultIpc` `recover-vault-key-file` (preload
+    `recoverVaultWithKeyFile`): the password policy and the recovery key
+    are checked before any dialog, then a new key file is created or
+    picked (or none); a created one is removed if the write fails. The
+    session opens only once the vault has its new password. The key file
+    location follows; a saved password is replaced by the new one.
+  - Renderer: `VaultRecovery` hides "Previous Password" for a vault with a
+    key file; once its recovery key is accepted it asks for the new
+    password (twice) and "Create a new key file" / "Use a key file I
+    already have" / "Stop requiring a key file"; a new recovery key is
+    shown before going on; the vault list refreshes and a message says
+    what changed.
+  - CLI `vault recover --name`: for a vault with a key file (where the
+    password loop could never succeed) it asks for the recovery key, then
+    a new password twice, and writes `<name>-recovered.vault`, which opens
+    with the new password alone, printing its new recovery key; the vault
+    itself is left as it is, as `recover` always did
+    (`VaultRecoveryService.recoverWithRecoveryKey`).
+- **Step 5, checked:** service tests (11: open typed any way, each
+  refusal, damaged slot vs wrong key, reset with and without a key file,
+  weak password and wrong key change nothing, a failed write keeps the
+  vault); handlers (9: create / existing / none, refusals before any
+  dialog, cancel, a created key file removed on failure, saved password
+  follows, file gone); `VaultRecovery` (8); `VaultRecoveryService` (4); new
+  e2e `key-file-recovery` 8/8 (only the recovery key offered, wrong key
+  refused, not open before the new password, opens with its entries, new
+  key file written, the password never in the page, after a restart the
+  new password and remembered key file unlock it). CLI run by hand in a
+  pty against a scratch home: wrong key re-asked, weak password re-asked,
+  the copy opens with the new password, the original still needs its key
+  file. Suite 1655 passed; e2e 12/12; type check 203 (one fewer:
+  `RecoveryKeyDisplay`'s `onRegenerateKey` is optional, as it always
+  acted). Lines: `VaultService.js` 93%, `PasswordVaultIpc.js` 99.6%,
+  `VaultRecoveryService.js` 97%, `VaultRecovery.jsx` 92%, `App.jsx` 93%.
+- **Next:** step 6, the guide and CHANGELOG pass and the e2e scenario's
+  completion; importing an export of a vault with a key file stays a
+  later item (refused with `UNSUPPORTED` for now).
 
 - **Found:** the author, 2026-10-23: "for security reason I would like to
   support 2fa".

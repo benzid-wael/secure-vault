@@ -863,12 +863,13 @@ env init` writes; it's added to the remembered list.
   folder (vault path → key file path, 0600, no key content). Older versions refuse it with the "upgrade"
   message (New-29); turning it off writes format 1 again.
 - **Must not ship before:** New-54 step 5 (recovery of a format-2 vault
-  with its recovery key): the dialog and the guide promise it.
+  with its recovery key): done 2026-10-24.
 - **Before it ships:** the CHANGELOG "Added" entry and the guide (both
-  written); steps 4 to 6; a hand check of the native dialogs on Windows and
+  written); step 6; a hand check of the native dialogs on Windows and
   Linux.
 - **Gated by:** nothing: nothing changes until a user turns it on.
 - **Verify after release:** turn it on for a test vault, lock, unlock with
-  the password and the key file; a wrong key file is refused; turn it off.
+  the password and the key file; a wrong key file is refused; recover it
+  with its recovery key and a new password; turn it off.
 - **Rollback:** an older app can't open a format-2 vault: turn the key file
   off first (format 1 again), then downgrade.

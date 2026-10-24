@@ -45,7 +45,7 @@ export class PasswordEnvelopeError extends Error {
   }
 }
 
-const tampered = () =>
+export const tampered = () =>
   new PasswordEnvelopeError(
     'TAMPERED',
     "This vault's header was changed after it was written, or the file is " +

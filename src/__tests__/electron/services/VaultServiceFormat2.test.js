@@ -1,8 +1,8 @@
 // @vitest-environment node
 // Password vault format 2 in the services and the session (New-54, step 2):
 // a key file + password open the vault into a data key, which loads, saves,
-// edits settings, exports and makes a new recovery key. What later steps
-// add is refused with UNSUPPORTED. Format 1 is untouched (its own tests).
+// edits settings, exports and makes a new recovery key. Recovery is in
+// VaultServiceKeyFileRecovery.test.js. Format 1 is untouched (its own tests).
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs-extra';
 import os from 'os';
@@ -239,31 +239,24 @@ describe('without the key file', () => {
   });
 });
 
-describe('what later steps add', () => {
+describe('recovery that needs a new password (step 5)', () => {
   it.each([
     [
-      'recovery with the key',
+      'loading with the recovery key alone',
       () => vs.loadVaultWithRecoveryKey('team', RECOVERY_KEY),
-      'Recovery',
-    ],
-    [
-      'checking a recovery key',
-      () => vs.verifyRecoveryKey('team', RECOVERY_KEY),
-      'Recovery',
+      'NEW_PASSWORD_REQUIRED',
+      'Recovering a vault that uses a key file sets a new password: check the recovery key, then choose one.',
     ],
     [
       'recovery with an old password',
       () => vs.loadVaultWithPassword('team', PW),
-      'Recovery',
+      'UNSUPPORTED',
+      'A vault that uses a key file can be recovered only with its recovery key.',
     ],
-  ])('refuses %s, changing nothing', async (_, act, what) => {
+  ])('refuses %s, changing nothing', async (_, act, code, error) => {
     const before = fs.readdirSync(dir).sort();
     const content = fs.readFileSync(path.join(dir, 'team.vault'), 'utf8');
-    expect(await act()).toEqual({
-      success: false,
-      code: 'UNSUPPORTED',
-      error: `${what} isn't supported yet for a vault that uses a key file.`,
-    });
+    expect(await act()).toEqual({ success: false, code, error });
     expect(fs.readdirSync(dir).sort()).toEqual(before);
     expect(fs.readFileSync(path.join(dir, 'team.vault'), 'utf8')).toBe(content);
   });

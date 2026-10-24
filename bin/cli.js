@@ -27,6 +27,7 @@ import { VaultFileService } from '../src/electron/services/VaultFileService.js';
 import { VaultService } from '../src/electron/services/VaultService.js';
 import { VaultRecoveryService } from '../src/electron/services/VaultRecoveryService.js';
 import { getVaultsDir } from '../src/electron/utils/appPaths.js';
+import { validatePasswordStrength } from '../src/utils/passwordValidation.js';
 import { registerEnvCommand } from './commands/env.js';
 import { extractRunCommand } from './commands/envRunHelpers.js';
 
@@ -58,6 +59,12 @@ program
     spinner.succeed(chalk.green('Vault exists!'));
 
     const vs = new VaultService(vaultDir);
+    // A vault that uses a key file (New-54): its recovery key alone, then a
+    // new password; no password could open it here.
+    if (await vs.usesKeyFile(options.name)) {
+      await recoverWithRecoveryKey(vaultDir, vs, options.name);
+      return;
+    }
     let masterPassword = '';
     let is_valid = false;
     while (!is_valid) {
@@ -83,6 +90,57 @@ program
       process.exit(1);
     }
   });
+
+/**
+ * `recover` for a vault that uses a key file: the recovery key, then a new
+ * password; writes `<name>-recovered.vault`, which opens with that password
+ * alone, and prints its new recovery key.
+ */
+async function recoverWithRecoveryKey(vaultDir, vs, vaultName) {
+  console.log(
+    chalk.yellow(
+      `${vaultName} needs its key file. Without it, its recovery key opens it.`
+    )
+  );
+  let recoveryKey = '';
+  for (;;) {
+    recoveryKey = await password({ message: 'Recovery key: ', mask: true });
+    const check = await vs.verifyRecoveryKey(vaultName, recoveryKey);
+    if (check.success) break;
+    console.error(chalk.red(check.error));
+    if (check.code !== 'AUTH') process.exit(1);
+  }
+  ora().start().succeed('Valid recovery key!');
+
+  let newPassword = '';
+  for (;;) {
+    newPassword = await password({ message: 'New password: ', mask: true });
+    const weak = validatePasswordStrength(newPassword);
+    if (weak.length > 0) {
+      console.error(chalk.red(weak[0]));
+      continue;
+    }
+    const again = await password({ message: 'Confirm it: ', mask: true });
+    if (again === newPassword) break;
+    console.error(chalk.red("The passwords don't match"));
+  }
+
+  const spinner = ora('Recovering vault').start();
+  const result = await new VaultRecoveryService(
+    vaultDir
+  ).recoverWithRecoveryKey(vaultName, recoveryKey, newPassword);
+  if (!result.success) {
+    spinner.fail(`Failed to recover vault: ${result.error}`);
+    process.exit(1);
+  }
+  spinner.succeed(
+    `Recovered as ${result.fileName}: it opens with the new password alone. ${vaultName}.vault is unchanged.`
+  );
+  console.log();
+  console.log(chalk.yellow('New recovery key for the recovered vault:'));
+  console.log(result.recoveryKey);
+  console.log(chalk.yellow('Save it somewhere safe, away from this computer.'));
+}
 
 registerEnvCommand(program);
 

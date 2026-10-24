@@ -9,6 +9,7 @@ import {
   parseKeyFile,
 } from '../utils/passwordVaultEnvelope.js';
 import { writePrivateJson } from '../utils/privateJsonFile.js';
+import { validatePasswordStrength } from '../../utils/passwordValidation.js';
 
 /** What a key file is saved as (New-54). */
 export const KEY_FILE_EXTENSION = 'svkey';
@@ -517,6 +518,67 @@ export function createPasswordVaultHandlers({
         ...(next.warning && { warning: next.warning }),
       };
     });
+
+  /**
+   * Recover a vault that uses a key file (New-54 step 5, D2): the recovery
+   * key opens it, `newPassword` replaces the forgotten one, and
+   * `options.keyFile` says what it needs next: a new key file ('create'),
+   * one the user has ('existing'), or none ('none': back to the password
+   * alone, with a new recovery key, which is answered). The session opens
+   * only once the vault has its new password.
+   */
+  vault['recover-vault-key-file'] = async (
+    event,
+    vaultName,
+    recoveryKey,
+    newPassword,
+    options = {}
+  ) => {
+    const choice = options?.keyFile;
+    if (!['create', 'existing', 'none'].includes(choice)) {
+      return invalid('Choose whether the vault keeps a key file.');
+    }
+    const weak = validatePasswordStrength(newPassword);
+    if (weak.length > 0) return invalid(weak[0]);
+    // The recovery key first: a wrong one mustn't leave a new key file.
+    const check = await vaultService.openWithRecoveryKey(
+      vaultName,
+      recoveryKey
+    );
+    if (!check.success) return explain(vaultName, check);
+    check.credential.dek.fill(0);
+
+    const keyFile =
+      choice === 'none'
+        ? null
+        : await keyFileFor(vaultName, choice === 'create');
+    if (keyFile && !keyFile.success) return keyFile;
+    const result = await vaultService.resetWithRecoveryKey(
+      vaultName,
+      recoveryKey,
+      newPassword,
+      keyFile?.key ?? null
+    );
+    if (!result.success) {
+      await discard(keyFile);
+      return explain(vaultName, result);
+    }
+    const vaultPath = pathOf(vaultName);
+    if (keyFile) await keyFileLocations?.set(vaultPath, keyFile.path);
+    else await keyFileLocations?.forget(vaultPath);
+    // A saved password was the forgotten one: it follows, as on a change.
+    if (keychain && (await keychain.has(vaultPath))) {
+      await keychain.remember(vaultPath, newPassword);
+    }
+    const credential = result.credential ?? newPassword;
+    const unlocked = await entered(vaultName, newPassword, result, credential);
+    result.credential?.dek.fill(0);
+    return {
+      ...unlocked,
+      ...(keyFile && { keyFile: path.basename(keyFile.path) }),
+      ...(keyFile?.warning && { warning: keyFile.warning }),
+    };
+  };
 
   // Vaults opened from other folders (New-53).
   vault['remove-vault'] = async (event, vaultName) => {

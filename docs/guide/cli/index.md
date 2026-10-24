@@ -32,7 +32,7 @@ On Windows, rename `vault-windows-x64.exe` to `vault.exe` and add its folder to
 
 ```bash
 vault info                       # show version and vault location
-vault recover --name <vault>     # recover a vault with your master password
+vault recover --name <vault>     # recover a vault (password, or recovery key if it uses a key file)
 ```
 
 Every command has `--help`:

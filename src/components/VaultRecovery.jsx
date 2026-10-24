@@ -12,6 +12,9 @@ import {
   IconButton,
   CircularProgress,
   Divider,
+  FormControlLabel,
+  Radio,
+  RadioGroup,
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
@@ -21,9 +24,36 @@ import {
   History as HistoryIcon,
   Security as SecurityIcon,
 } from '@mui/icons-material';
+import { validatePasswordStrength } from '../utils/passwordValidation';
+import RecoveryKeyDisplay from './RecoveryKeyDisplay';
 
-const VaultRecovery = ({ vaultName, onRecover, onBack }) => {
+/** What a vault that uses a key file needs once recovered (New-54). */
+const KEY_FILE_CHOICES = [
+  ['create', 'Create a new key file'],
+  ['existing', 'Use a key file I already have'],
+  ['none', 'Stop requiring a key file'],
+];
+
+/**
+ * @param {{vaultName: string, needsKeyFile?: boolean,
+ *   onRecover: (data: any, method: string,
+ *     notice?: {message: string, severity: string}) => void,
+ *   onBack: () => void}} props
+ */
+const VaultRecovery = ({
+  vaultName,
+  needsKeyFile = false,
+  onRecover,
+  onBack,
+}) => {
   const [activeTab, setActiveTab] = useState(0);
+  // A vault that uses a key file (New-54 step 5): once its recovery key is
+  // accepted, a new password and what it does about its key file.
+  const [resetting, setResetting] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [keyFileChoice, setKeyFileChoice] = useState('create');
+  const [recovered, setRecovered] = useState(null);
   const [recoveryKey, setRecoveryKey] = useState('');
   const [oldPassword, setOldPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -52,7 +82,9 @@ const VaultRecovery = ({ vaultName, onRecover, onBack }) => {
         vaultName,
         recoveryKey.trim()
       );
-      if (result.success) {
+      if (result.success && result.keyFile) {
+        setResetting(true);
+      } else if (result.success) {
         // Load vault data with recovery key
         const loadResult = await window.electronAPI.loadVaultWithRecoveryKey(
           vaultName,
@@ -72,6 +104,46 @@ const VaultRecovery = ({ vaultName, onRecover, onBack }) => {
       setError('Recovery failed. Please check your recovery key.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResetSubmit = async (e) => {
+    e.preventDefault();
+    const weak = validatePasswordStrength(newPassword);
+    if (weak.length > 0) return setError(weak[0]);
+    if (newPassword !== confirmPassword) {
+      return setError('The passwords don’t match');
+    }
+    setLoading(true);
+    setError('');
+    let result;
+    try {
+      result = await window.electronAPI.recoverVaultWithKeyFile(
+        vaultName,
+        recoveryKey.trim(),
+        newPassword,
+        { keyFile: keyFileChoice }
+      );
+    } catch {
+      result = { success: false, error: 'Recovery failed. Try again.' };
+    }
+    setLoading(false);
+    if (result.canceled) return;
+    if (!result.success) return setError(result.error);
+    const message = {
+      create: `${vaultName} has a new password and key file (${result.keyFile}); the old ones no longer open it.`,
+      existing: `${vaultName} has a new password and uses ${result.keyFile}; the old ones no longer open it.`,
+      none: `${vaultName} has a new password and no longer needs a key file.`,
+    }[keyFileChoice];
+    const notice = {
+      message: result.warning ? `${message} ${result.warning}` : message,
+      severity: result.warning ? 'warning' : 'success',
+    };
+    // A new recovery key is shown before going on: the old one is gone.
+    if (result.recoveryKey) {
+      setRecovered({ recoveryKey: result.recoveryKey, notice });
+    } else {
+      onRecover(null, 'recovery-key', notice);
     }
   };
 
@@ -181,15 +253,89 @@ const VaultRecovery = ({ vaultName, onRecover, onBack }) => {
             label="Recovery Key"
             sx={{ textTransform: 'none' }}
           />
-          <Tab
-            icon={<HistoryIcon />}
-            label="Previous Password"
-            sx={{ textTransform: 'none' }}
-          />
+          {!needsKeyFile && (
+            <Tab
+              icon={<HistoryIcon />}
+              label="Previous Password"
+              sx={{ textTransform: 'none' }}
+            />
+          )}
         </Tabs>
 
         <Box sx={{ p: 3 }}>
-          {activeTab === 0 && (
+          {activeTab === 0 && resetting && (
+            <form onSubmit={handleResetSubmit}>
+              <Alert severity="success" sx={{ mb: 2 }}>
+                The recovery key is right. Choose a new master password: the old
+                password and key file stop opening {vaultName}.
+              </Alert>
+              <TextField
+                fullWidth
+                type="password"
+                label="New Master Password"
+                value={newPassword}
+                onChange={(e) => {
+                  setNewPassword(e.target.value);
+                  if (error) setError('');
+                }}
+                autoFocus
+                disabled={loading}
+                sx={{ mb: 2 }}
+              />
+              <TextField
+                fullWidth
+                type="password"
+                label="Confirm New Password"
+                value={confirmPassword}
+                onChange={(e) => {
+                  setConfirmPassword(e.target.value);
+                  if (error) setError('');
+                }}
+                disabled={loading}
+                sx={{ mb: 1 }}
+              />
+              <RadioGroup
+                value={keyFileChoice}
+                onChange={(e) => setKeyFileChoice(e.target.value)}
+                sx={{ mb: 1, color: 'white' }}
+              >
+                {KEY_FILE_CHOICES.map(([value, label]) => (
+                  <FormControlLabel
+                    key={value}
+                    value={value}
+                    control={<Radio disabled={loading} />}
+                    label={label}
+                  />
+                ))}
+              </RadioGroup>
+              {keyFileChoice === 'none' && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  The new password alone will open the vault, and a new recovery
+                  key is made: save it.
+                </Alert>
+              )}
+              {error && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {error}
+                </Alert>
+              )}
+              <Button
+                type="submit"
+                variant="contained"
+                fullWidth
+                disabled={loading || !newPassword || !confirmPassword}
+                sx={{ py: 1.5 }}
+              >
+                {loading ? (
+                  <CircularProgress size={24} color="inherit" />
+                ) : (
+                  'Set Password and Open'
+                )}
+              </Button>
+            </form>
+          )}
+
+          {activeTab === 0 && !resetting && (
             <form onSubmit={handleRecoveryKeySubmit}>
               <Typography variant="body1" sx={{ color: 'white', mb: 2 }}>
                 Enter the recovery key that was generated when you created this
@@ -342,6 +488,15 @@ const VaultRecovery = ({ vaultName, onRecover, onBack }) => {
           )}
         </Box>
       </Paper>
+
+      {recovered && (
+        <RecoveryKeyDisplay
+          open
+          recoveryKey={recovered.recoveryKey}
+          vaultName={vaultName}
+          onClose={() => onRecover(null, 'recovery-key', recovered.notice)}
+        />
+      )}
 
       <Box sx={{ mt: 2, textAlign: 'center' }}>
         <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>

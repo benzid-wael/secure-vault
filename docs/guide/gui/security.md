@@ -43,7 +43,13 @@ open nothing without the key file.
   **Choose another key file…** on the unlock screen picks a different one.
 - A saved password (**Remember on this computer**) fills in the password
   only: the key file is still read each time.
-- The vault's recovery key still opens it if the key file is lost.
+- The vault's recovery key still opens it if the key file or the password
+  is lost: **Forgot your password? Use recovery options** asks for the
+  recovery key, then a new password and a new key file (or one you have,
+  or none). The old password and key file stop working; the same recovery
+  key keeps working, unless you choose no key file, which makes a new
+  one. A vault with a key file can't be recovered with a previous
+  password.
 - **Change Key File…** replaces it; **Stop Requiring a Key File…** goes back
   to the password alone and makes a new recovery key.
 - Older versions of SecureVault can't open a vault while it requires a key

@@ -13,6 +13,7 @@ import { VaultService } from '../../../electron/services/VaultService.js';
 import { VaultSession } from '../../../electron/services/VaultSession.js';
 import { VaultKeychain } from '../../../electron/services/VaultKeychain.js';
 import { KeyFileLocations } from '../../../electron/services/KeyFileLocations.js';
+import { KeyRecoveryService } from '../../../electron/services/recovery/KeyRecoveryService.js';
 import { createKeyFile } from '../../../electron/utils/passwordVaultEnvelope.js';
 import { fakeSafeStorage } from '../../helpers/fakeSafeStorage.js';
 
@@ -495,6 +496,113 @@ describe('the remembered key file location (step 4)', () => {
     opens = [saveTo];
     await h['delete-vault'](ev, 'team', PW);
     expect(locations.get(VAULT())).toBeNull();
+  });
+});
+
+describe('recover-vault-key-file (step 5)', () => {
+  const VAULT = () => at('vaults', 'team.vault');
+  let recoveryKey;
+  const recover = (keyFile, password = NEW_PW, key = recoveryKey) =>
+    h['recover-vault-key-file'](ev, 'team', key, password, { keyFile });
+
+  beforeEach(async () => {
+    recoveryKey = new KeyRecoveryService().recoveryKeyOf(
+      vaultFile().recoveryMetadata.recoveryKey,
+      PW
+    );
+    await enable(); // keeps that recovery key
+    await h['unlock-vault-key-file'](ev, 'team', PW, { remember: true });
+    session.close();
+    dialog.showOpenDialog.mockClear();
+    dialog.showSaveDialog.mockClear();
+  });
+
+  it('sets a new password and key file, and opens the session', async () => {
+    const lost = saveTo;
+    saveTo = at('usb', 'fresh.svkey');
+    expect(await recover('create')).toEqual({
+      success: true,
+      usesDefaultPassword: false,
+      keyFile: 'fresh.svkey',
+    });
+    expect(await loadsInSession()).toBe(true);
+    expect(typeof session.passwordFor('team')).toBe('object');
+    expect(locations.get(VAULT())).toBe(saveTo);
+    // The saved password was the forgotten one: the new one replaces it.
+    session.close();
+    expect((await h['unlock-vault-saved'](ev, 'team')).success).toBe(true);
+    session.close();
+    opens = [lost];
+    expect(
+      await h['unlock-vault-key-file'](ev, 'team', NEW_PW, {
+        chooseAnother: true,
+      })
+    ).toMatchObject({ code: 'KEY_FILE' });
+  });
+
+  it('uses a key file the user already has', async () => {
+    opens = [await writeKeyFile('spare.svkey')];
+    expect((await recover('existing')).keyFile).toBe('spare.svkey');
+    expect(dialog.showSaveDialog).not.toHaveBeenCalled();
+    expect(locations.get(VAULT())).toBe(at('keys', 'spare.svkey'));
+  });
+
+  it('goes back to the password alone, answering a new recovery key', async () => {
+    const result = await recover('none');
+    expect(result).toMatchObject({
+      success: true,
+      recoveryKey: expect.any(String),
+    });
+    expect(result.recoveryKey).not.toBe(recoveryKey);
+    expect(result).not.toHaveProperty('credential');
+    expect(session.passwordFor('team')).toBe(NEW_PW);
+    expect(dialog.showOpenDialog).not.toHaveBeenCalled();
+    expect(locations.get(VAULT())).toBeNull();
+    expect((await general['get-vaults']()).keyFile).toEqual([]);
+  });
+
+  it.each([
+    ['no key file choice', () => recover(undefined), 'INVALID'],
+    ['a weak password', () => recover('create', 'short'), 'INVALID'],
+    [
+      'a wrong recovery key',
+      () => recover('create', NEW_PW, 'WXYZ-WXYZ-WXYZ'),
+      'AUTH',
+    ],
+  ])('refuses %s before any dialog, changing nothing', async (_, act, code) => {
+    const content = fs.readFileSync(VAULT(), 'utf8');
+    expect(await act()).toMatchObject({ success: false, code });
+    expect(dialog.showSaveDialog).not.toHaveBeenCalled();
+    expect(dialog.showOpenDialog).not.toHaveBeenCalled();
+    expect(fs.readFileSync(VAULT(), 'utf8')).toBe(content);
+    expect(session.isUnlocked('team')).toBe(false);
+  });
+
+  it('changes nothing when the key file dialog is canceled', async () => {
+    const content = fs.readFileSync(VAULT(), 'utf8');
+    saveTo = null;
+    expect(await recover('create')).toEqual({
+      success: false,
+      canceled: true,
+    });
+    expect(fs.readFileSync(VAULT(), 'utf8')).toBe(content);
+    expect(session.isUnlocked('team')).toBe(false);
+  });
+
+  it('removes the new key file when the vault can’t be written', async () => {
+    saveTo = at('usb', 'fresh.svkey');
+    vi.spyOn(vs, 'resetWithRecoveryKey').mockResolvedValue({
+      success: false,
+      error: 'Failed to recover the vault',
+    });
+    expect(await recover('create')).toMatchObject({ success: false });
+    expect(fs.existsSync(saveTo)).toBe(false);
+    expect(session.isUnlocked('team')).toBe(false);
+  });
+
+  it('says so when the vault file is gone', async () => {
+    await fs.remove(VAULT());
+    expect((await recover('create')).error).toMatch(/isn't there any more/);
   });
 });
 
