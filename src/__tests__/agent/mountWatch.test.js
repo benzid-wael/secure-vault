@@ -73,6 +73,26 @@ describe('watchMount', () => {
     expect(second).toBe(true);
   });
 
+  it('restores a mount deleted again before the watch re-arms', async () => {
+    const p = path.join(dir, 'raced.txt');
+    await fs.writeFile(p, 'v1');
+    let builds = 0;
+    const stop = watchMount(p, async () => {
+      builds += 1;
+      await fs.writeFile(p, `build-${builds}`);
+      // A second clean step deletes it before watchMount can re-arm.
+      if (builds === 1) await fs.remove(p);
+    });
+
+    await fs.remove(p);
+    const restored = await waitFor(
+      async () => (await fs.readFile(p, 'utf-8')) === 'build-2'
+    );
+    stop();
+
+    expect(restored).toBe(true);
+  });
+
   it('stop() ends the watch — no rebuild after stop', async () => {
     const p = path.join(dir, 'stopped.txt');
     await fs.writeFile(p, 'v1');

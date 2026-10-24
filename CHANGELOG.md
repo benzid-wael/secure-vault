@@ -134,6 +134,9 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Fixed
 
+- **A mounted file deleted twice in quick succession comes back.** If a
+  build step deleted it again right after the agent restored it, the agent
+  stopped watching it and the file stayed gone until the next mount.
 - **`vault env agent` on Windows says it isn't available.** It failed to
   start and every command reported "agent is not running". It points to
   `vault env run` instead.
