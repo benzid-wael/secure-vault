@@ -79,6 +79,8 @@ function App() {
   const [availableVaults, setAvailableVaults] = useState([]);
   // Vaults opened from other folders, with their file (New-53).
   const [openedVaults, setOpenedVaults] = useState([]);
+  // Vaults that need a key file to unlock (New-54).
+  const [keyFileVaults, setKeyFileVaults] = useState([]);
   // The unlocked vault still uses an older version's built-in password.
   const [usesDefaultPassword, setUsesDefaultPassword] = useState(false);
   const [currentView, setCurrentView] = useState('selector'); // selector, login, manager, create, recovery
@@ -233,6 +235,7 @@ function App() {
         if (result && result.success) {
           setAvailableVaults(result.data || []);
           setOpenedVaults(result.opened || []);
+          setKeyFileVaults(result.keyFile || []);
         } else {
           console.error(
             'Failed to load vaults:',
@@ -345,9 +348,18 @@ function App() {
   const handleVaultLogin = async (password, options) => {
     if (window.electronAPI && currentVault) {
       try {
-        const result = await (options
-          ? window.electronAPI.unlockVault(currentVault, password, options)
-          : window.electronAPI.unlockVault(currentVault, password));
+        // A vault with a key file: main asks for the file, then unlocks.
+        const { keyFile = false, ...rest } = options ?? {};
+        const result = await (keyFile
+          ? window.electronAPI.unlockVaultWithKeyFile(
+              currentVault,
+              password,
+              rest
+            )
+          : options
+            ? window.electronAPI.unlockVault(currentVault, password, options)
+            : window.electronAPI.unlockVault(currentVault, password));
+        if (result.canceled) return { success: false, canceled: true };
         if (result.success) {
           if (options?.remember && result.remembered === false) {
             setSnackbar({
@@ -361,7 +373,7 @@ function App() {
           enterVault(result);
           return { success: true };
         } else {
-          return { success: false, error: result.error };
+          return { success: false, code: result.code, error: result.error };
         }
       } catch (error) {
         return { success: false, error: 'Authentication failed' };
@@ -485,6 +497,7 @@ function App() {
             vaultName={currentVault}
             canRemember={kept.available}
             remembered={kept.vaults.includes(currentVault)}
+            needsKeyFile={keyFileVaults.includes(currentVault)}
             initialError={loginError}
             onLogin={handleVaultLogin}
             onBack={goBack}

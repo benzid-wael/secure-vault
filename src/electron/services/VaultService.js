@@ -7,9 +7,13 @@ import { PasswordRecoveryService } from './recovery/PasswordRecoveryService.js';
 import { RecoveryData } from './recovery/IRecoveryMethod.js';
 import { checkVaultFormat } from '../utils/vaultFormat.js';
 import {
+  PasswordEnvelopeError,
   checkKeyFile,
   isFormat2,
+  keyFileIdOf,
   mainKekOf,
+  newDataKey,
+  newHeader,
   openPayload,
   recoveryKekOf,
   sealPayload,
@@ -28,6 +32,24 @@ const notYet = (what) => ({
   code: 'UNSUPPORTED',
   error: `${what} isn't supported yet for a vault that uses a key file.`,
 });
+
+/** A request that doesn't fit the vault's state. */
+const invalidState = (error) => ({ success: false, code: 'INVALID', error });
+
+/**
+ * An unexpected failure as a result: the envelope's and the format check's
+ * refusals keep their code and message; a missing vault says so; anything
+ * else (a file system error, with its paths) becomes `fallback`.
+ */
+const failure = (error, fallback) => {
+  if (error instanceof PasswordEnvelopeError || error.code === 'NEWER_FORMAT') {
+    return { success: false, code: error.code, error: error.message };
+  }
+  if (error.code === 'ENOENT') {
+    return { success: false, code: 'NOT_FOUND', error: 'Vault not found' };
+  }
+  return { success: false, error: fallback };
+};
 
 /** A refusal from the format-2 envelope, as a result. */
 const refused = (error) => ({
@@ -263,6 +285,168 @@ export class VaultService {
     }
   }
 
+  /** Whether `vaultName` is in format 2 and so needs its key file. */
+  async usesKeyFile(vaultName) {
+    try {
+      return isFormat2(await this.fileService.readVaultFile(vaultName));
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Turn a key file on (New-54 step 3): rewrite a format-1 vault as
+   * format 2, the payload under a new data key wrapped by the password +
+   * key file and by the recovery key. The vault's recovery key is kept when
+   * the password can read it; otherwise a new one is made and returned, for
+   * the user to save. The format-1 backup goes: it would open with the
+   * password alone.
+   * @returns {Promise<{success: boolean, credential?: {dek: Buffer},
+   *   recoveryKey?: string, code?: string, error?: string}>}
+   */
+  async enableKeyFile(vaultName, password, keyFileKey) {
+    try {
+      const vaultFile = await this.fileService.readVaultFile(vaultName);
+      if (isFormat2(vaultFile)) {
+        return invalidState('This vault already uses a key file.');
+      }
+      let payload;
+      try {
+        payload = openVaultPayload(vaultFile, password, this.deriveKey);
+      } catch {
+        return {
+          success: false,
+          code: 'AUTH',
+          error: 'Invalid master password',
+        };
+      }
+
+      const keyRecovery = new KeyRecoveryService();
+      const kept = keyRecovery.recoveryKeyOf(
+        vaultFile.recoveryMetadata?.[keyRecovery.getRecoveryMethodId()],
+        password
+      );
+      const recoveryKey =
+        kept ?? (await keyRecovery.generate(vaultName)).data.key;
+
+      const dek = newDataKey();
+      const kdf = CryptographyService.kdfHeader();
+      const salt = CryptographyService.generateSalt().toString('hex');
+      const recovery = {
+        salt: CryptographyService.generateSalt().toString('hex'),
+        kdf,
+      };
+      const mainKek = mainKekOf(
+        this.deriveKey(password, Buffer.from(salt, 'hex'), kdf.iterations),
+        keyFileKey,
+        salt
+      );
+      const recoveryKek = await recoveryKekOf(recoveryKey, recovery);
+      let file = newHeader({
+        salt,
+        kdf,
+        keyFileId: keyFileIdOf(keyFileKey),
+        recovery,
+      });
+      file = wrapSlot(file, 'main', dek, mainKek);
+      file = wrapSlot(file, 'recovery', dek, recoveryKek);
+      file = sealPayload(file, payload, dek);
+      // Opened again through both slots before it replaces the vault.
+      openPayload(file, unwrapSlot(file, 'main', mainKek));
+      openPayload(file, unwrapSlot(file, 'recovery', recoveryKek));
+      mainKek.fill(0);
+      recoveryKek.fill(0);
+
+      await this.fileService.atomicWriteVaultFile(vaultName, file);
+      await this.fileService.removeBackup(vaultName);
+      return {
+        success: true,
+        credential: { dek },
+        ...(kept ? {} : { recoveryKey }),
+      };
+    } catch (error) {
+      return failure(error, 'Failed to turn the key file on');
+    }
+  }
+
+  /**
+   * Turn the key file off (New-54 step 3, Q2): rewrite a format-2 vault as
+   * format 1 under the password alone, which older versions open again,
+   * with a new recovery key (format 1's recovery keeps a copy of the
+   * password, which format 2 doesn't have). Returns the new key.
+   */
+  async disableKeyFile(vaultName, password, keyFileKey) {
+    try {
+      const opened = await this.openWithKeyFile(
+        vaultName,
+        password,
+        keyFileKey
+      );
+      if (!opened.success) return opened;
+      const vaultFile = await this.fileService.readVaultFile(vaultName);
+      const payload = openPayload(vaultFile, opened.credential.dek);
+      opened.credential.dek.fill(0);
+
+      const keyRecovery = new KeyRecoveryService();
+      const recoveryData = await keyRecovery.generate(vaultName);
+      const metadata = keyRecovery.createMetadata(
+        vaultName,
+        password,
+        recoveryData
+      );
+      const { key, header } = this.#freshKey(password);
+      const file = {
+        ...CryptographyService.encrypt(payload, key),
+        ...header,
+        recoveryMetadata: { [keyRecovery.getRecoveryMethodId()]: metadata },
+      };
+      await this.fileService.atomicWriteVaultFile(vaultName, file);
+      return {
+        success: true,
+        recoveryKey: recoveryData.data.key,
+        recoveryKeyCreatedAt: metadata.createdAt,
+      };
+    } catch (error) {
+      return failure(error, 'Failed to turn the key file off');
+    }
+  }
+
+  /**
+   * Replace a format-2 vault's key file (New-54 step 3): the current one
+   * and the password open it, the new one re-wraps the main slot. The
+   * recovery slot, which doesn't cover the key file, stays.
+   */
+  async changeKeyFile(vaultName, password, currentKeyFileKey, newKeyFileKey) {
+    try {
+      if (keyFileIdOf(currentKeyFileKey) === keyFileIdOf(newKeyFileKey)) {
+        return invalidState('That is the key file this vault already uses.');
+      }
+      const opened = await this.openWithKeyFile(
+        vaultName,
+        password,
+        currentKeyFileKey
+      );
+      if (!opened.success) return opened;
+      const { dek } = opened.credential;
+      const vaultFile = await this.fileService.readVaultFile(vaultName);
+      const payload = openPayload(vaultFile, dek);
+      let file = { ...vaultFile, keyFile: { id: keyFileIdOf(newKeyFileKey) } };
+      const kek = mainKekOf(
+        this.#keyFor(password, vaultFile),
+        newKeyFileKey,
+        vaultFile.salt
+      );
+      file = wrapSlot(file, 'main', dek, kek);
+      kek.fill(0);
+      file = sealPayload(file, payload, dek);
+      await this.fileService.atomicWriteVaultFile(vaultName, file);
+      dek.fill(0);
+      return { success: true };
+    } catch (error) {
+      return failure(error, 'Failed to change the key file');
+    }
+  }
+
   async saveVault(vaultName, password, vaultData) {
     try {
       // Load existing recovery metadata
@@ -321,7 +505,20 @@ export class VaultService {
     }
   }
 
-  async changePassword(vaultName, currentPassword, newPassword) {
+  /**
+   * @param {string} vaultName
+   * @param {string} currentPassword
+   * @param {string} newPassword
+   * @param {{keyFileKey?: Buffer}} [options] A format-2 vault's key file:
+   *   with the current password it opens the vault, and the new password
+   *   re-wraps its main slot under a new salt (New-54 step 3).
+   */
+  async changePassword(
+    vaultName,
+    currentPassword,
+    newPassword,
+    { keyFileKey = null } = {}
+  ) {
     try {
       // Validate new password
       const passwordErrors = validatePasswordStrength(newPassword);
@@ -333,7 +530,12 @@ export class VaultService {
         return { success: false, error: 'Vault not found' };
       }
       if (isFormat2(await this.fileService.readVaultFile(vaultName))) {
-        return notYet('Changing the password');
+        return await this.#changeFormat2Password(
+          vaultName,
+          currentPassword,
+          newPassword,
+          keyFileKey
+        );
       }
 
       // Create backup
@@ -433,6 +635,45 @@ export class VaultService {
     }
   }
 
+  async #changeFormat2Password(vaultName, current, next, keyFileKey) {
+    if (!Buffer.isBuffer(keyFileKey)) return refused(keyFileRequired());
+    if (next === current) {
+      return {
+        success: false,
+        error: 'New password must be different from current password',
+      };
+    }
+    const opened = await this.openWithKeyFile(vaultName, current, keyFileKey);
+    if (!opened.success) return opened;
+    const { dek } = opened.credential;
+    const vaultFile = await this.fileService.readVaultFile(vaultName);
+    const vault = Vault.fromJSON(openPayload(vaultFile, dek), vaultName);
+    if (vault.checkPasswordReuse(CryptographyService.hashPassword(next))) {
+      return {
+        success: false,
+        error:
+          'This password has been used before. Please choose a different password.',
+      };
+    }
+    vault.addPasswordToHistory(CryptographyService.hashPassword(current));
+    vault.updateLastPasswordChange();
+
+    const salt = CryptographyService.generateSalt().toString('hex');
+    const kdf = CryptographyService.kdfHeader();
+    let file = { ...vaultFile, salt, kdf };
+    const kek = mainKekOf(
+      this.deriveKey(next, Buffer.from(salt, 'hex'), kdf.iterations),
+      keyFileKey,
+      salt
+    );
+    file = wrapSlot(file, 'main', dek, kek);
+    kek.fill(0);
+    file = sealPayload(file, vault.toJSON(), dek);
+    await this.fileService.atomicWriteVaultFile(vaultName, file);
+    dek.fill(0);
+    return { success: true };
+  }
+
   /**
    * Re-key a vault written with fewer than the current PBKDF2 iterations
    * (M2). Call after a successful unlock, with the master password.
@@ -514,7 +755,13 @@ export class VaultService {
     }
   }
 
-  async deleteVault(vaultName, confirmationPassword = null) {
+  /**
+   * @param {string} vaultName
+   * @param {string|null} confirmationPassword
+   * @param {Buffer|null} [keyFileKey] A format-2 vault's key file: it and
+   *   the password confirm the delete (New-54 step 3).
+   */
+  async deleteVault(vaultName, confirmationPassword = null, keyFileKey = null) {
     try {
       if (!(await this.fileService.vaultExists(vaultName))) {
         return { success: false, error: 'Vault not found' };
@@ -532,7 +779,25 @@ export class VaultService {
         confirmationPassword
       );
       if (verification.code === 'KEY_FILE_REQUIRED') {
-        return notYet('Deleting');
+        if (!Buffer.isBuffer(keyFileKey)) return verification;
+        const opened = await this.openWithKeyFile(
+          vaultName,
+          confirmationPassword,
+          keyFileKey
+        );
+        if (!opened.success) {
+          return {
+            ...opened,
+            error: `${opened.error} Vault not deleted.`,
+          };
+        }
+        opened.credential.dek.fill(0);
+        const backupFile = await this.fileService.deleteVault(vaultName);
+        return {
+          success: true,
+          message: `Vault "${vaultName}" has been deleted. A backup was created.`,
+          backupFile,
+        };
       }
       if (!verification.success) {
         return {

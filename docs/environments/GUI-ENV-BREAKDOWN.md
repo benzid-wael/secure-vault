@@ -2867,10 +2867,12 @@ import` says it "creates a new version with all vars from the file(s)"
 
 ### New-54: Password vaults: a key file as second factor
 
-- **Status:** 🟡 steps 1 and 2 of 6 done 2026-10-23. Design approved
+- **Status:** 🟡 steps 1 to 3 of 6 done 2026-10-23 (with a basic unlock
+  from step 4). Design approved
   ([`PASSWORD-VAULT-2FA-RFC.md`](PASSWORD-VAULT-2FA-RFC.md) rev. 2, Q1 and
   Q2 as proposed). On `feat/vault-env-gui`; not merged, not released.
-  Nothing creates a format-2 vault yet (step 3): no user-visible change.
+  **Must not ship before step 5:** a vault with a key file can't yet be
+  recovered with its recovery key.
 - **Step 1, built:** `src/electron/utils/passwordVaultEnvelope.js`, pure
   functions: key file (`createKeyFile`, `parseKeyFile`, `keyFileIdOf`),
   keys (`newDataKey`, `mainKekOf` = HKDF-SHA256 of PBKDF2 ‖ key file,
@@ -2919,8 +2921,45 @@ import` says it "creates a new version with all vars from the file(s)"
   100%, `VaultService.js` 90%, `VaultSettingsService.js` 79%,
   `ImportExportService.js` 95%. Suite 1552 passed; e2e 10/10 (format 1
   unchanged).
-- **Next:** step 3, turning a key file on and off, changing it, and
-  deleting a format-2 vault, in main and in Settings.
+- **Step 3, built:**
+  - `VaultService`: `enableKeyFile` (format 1 → 2; keeps the recovery key
+    the password can read, else makes one and returns it; drops the
+    format-1 `.backup`, which opens with the password alone; re-opens the
+    result through both slots before replacing the vault),
+    `disableKeyFile` (format 2 → 1 with a new recovery key, Q2),
+    `changeKeyFile` (re-wraps `main` only; refuses the same key file),
+    `changePassword` with `{keyFileKey}` for format 2 (new salt for `main`,
+    the old password into the history, reuse refused), `deleteVault` with a
+    key file, `usesKeyFile`. `KeyRecoveryService.recoveryKeyOf` reads the
+    saved recovery key back with the password.
+  - `PasswordVaultIpc`: main creates (save dialog, `.svkey`, 0600, never over
+    an existing file, a warning when beside the vault) and picks (open
+    dialog) key files; the page sends only the password. New channels
+    `unlock-vault-key-file` (a saved password is kept, never the key file,
+    D3), `key-file:status`, `key-file:enable` (password checked before any
+    dialog), `key-file:disable`, `key-file:change` (the current key file
+    checked before the new one is made); a key file created for a change
+    that fails is removed. `change-master-password` and `delete-vault` ask
+    for the key file of a format-2 vault; a password change keeps the
+    session's data key. `get-vaults` lists which vaults use one.
+  - Renderer: Settings → **Key file** (`KeyFileSection.jsx`): "Require a Key
+    File…" (create or use existing), "Change Key File…", "Stop Requiring a
+    Key File…"; the new recovery key, when there is one, in the usual
+    dialog. The login screen of a vault with a key file says so and its
+    button is "Choose Key File and Unlock"; a "needs its key file" answer
+    switches to that too. (Step 4's remembered location and saved-password
+    path aren't in yet: a saved password lands on the login screen.)
+- **Step 3, checked:** service tests on real files (19), handler tests with
+  a real session and keychain and a dialog stub (24), `KeyFileSection` (8),
+  App unlock (4); e2e `key-file` 12/12 three runs in a row: turn on in
+  Settings, the session keeps working, the login asks for the key file, a
+  wrong one is refused, the right one unlocks, turn off, the password alone
+  opens it again. Suite 1607 passed; e2e 11/11; type check 204 (the
+  `createMetadata` JSDoc said it returned a promise: fixed). Lines:
+  `PasswordVaultIpc.js` 99%, `VaultService.js` 92%, `KeyFileSection.jsx`
+  98%, `VaultLogin.jsx` 97%, `App.jsx` 94%.
+- **Next:** step 4, the remembered key file location (Q1) and the
+  saved-password path; step 5, recovery.
 
 - **Found:** the author, 2026-10-23: "for security reason I would like to
   support 2fa".

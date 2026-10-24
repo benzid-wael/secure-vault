@@ -851,3 +851,23 @@ env init` writes; it's added to the remembered list.
 - **Rollback:** reinstall the previous app. It ignores the list: opened
   vaults disappear from it, their files are untouched, and they can be
   copied into the app's folder to use them.
+
+### New-54: a key file as second factor for password vaults
+
+- **Runtime change (every desktop user, opt-in per vault):** Settings →
+  Key file turns a key file on, changes it, or turns it off. A vault with
+  one asks for it after the password.
+- **Schema or config change:** password vault format 2 (data key wrapped
+  by password + key file and by the recovery key), written only when a
+  user turns a key file on. Older versions refuse it with the "upgrade"
+  message (New-29); turning it off writes format 1 again.
+- **Must not ship before:** New-54 step 5 (recovery of a format-2 vault
+  with its recovery key): the dialog and the guide promise it.
+- **Before it ships:** the CHANGELOG "Added" entry and the guide (both
+  written); steps 4 to 6; a hand check of the native dialogs on Windows and
+  Linux.
+- **Gated by:** nothing: nothing changes until a user turns it on.
+- **Verify after release:** turn it on for a test vault, lock, unlock with
+  the password and the key file; a wrong key file is refused; turn it off.
+- **Rollback:** an older app can't open a format-2 vault: turn the key file
+  off first (format 1 again), then downgrade.

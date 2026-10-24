@@ -35,6 +35,7 @@ import {
   validatePasswordStrength,
 } from '../utils/passwordValidation';
 import RecoveryKeyDisplay from './RecoveryKeyDisplay';
+import KeyFileSection from './KeyFileSection';
 
 const Settings = ({ vaultName, onBack, onPasswordChanged = () => {} }) => {
   const [settings, setSettings] = useState({
@@ -361,6 +362,16 @@ const Settings = ({ vaultName, onBack, onPasswordChanged = () => {} }) => {
           )}
         </CardContent>
       </Card>
+
+      {/* Key file: a second factor (New-54) */}
+      <KeyFileSection
+        vaultName={vaultName}
+        onRecoveryKey={(key) => {
+          setRecoveryKey(key);
+          setShowRecoveryKey(true);
+        }}
+        onMessage={showSnackbar}
+      />
 
       {/* Security Policy Settings */}
       <Card sx={{ mb: 3, backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>

@@ -19,6 +19,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('unlock-vault', vaultName, password, options),
   unlockVaultSaved: (vaultName) =>
     ipcRenderer.invoke('unlock-vault-saved', vaultName),
+  // A vault with a key file (New-54): main asks for the file in a dialog.
+  unlockVaultWithKeyFile: (vaultName, password, options) =>
+    ipcRenderer.invoke('unlock-vault-key-file', vaultName, password, options),
+  keyFile: {
+    status: (vaultName) => ipcRenderer.invoke('key-file:status', vaultName),
+    // `options.create`: a new key file (save dialog) instead of an existing one.
+    enable: (vaultName, password, options) =>
+      ipcRenderer.invoke('key-file:enable', vaultName, password, options),
+    disable: (vaultName, password) =>
+      ipcRenderer.invoke('key-file:disable', vaultName, password),
+    change: (vaultName, password, options) =>
+      ipcRenderer.invoke('key-file:change', vaultName, password, options),
+  },
   forgetVaultPassword: (vaultName) =>
     ipcRenderer.invoke('forget-vault-password', vaultName),
   // Passwords kept on this computer, every vault kind (New-52).

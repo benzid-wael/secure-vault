@@ -27,6 +27,28 @@ lock) ends the session. This means:
 - Nobody — including the developers — can recover your data without the master password.
 - If you forget it, the vault is unrecoverable. This is the intended trade-off.
 
+### A key file as a second factor
+
+In a vault's **Settings → Key file**, **Require a Key File…** adds a second
+factor: a small `.svkey` file the app creates (or one you already have) that's
+needed together with the master password. Both go into the key that decrypts
+the vault, so a copy of the vault file and its password, leaked or guessed,
+open nothing without the key file.
+
+- Keep the key file away from the vault: on a USB stick or another drive, not
+  in the vault's folder or the same synced folder. Keep a copy somewhere safe.
+- Unlocking asks for the password, then the key file. A saved password
+  (**Remember on this computer**) fills in the password only.
+- The vault's recovery key still opens it if the key file is lost.
+- **Change Key File…** replaces it; **Stop Requiring a Key File…** goes back
+  to the password alone and makes a new recovery key.
+- Older versions of SecureVault can't open a vault while it requires a key
+  file.
+
+Why not codes from an authenticator app? There's no server to check them: the
+app would have to keep the code's secret next to the vault, and anyone with the
+file and the password could decrypt it without the app.
+
 ### Application hardening
 
 - The Electron **main process** handles all file operations; the renderer has no

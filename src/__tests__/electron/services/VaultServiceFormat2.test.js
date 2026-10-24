@@ -220,14 +220,27 @@ describe('with the data key', () => {
   });
 });
 
-describe('what later steps add', () => {
+describe('without the key file', () => {
   it.each([
     [
       'a password change',
       () => vs.changePassword('team', PW, 'Other-Pass-34!'),
-      'Changing the password',
     ],
-    ['a delete', () => vs.deleteVault('team', PW), 'Deleting'],
+    ['a delete', () => vs.deleteVault('team', PW)],
+  ])('refuses %s, changing nothing', async (_, act) => {
+    const before = fs.readdirSync(dir).sort();
+    const content = fs.readFileSync(path.join(dir, 'team.vault'), 'utf8');
+    expect(await act()).toMatchObject({
+      success: false,
+      code: 'KEY_FILE_REQUIRED',
+    });
+    expect(fs.readdirSync(dir).sort()).toEqual(before);
+    expect(fs.readFileSync(path.join(dir, 'team.vault'), 'utf8')).toBe(content);
+  });
+});
+
+describe('what later steps add', () => {
+  it.each([
     [
       'recovery with the key',
       () => vs.loadVaultWithRecoveryKey('team', RECOVERY_KEY),

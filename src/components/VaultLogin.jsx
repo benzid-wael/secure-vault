@@ -24,7 +24,9 @@ import {
  * starts checked when `remembered`. `onLogin(password, options)` gets
  * `{remember}` only when the box is offered: true keeps the password,
  * false forgets a kept one. `initialError`: why a saved password didn't
- * unlock the vault.
+ * unlock the vault. `needsKeyFile`: the vault uses a key file (New-54);
+ * the password is sent with `{keyFile: true}` and main asks for the file.
+ * A "needs its key file" answer switches to that too.
  */
 const VaultLogin = ({
   vaultName,
@@ -34,11 +36,13 @@ const VaultLogin = ({
   canRemember = false,
   remembered = false,
   initialError = '',
+  needsKeyFile = false,
 }) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState(initialError);
   const [keep, setKeep] = useState(remembered);
+  const [keyFileMode, setKeyFileMode] = useState(needsKeyFile);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -52,10 +56,16 @@ const VaultLogin = ({
     setError('');
 
     try {
-      const result = await (canRemember
-        ? onLogin(password, { remember: keep })
+      const options = {
+        ...(canRemember && { remember: keep }),
+        ...(keyFileMode && { keyFile: true }),
+      };
+      const result = await (Object.keys(options).length > 0
+        ? onLogin(password, options)
         : onLogin(password));
-      if (!result.success) {
+      if (result.code === 'KEY_FILE_REQUIRED') {
+        setKeyFileMode(true);
+      } else if (!result.success && !result.canceled) {
         setError(result.error || 'Invalid password');
       }
     } catch (error) {
@@ -125,6 +135,13 @@ const VaultLogin = ({
           }}
         />
 
+        {keyFileMode && (
+          <Alert severity="info" sx={{ mt: 2 }}>
+            This vault also needs its key file. After you type the password,
+            choose the key file.
+          </Alert>
+        )}
+
         {canRemember && (
           <Box sx={{ mt: 1 }}>
             <FormControlLabel
@@ -180,6 +197,8 @@ const VaultLogin = ({
           >
             {loading ? (
               <CircularProgress size={24} color="inherit" />
+            ) : keyFileMode ? (
+              'Choose Key File and Unlock'
             ) : (
               'Unlock Vault'
             )}

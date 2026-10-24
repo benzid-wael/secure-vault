@@ -12,6 +12,14 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Added
 
+- **A key file as a second factor for password vaults** (desktop app).
+  Settings → **Key file** → **Require a Key File…** makes a small `.svkey`
+  file (or uses one you have) that's needed with the master password to
+  unlock the vault: a copied vault and its password open nothing without
+  it. Keep it away from the vault (a USB stick) and keep a copy; the
+  vault's recovery key still opens it. It can be changed or turned off
+  again. The vault is rewritten in format 2, which older versions of
+  SecureVault can't open.
 - **Open a password vault from any folder** (desktop app). **Open…** in the
   vault list picks a `.vault` file anywhere (a shared drive, a USB stick); it's
   listed with its location, kept across restarts, and unlocked, saved and
