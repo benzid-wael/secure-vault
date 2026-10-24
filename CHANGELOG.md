@@ -27,7 +27,8 @@ Design detail for the environment-vault (`vault env`) features lives in
     password alone, with a new recovery key).
   - The vault is rewritten in format 2, which older versions of
     SecureVault can't open; turn the key file off before going back to
-    one. An export of such a vault can't be imported yet.
+    one. Its export imports with the password and key file, or with the
+    recovery key.
 - **Open a password vault from any folder** (desktop app). **Open…** in the
   vault list picks a `.vault` file anywhere (a shared drive, a USB stick); it's
   listed with its location, kept across restarts, and unlocked, saved and
@@ -133,6 +134,8 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Fixed
 
+- **Importing a password vault reports how many entries it holds.** It
+  always said "0 entries imported".
 - **Escape cancels editing a grid-card cell.** It did nothing before, and
   leaving the field saved whatever was typed.
 - **A vault no longer disappears for a moment on every save.** Saves wrote a

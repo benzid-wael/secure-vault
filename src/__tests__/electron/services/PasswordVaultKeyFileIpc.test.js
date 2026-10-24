@@ -13,6 +13,7 @@ import { VaultService } from '../../../electron/services/VaultService.js';
 import { VaultSession } from '../../../electron/services/VaultSession.js';
 import { VaultKeychain } from '../../../electron/services/VaultKeychain.js';
 import { KeyFileLocations } from '../../../electron/services/KeyFileLocations.js';
+import { ImportExportService } from '../../../electron/services/ImportExportService.js';
 import { KeyRecoveryService } from '../../../electron/services/recovery/KeyRecoveryService.js';
 import { createKeyFile } from '../../../electron/utils/passwordVaultEnvelope.js';
 import { fakeSafeStorage } from '../../helpers/fakeSafeStorage.js';
@@ -603,6 +604,82 @@ describe('recover-vault-key-file (step 5)', () => {
   it('says so when the vault file is gone', async () => {
     await fs.remove(VAULT());
     expect((await recover('create')).error).toMatch(/isn't there any more/);
+  });
+});
+
+describe('import-vault of an export with a key file (New-55)', () => {
+  let selected;
+  let imp;
+  let recoveryKey;
+  const exportPath = () => at('team.vault.json');
+
+  beforeEach(async () => {
+    recoveryKey = new KeyRecoveryService().recoveryKeyOf(
+      vaultFile().recoveryMetadata.recoveryKey,
+      PW
+    );
+    await enable();
+    const io = new ImportExportService(at('vaults'));
+    await session.withPassword('team', (c) =>
+      io.exportVault('team', c, exportPath())
+    );
+    session.close();
+    selected = exportPath();
+    ({ vault: imp } = createPasswordVaultHandlers({
+      vaultService: vs,
+      session,
+      openSession: async () => {},
+      dialog,
+      keyFileLocations: locations,
+      importExportService: io,
+      importSelection: {
+        get: () => selected,
+        clear: () => {
+          selected = null;
+        },
+      },
+    }));
+    dialog.showOpenDialog.mockClear();
+  });
+  const copyPath = () => at('vaults', 'copy.vault');
+
+  it('asks for the key file after the password, and remembers it', async () => {
+    opens = [saveTo];
+    expect(await imp['import-vault'](ev, 'copy', PW)).toMatchObject({
+      success: true,
+      keyFile: true,
+    });
+    expect(dialog.showOpenDialog).toHaveBeenCalledTimes(1);
+    expect(selected).toBeNull();
+    expect(locations.get(copyPath())).toBe(saveTo);
+  });
+
+  it('takes the recovery key instead, with no dialog', async () => {
+    expect(
+      await imp['import-vault'](ev, 'copy', recoveryKey, { recoveryKey: true })
+    ).toMatchObject({ success: true });
+    expect(dialog.showOpenDialog).not.toHaveBeenCalled();
+    expect(locations.get(copyPath())).toBeNull();
+  });
+
+  it('refuses a wrong key file, and is quiet when canceled, writing nothing', async () => {
+    opens = [await writeKeyFile('other.svkey')];
+    expect(await imp['import-vault'](ev, 'copy', PW)).toMatchObject({
+      code: 'KEY_FILE',
+    });
+    expect(await imp['import-vault'](ev, 'copy', PW)).toEqual({
+      success: false,
+      canceled: true,
+    });
+    expect(fs.existsSync(copyPath())).toBe(false);
+    expect(selected).toBe(exportPath());
+  });
+
+  it('needs a file chosen first', async () => {
+    selected = null;
+    expect((await imp['import-vault'](ev, 'copy', PW)).error).toBe(
+      'Choose a file to import first'
+    );
   });
 });
 

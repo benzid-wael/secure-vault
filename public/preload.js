@@ -108,8 +108,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Import/Export: file paths are chosen in native dialogs by the main
   // process; the page never names one.
   exportVault: (vaultName) => ipcRenderer.invoke('export-vault', vaultName),
-  importVault: (newVaultName, password) =>
-    ipcRenderer.invoke('import-vault', newVaultName, password),
+  // An export of a vault with a key file (New-55): main asks for the key
+  // file after the password; `{recoveryKey: true}` sends its recovery key.
+  importVault: (newVaultName, password, options) =>
+    ipcRenderer.invoke('import-vault', newVaultName, password, options),
   selectImportFile: () => ipcRenderer.invoke('select-import-file'),
   getVaultDirectory: () => ipcRenderer.invoke('get-vault-directory'),
 

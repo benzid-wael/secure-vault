@@ -17,6 +17,8 @@ import {
   Select,
   MenuItem,
   Divider,
+  FormControlLabel,
+  Checkbox,
 } from '@mui/material';
 import {
   FileUpload as ImportIcon,
@@ -48,6 +50,10 @@ const ImportExportDialog = ({
   const [importPath, setImportPath] = useState('');
   const [newVaultName, setNewVaultName] = useState('');
   const [importPassword, setImportPassword] = useState('');
+  // An export of a vault with a key file (New-55): main asks for the key
+  // file after the password, or the recovery key opens it alone.
+  const [importNeedsKeyFile, setImportNeedsKeyFile] = useState(false);
+  const [useRecoveryKey, setUseRecoveryKey] = useState(false);
 
   const showMessage = (text, severity = 'info') => {
     setMessage({ text, severity });
@@ -92,6 +98,8 @@ const ImportExportDialog = ({
         return;
       }
       setImportPath(result.filePath);
+      setImportNeedsKeyFile(Boolean(result.keyFile));
+      setUseRecoveryKey(false);
       if (!newVaultName.trim()) {
         const base = result.filePath.split(/[\\/]/).pop() || '';
         const suggested = base.replace(/\.vault\.json$/i, '');
@@ -114,7 +122,12 @@ const ImportExportDialog = ({
     }
 
     if (!importPassword.trim()) {
-      showMessage('Please enter the password for the import file', 'error');
+      showMessage(
+        useRecoveryKey
+          ? 'Please enter the recovery key of the vault'
+          : 'Please enter the password for the import file',
+        'error'
+      );
       return;
     }
 
@@ -128,21 +141,35 @@ const ImportExportDialog = ({
       // The main process imports the file picked in its open dialog.
       const result = await window.electronAPI.importVault(
         newVaultName,
-        importPassword
+        importPassword,
+        useRecoveryKey ? { recoveryKey: true } : {}
       );
 
       if (result.success) {
+        const count = result.metadata?.entryCount || 0;
         showMessage(
-          `Vault imported successfully! ${result.metadata?.entryCount || 0} entries imported.`,
+          [
+            `Vault imported successfully! ${count} ${count === 1 ? 'entry' : 'entries'} imported.`,
+            result.keyFile &&
+              (useRecoveryKey
+                ? 'It still needs its password and key file: if you no longer have them, unlock it with Forgot your password? and the recovery key to set new ones.'
+                : 'It needs the same key file as the original.'),
+          ]
+            .filter(Boolean)
+            .join(' '),
           'success'
         );
         setImportPath('');
         setNewVaultName('');
         setImportPassword('');
+        setImportNeedsKeyFile(false);
+        setUseRecoveryKey(false);
 
         if (onImportSuccess) {
           onImportSuccess(newVaultName);
         }
+      } else if (result.canceled) {
+        // The key file dialog was closed: nothing changed.
       } else {
         showMessage(result.error || 'Failed to import vault', 'error');
       }
@@ -159,6 +186,8 @@ const ImportExportDialog = ({
       setImportPath('');
       setNewVaultName('');
       setImportPassword('');
+      setImportNeedsKeyFile(false);
+      setUseRecoveryKey(false);
       setActiveTab(initialTab);
       onClose();
     }
@@ -302,14 +331,42 @@ const ImportExportDialog = ({
               }}
             />
 
+            {importNeedsKeyFile && (
+              <Alert severity="info">
+                This vault requires a key file: after its password you’ll choose
+                the key file. Without it, its recovery key opens it alone.
+                <FormControlLabel
+                  sx={{ display: 'flex', mt: 1 }}
+                  control={
+                    <Checkbox
+                      checked={useRecoveryKey}
+                      onChange={(e) => {
+                        setUseRecoveryKey(e.target.checked);
+                        setImportPassword('');
+                      }}
+                    />
+                  }
+                  label="I don’t have the key file: use the recovery key"
+                />
+              </Alert>
+            )}
+
             <TextField
-              label="Import Password"
+              label={useRecoveryKey ? 'Recovery Key' : 'Import Password'}
               type="password"
               value={importPassword}
               onChange={(e) => setImportPassword(e.target.value)}
-              placeholder="Password for the import file"
+              placeholder={
+                useRecoveryKey
+                  ? 'XXXX-XXXX-XXXX-…'
+                  : 'Password for the import file'
+              }
               fullWidth
-              helperText="The master password that was used when the vault was exported"
+              helperText={
+                useRecoveryKey
+                  ? 'The recovery key of the vault that was exported'
+                  : 'The master password that was used when the vault was exported'
+              }
               sx={{
                 '& .MuiInputBase-input': { color: 'white' },
                 '& .MuiInputLabel-root': { color: 'rgba(255, 255, 255, 0.7)' },

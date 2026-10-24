@@ -162,7 +162,7 @@ describe('with the data key', () => {
     ).toMatchObject({ success: false, code: 'KEY_FILE_REQUIRED' });
   });
 
-  it('exports, and refuses to import the export for now', async () => {
+  it('exports, and the export needs its key file to import (New-55)', async () => {
     const io = new ImportExportService(dir);
     const target = path.join(dir, 'team.vault.json');
     expect(await io.exportVault('team', credential(), target)).toEqual({
@@ -171,10 +171,9 @@ describe('with the data key', () => {
     const exported = fs.readJsonSync(target);
     expect(exported.originalVaultData.version).toBe(2);
     expect(exported.metadata.version).toBe('1.0');
-    expect(await io.importVault(target, 'copy', PW)).toEqual({
+    expect(await io.importVault(target, 'copy', PW)).toMatchObject({
       success: false,
-      code: 'UNSUPPORTED',
-      error: "Importing a vault that uses a key file isn't supported yet.",
+      code: 'KEY_FILE_REQUIRED',
     });
   });
 

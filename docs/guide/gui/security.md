@@ -57,9 +57,11 @@ open nothing without the key file.
 - **Change Key File…** replaces it; **Stop Requiring a Key File…** goes back
   to the password alone and makes a new recovery key.
 - Older versions of SecureVault can't open a vault while it requires a key
-  file: turn it off before going back to one. An export of such a vault
-  can't be imported yet; turn the key file off before exporting a vault you
-  want to move.
+  file: turn it off before going back to one.
+- Its export imports with its password and key file (the app asks for the
+  key file after the password), or with its recovery key alone. The imported
+  vault opens exactly as the original did: same password, key file and
+  recovery key.
 - What it doesn't stop: someone who holds the recovery key (keep it offline),
   or malware on your computer while the vault is unlocked.
 

@@ -47,6 +47,11 @@ const KEY_FILE_FILTER = {
  *   [deps.keyFileLocations] Where each vault's key file was last used
  *   (New-54 step 4); unlocking reads it from there.
  * @param {() => any} [deps.getWindow]
+ * @param {import('./ImportExportService.js').ImportExportService|null}
+ *   [deps.importExportService]
+ * @param {{get: () => string|null, clear: () => void}|null}
+ *   [deps.importSelection] The export file the user picked in main's open
+ *   dialog; the page never names one.
  */
 export function createPasswordVaultHandlers({
   vaultService,
@@ -57,6 +62,8 @@ export function createPasswordVaultHandlers({
   dialog = null,
   getWindow = () => null,
   keyFileLocations = null,
+  importExportService = null,
+  importSelection = null,
 }) {
   const fileService = vaultService.fileService;
   const pathOf = (vaultName) => fileService.getVaultPath(vaultName);
@@ -578,6 +585,42 @@ export function createPasswordVaultHandlers({
       ...(keyFile && { keyFile: path.basename(keyFile.path) }),
       ...(keyFile?.warning && { warning: keyFile.warning }),
     };
+  };
+
+  /**
+   * Import the export the user picked (`select-import-file`) as a new
+   * vault. An export of a vault that uses a key file (New-55) asks for its
+   * key file after the password, or takes its recovery key instead
+   * (`options.recoveryKey`: `secret` is the recovery key).
+   */
+  vault['import-vault'] = async (event, newVaultName, secret, options = {}) => {
+    const importPath = importSelection?.get();
+    if (!importExportService || !importPath) {
+      return { success: false, error: 'Choose a file to import first' };
+    }
+    const withRecoveryKey = options?.recoveryKey === true;
+    const importWith = (keyFileKey) =>
+      importExportService.importVault(
+        importPath,
+        newVaultName,
+        withRecoveryKey ? null : secret,
+        withRecoveryKey ? { recoveryKey: secret } : { keyFileKey }
+      );
+    let result = await importWith(null);
+    let keyFile = null;
+    if (!result.success && result.code === 'KEY_FILE_REQUIRED') {
+      if (withRecoveryKey) return result;
+      keyFile = await pickKeyFile(
+        `Choose the key file of the vault you're importing`
+      );
+      if (!keyFile.success) return keyFile;
+      result = await importWith(keyFile.key);
+    }
+    if (!result.success) return result;
+    importSelection.clear();
+    if (keyFile)
+      await keyFileLocations?.set(pathOf(newVaultName), keyFile.path);
+    return result;
   };
 
   // Vaults opened from other folders (New-53).

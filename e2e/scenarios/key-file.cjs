@@ -59,6 +59,26 @@ scenario(async (t) => {
     (await t.api("loadVault('team')")).success === true
   );
 
+  // Its export imports with the password and the key file (New-55).
+  const exportFile = path.join(t.OUT, 'team.vault.json');
+  saveTo = exportFile;
+  await t.api("exportVault('team')");
+  picked = exportFile;
+  const chosen = await t.api('selectImportFile()');
+  picked = keyFile;
+  const imported = await t.api(
+    `importVault('team-copy', ${JSON.stringify(PASSWORD)})`
+  );
+  t.check(
+    'its export imports with the password and the key file',
+    chosen.keyFile === true &&
+      imported.success === true &&
+      imported.keyFile === true &&
+      fs.existsSync(path.join(t.VAULTS_DIR, 'team-copy.vault'))
+  );
+  saveTo = keyFile;
+  opened = 0;
+
   await t.api('lockVault()');
   await t.reload();
   await t.waitText('team');

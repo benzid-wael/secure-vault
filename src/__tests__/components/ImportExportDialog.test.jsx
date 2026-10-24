@@ -105,9 +105,81 @@ describe('ImportExportDialog', () => {
       fillAndImport();
 
       await waitFor(() =>
-        expect(api.importVault).toHaveBeenCalledWith('restored', 'pw')
+        expect(api.importVault).toHaveBeenCalledWith('restored', 'pw', {})
       );
       expect(onImportSuccess).toHaveBeenCalledWith('restored');
+      expect(await screen.findByText(/3 entries imported/)).toBeInTheDocument();
+    });
+
+    describe('an export of a vault with a key file (New-55)', () => {
+      const browse = async () => {
+        api.selectImportFile.mockResolvedValue({
+          success: true,
+          filePath: '/tmp/team.vault.json',
+          keyFile: true,
+        });
+        renderDialog({ importOnly: true, onImportSuccess: vi.fn() });
+        fireEvent.click(screen.getByRole('button', { name: /browse/i }));
+        await screen.findByText(/This vault requires a key file/);
+      };
+
+      it('imports with the password, main asking for the key file', async () => {
+        api.importVault.mockResolvedValue({
+          success: true,
+          keyFile: true,
+          metadata: { entryCount: 1 },
+        });
+        await browse();
+        fillAndImport();
+        expect(
+          await screen.findByText(
+            /1 entry imported\. It needs the same key file as the original\./
+          )
+        ).toBeInTheDocument();
+        expect(api.importVault).toHaveBeenCalledWith('restored', 'pw', {});
+      });
+
+      it('imports with the recovery key instead, saying what comes next', async () => {
+        api.importVault.mockResolvedValue({
+          success: true,
+          keyFile: true,
+          metadata: { entryCount: 2 },
+        });
+        await browse();
+        fireEvent.click(
+          screen.getByLabelText(
+            /I don’t have the key file: use the recovery key/
+          )
+        );
+        fireEvent.change(screen.getByLabelText(/new vault name/i), {
+          target: { value: 'restored' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: /import vault/i }));
+        expect(
+          screen.getByText('Please enter the recovery key of the vault')
+        ).toBeInTheDocument();
+        fireEvent.change(screen.getByLabelText(/^recovery key/i), {
+          target: { value: 'ABCD-EFGH' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: /import vault/i }));
+        expect(
+          await screen.findByText(/Forgot your password\? and the recovery key/)
+        ).toBeInTheDocument();
+        expect(api.importVault).toHaveBeenCalledWith('restored', 'ABCD-EFGH', {
+          recoveryKey: true,
+        });
+      });
+
+      it('stays quiet when the key file dialog is canceled', async () => {
+        api.importVault.mockResolvedValue({ success: false, canceled: true });
+        await browse();
+        fillAndImport();
+        await waitFor(() => expect(api.importVault).toHaveBeenCalled());
+        expect(screen.queryByText(/failed/i)).toBeNull();
+        expect(screen.getByLabelText(/import file/i)).toHaveValue(
+          '/tmp/team.vault.json'
+        );
+      });
     });
   });
 });

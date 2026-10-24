@@ -59,6 +59,7 @@ import { VaultKeychain } from '../src/electron/services/VaultKeychain.js';
 import { createPasswordVaultHandlers } from '../src/electron/services/PasswordVaultIpc.js';
 import { OpenedVaults } from '../src/electron/services/OpenedVaults.js';
 import { KeyFileLocations } from '../src/electron/services/KeyFileLocations.js';
+import { isFormat2 } from '../src/electron/utils/passwordVaultEnvelope.js';
 import { EnvVaultRecents } from '../src/electron/services/EnvVaultRecents.js';
 import { AppSettingsStore } from '../src/electron/services/AppSettingsStore.js';
 import {
@@ -396,6 +397,15 @@ class ElectronApp {
       getWindow: () => this.mainWindow,
       // Where each vault's key file was last used, never its content (New-54).
       keyFileLocations: new KeyFileLocations(),
+      // Import reads only the file the user picked in `select-import-file`;
+      // the renderer cannot name another path.
+      importExportService: this.importExportService,
+      importSelection: {
+        get: () => this.selectedImportPath,
+        clear: () => {
+          this.selectedImportPath = null;
+        },
+      },
     });
     for (const [channel, fn] of Object.entries(passwordVaultHandlers.vault)) {
       handleVault(channel, fn);
@@ -505,21 +515,6 @@ class ElectronApp {
       })
     );
 
-    // Import reads only the file the user picked in `select-import-file`;
-    // the renderer cannot name another path.
-    handleVault('import-vault', (event, newVaultName, password) => {
-      const importPath = this.selectedImportPath;
-      if (!importPath) {
-        return { success: false, error: 'Choose a file to import first' };
-      }
-      return this.importExportService
-        .importVault(importPath, newVaultName, password)
-        .then((result) => {
-          if (result.success) this.selectedImportPath = null;
-          return result;
-        });
-    });
-
     handleVault(
       'recover-vault-with-old-password',
       async (event, vaultName, oldPassword) =>
@@ -561,7 +556,18 @@ class ElectronApp {
       }
 
       this.selectedImportPath = filePath;
-      return { success: true, filePath };
+      // Whether it's a vault that uses a key file (New-55), so the page can
+      // offer its recovery key; the import itself checks again.
+      let keyFile = false;
+      try {
+        keyFile = isFormat2(
+          JSON.parse(await fs.promises.readFile(filePath, 'utf8'))
+            .originalVaultData
+        );
+      } catch {
+        // Unreadable: the import says so.
+      }
+      return { success: true, filePath, keyFile };
     });
   }
 }

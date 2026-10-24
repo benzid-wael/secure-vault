@@ -97,7 +97,7 @@ updated as each task finishes, not in a batch at the end.
 | New-52 | Password vaults: remember the password on this computer            | —   | P1  | ✅     | New-24                                 |
 | New-53 | Password vaults: open one from any folder                          | —   | P1  | ✅     | New-52                                 |
 | New-54 | Password vaults: a key file as second factor                       | —   | P2  | ✅     | New-52                                 |
-| New-55 | Password vaults: import an export of a vault with a key file       | —   | P3  | ⬜     | New-54                                 |
+| New-55 | Password vaults: import an export of a vault with a key file       | —   | P3  | ✅     | New-54                                 |
 | New-56 | Password vaults: spike a hardware key (FIDO2 PRF) as a factor      | —   | P3  | ⬜     | New-54                                 |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
@@ -2872,7 +2872,7 @@ import` says it "creates a new version with all vars from the file(s)"
 - **Status:** ✅ steps 1 to 6 done 2026-10-24. Design approved
   ([`PASSWORD-VAULT-2FA-RFC.md`](PASSWORD-VAULT-2FA-RFC.md) rev. 2, Q1 and
   Q2 as proposed). On `feat/vault-env-gui`; not merged, not released.
-  Left out, logged: importing an export (New-55), the hardware key spike
+  Left out, logged: importing an export (New-55, since done), the hardware key spike
   (RFC step 7, New-56); a hand check of the native dialogs on Windows and
   Linux (rollout).
 - **Step 1, built:** `src/electron/utils/passwordVaultEnvelope.js`, pure
@@ -3068,13 +3068,40 @@ import` says it "creates a new version with all vars from the file(s)"
 
 ### New-55: Password vaults: import an export of a vault with a key file
 
-- **Status:** ⬜ found 2026-10-24 (New-54, left out by plan).
+- **Status:** ✅ done 2026-10-24. On `feat/vault-env-gui`; not merged, not
+  released.
 - **Goal:** an export of a format-2 vault imports, asking for its password
   and key file, or its recovery key (RFC §6).
-- **Today:** refused with `UNSUPPORTED` ("isn't supported yet"); the guide
-  says to turn the key file off before exporting a vault to move.
-- **Validation:** an export imports with password + key file and with the
-  recovery key; a wrong one changes nothing.
+- **Built:**
+  - `ImportExportService.importVault(path, name, password, {keyFileKey,
+recoveryKey})`: a format-2 export opens through its `main` slot
+    (key file checked first) or its `recovery` slot, payload included,
+    then is written as it was exported, so the copy opens with the same
+    password, key file and recovery key (format 1's import re-salts and
+    drops recovery metadata; format 2 has nothing to re-key without the
+    password). `KEY_FILE_REQUIRED` with neither; `KEY_FILE`, `AUTH`,
+    `TAMPERED`, `NEWER_FORMAT` as elsewhere.
+  - `import-vault` moved from `main.js` to `PasswordVaultIpc` (deps
+    `importExportService`, `importSelection`: still only the file picked in
+    main's dialog). On `KEY_FILE_REQUIRED` it asks for the key file in a
+    dialog and tries again; `{recoveryKey: true}` sends the recovery key
+    instead. The key file's location is remembered for the copy.
+    `select-import-file` says whether the export uses a key file.
+  - Import dialog: for such an export, a note and "I don’t have the key
+    file: use the recovery key", which turns the password field into the
+    recovery key; a canceled key file dialog is quiet; the success message
+    says what the copy needs.
+  - Found and fixed on the way: every import said "0 entries imported"
+    (`entries` is an object, counted with `.length`); the count now comes
+    from the decrypted payload, at export and at import.
+- **Checked:** service (8: count, password + key file, recovery key typed
+  any way, four refusals writing nothing, newer format, damaged slot);
+  handlers (4: dialog and location, recovery key with no dialog, wrong key
+  file / canceled, no file chosen); dialog (3, plus the count); e2e
+  `key-file` 16/16 (export, then import through the real IPC with the key
+  file in a dialog). Suite 1672 passed; e2e 12/12; type check 203; lint 0
+  errors. Lines: `ImportExportService.js` 96%, `PasswordVaultIpc.js` 100%,
+  `ImportExportDialog.jsx` 75%.
 
 ### New-56: Password vaults: spike a hardware key (FIDO2 PRF) as a factor
 
