@@ -30,31 +30,6 @@ const unlockVault = (password) => {
   };
 };
 
-beforeEach(async () => {
-  now = 1_000_000;
-  wipes = 0;
-  dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sv-daemon-'));
-  socketPath = path.join(dir, 'agent.sock');
-  const session = new SessionManager({
-    config: CFG,
-    clock: () => now,
-    onWipeMounts: () => {
-      wipes += 1;
-    },
-  });
-  daemon = await startDaemonServer({
-    session,
-    socketPath,
-    unlockVault,
-    tickIntervalMs: 1_000_000, // don't auto-tick; drive via requests
-  });
-});
-
-afterEach(async () => {
-  await daemon.close().catch(() => {});
-  await fs.remove(dir);
-});
-
 describe('agentUnsupportedReason', () => {
   it('refuses Windows, pointing to `vault env run`', () => {
     expect(agentUnsupportedReason('win32')).toMatch(
@@ -74,6 +49,31 @@ describe('agentUnsupportedReason', () => {
 describe.skipIf(process.platform === 'win32')(
   'daemon over a real unix socket',
   () => {
+    beforeEach(async () => {
+      now = 1_000_000;
+      wipes = 0;
+      dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sv-daemon-'));
+      socketPath = path.join(dir, 'agent.sock');
+      const session = new SessionManager({
+        config: CFG,
+        clock: () => now,
+        onWipeMounts: () => {
+          wipes += 1;
+        },
+      });
+      daemon = await startDaemonServer({
+        session,
+        socketPath,
+        unlockVault,
+        tickIntervalMs: 1_000_000, // don't auto-tick; drive via requests
+      });
+    });
+
+    afterEach(async () => {
+      await daemon.close().catch(() => {});
+      await fs.remove(dir);
+    });
+
     it('reports running and creates a 0600 socket', async () => {
       expect(await isDaemonRunning(socketPath)).toBe(true);
       // eslint-disable-next-line no-bitwise

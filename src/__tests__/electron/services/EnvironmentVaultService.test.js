@@ -44,6 +44,15 @@ describe('EnvironmentVaultService', () => {
   });
 
   describe('getAppDataPath', () => {
+    // Put the real platform back: later tests build paths with it.
+    const platform = process.platform;
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', {
+        value: platform,
+        configurable: true,
+      });
+    });
+
     it('should return macOS path', () => {
       Object.defineProperty(process, 'platform', {
         value: 'darwin',
@@ -174,7 +183,7 @@ describe('EnvironmentVaultService', () => {
       existsForPaths('/proj/config/.env.vault');
       expect(
         EnvironmentVaultService.resolveVaultPath({ cwd: P('/proj') })
-      ).toBe('/proj/config/.env.vault');
+      ).toBe(P('/proj/config/.env.vault'));
       expect(
         EnvironmentVaultService.resolveVaultPath({
           vault: 'x/.env.vault',
