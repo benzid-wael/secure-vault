@@ -1,6 +1,6 @@
 {
   "name": "@benzid.wael/secure-vault",
-  "version": "0.2.0-rc.3",
+  "version": "0.2.0-rc.4",
   "description": "A secure password management application built with Electron and React",
   "type": "module",
   "main": "build/electron/main.cjs",
