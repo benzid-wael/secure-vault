@@ -104,6 +104,7 @@ updated as each task finishes, not in a batch at the end.
 | New-55 | Password vaults: import an export of a vault with a key file       | —   | P3  | ✅     | New-54                                 |
 | New-56 | Password vaults: spike a hardware key (FIDO2 PRF) as a factor      | —   | P3  | ✅     | New-54                                 |
 | New-57 | Agent: run on Windows (named pipe with its own access control)     | —   | P3  | ⬜     | New-13                                 |
+| New-58 | npm package: ship `src/agent/`; check the installed CLI runs       | —   | P1  | ✅     | —                                      |
 
 **MVP path (P0):** 0 → 3 → 4 → 5 → 6 → 9 → 10 → 14 → 15 → 17 → New-4 → 19 → 20 → 21,
 with M0 (1, 2) required before 19 ships to anyone.
@@ -3161,3 +3162,28 @@ recoveryKey})`: a format-2 export opens through its `main` slot
   belongs with its hardening (peer credentials, `mlock`), not before.
 - **Validation:** the agent tests pass on the Windows CI job, and a second
   Windows account can't connect to the pipe.
+
+### New-58: npm package: ship `src/agent/`; check the installed CLI runs
+
+- **Status:** ✅ done 2026-10-25. On `main`; not released.
+- **Found:** the post-release checks of `v0.2.0-rc.2`, 2026-10-25:
+  `npx @benzid.wael/secure-vault@next --version` crashed with
+  `ERR_MODULE_NOT_FOUND` for `src/agent/sessionManager.js`. `files` in
+  `package.json` lists `bin/`, `src/electron/` and `src/utils/`, and the
+  agent (imported by `bin/commands/env.js` at startup) was added under
+  `src/agent/` without it. Every command fails, so the CLI on `next` has
+  been unusable since `0.2.0-rc.1`. `latest` (0.1.9) predates the agent
+  and works. The standalone binaries are built from the repo, so they
+  weren't affected.
+- **Why nothing caught it:** the unit tests, the e2e run and the binary
+  check all run from the repo checkout, never from the packed tarball.
+- **Built:**
+  - `src/agent/` added to `files`.
+  - `scripts/verify-npm-package.mjs` (`npm run verify:package`): packs
+    the repo, installs the tarball with `--omit=dev` into an empty folder,
+    and runs the installed CLI (`--version`, then `env init`, `set` and
+    `get` on a scratch vault).
+  - It runs in CI's Verify job and in the release workflow just before
+    `npm publish`, so a package that can't start is never published.
+- **Validation:** before the fix the check fails with the same
+  `ERR_MODULE_NOT_FOUND`; after it, it passes (70 files, up from 62).

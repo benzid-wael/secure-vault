@@ -20,6 +20,7 @@
   },
   "files": [
     "bin/",
+    "src/agent/",
     "src/electron/",
     "src/utils/",
     "README.md",
@@ -53,6 +54,7 @@
     "build:main": "vite build --config vite.electron.config.js",
     "build:all": "npm run build:renderer && npm run build:main",
     "verify-build": "node scripts/verify-build.js",
+    "verify:package": "node scripts/verify-npm-package.mjs",
     "start:dev": "cross-env NODE_ENV=development electron .",
     "start:prod": "cross-env NODE_ENV=production electron .",
     "package": "npm run build:all && electron-builder",

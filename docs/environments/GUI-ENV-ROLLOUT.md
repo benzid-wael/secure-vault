@@ -88,6 +88,45 @@ Known hazards so far, to be completed per task:
   problem commit `1417497` fixed for `.bak`. Rolling back past Task 7 needs a
   documented step: delete or re-key `.squashed.*` files first.
 
+## Releases
+
+### v0.2.0-rc.2 (2026-10-24, npm `next`)
+
+- **Published** after npm trusted publishing was configured on npmjs.com:
+  the first publish since `043234f` dropped `NPM_TOKEN` failed with a 404
+  until then. It carries provenance.
+- **Broken on npm:** the CLI crashes at startup because the package leaves
+  out `src/agent/` (New-58; rc.1 is broken the same way). Fixed on `main`;
+  needs an rc.3. The binaries and desktop builds are fine.
+- **Checked on 2026-10-25** (macOS arm64). The CLI checks ran on the fixed
+  package as rc.3 would ship it (packed and installed), and on the
+  `vault-macos-arm64` binary from the release:
+  - ✅ Task 3: `set`/`get` round-trips; the binary and the npm CLI each
+    open the other's writes.
+  - ✅ Task 4: no `.lock` while `set --value-stdin` waits for input.
+  - ✅ Task 6: two `set`s at once both land; no lock left afterwards.
+  - ✅ Task 8: a lock with a dead pid: `doctor` warns "Stale write lock";
+    the next `set` takes it over and removes it.
+  - ✅ Task 9: `set my-key` exits 1 with the rule; `MY_KEY` works.
+  - ✅ New-25: a comment survives a plain `set`.
+  - ✅ Second round: a `--public` key stays unmasked after a plain `set`.
+  - ✅ New-29: a `features: ["future"]` vault: `set` exits 15 with the
+    upgrade command, `show` works with a warning; `version: 2` is refused.
+  - ✅ New-32: `import` keeps `--public`.
+  - ✅ New-37: `doctor` reports format 1 on an existing vault.
+  - ✅ New-44: after `rename base core`, `shop`'s reference and `child`'s
+    inherited `HOST` resolve as before.
+  - ✅ New-45: `import` of two files lists both keys, as one new version.
+  - ✅ New-38, New-40: the released macOS app's fuses read as expected,
+    and `npm run test:packaged` with it as the shipped binary passes 14/14
+    (`ELECTRON_RUN_AS_NODE`, `--inspect` ignored; `--remote-debugging-port`
+    refused).
+- **Not checked yet:**
+  - the app-side checks, which need a person at the app: copy and clear,
+    idle lock, saved passwords and Touch ID, Open…, the key file;
+  - New-10 (Linux container `pidns`) and New-12 (Windows rename retry),
+    which need those platforms.
+
 ## Per-task entries
 
 ### Task 0: breakdown and rollout plan

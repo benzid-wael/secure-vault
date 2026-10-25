@@ -76,6 +76,11 @@ jobs:
       - name: Build (no release)
         run: npm run build:all
 
+      - name: Check the npm package installs and runs
+        # Packs the CLI, installs the tarball and runs it: a file the CLI
+        # imports but package.json's `files` leaves out only shows up here.
+        run: npm run verify:package
+
   # The unit tests on the other desktop platforms (GUI-ENV-BREAKDOWN New-13):
   # the vault lock, the Windows rename retry and file modes behave
   # differently there. In parallel with Verify, so it doesn't slow the gate;

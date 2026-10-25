@@ -233,6 +233,9 @@ jobs:
         # checkout, so it does not modify the repo.
         run: cp README.cli.md README.md
 
+      - name: Check the package installs and runs
+        run: npm run verify:package
+
       - name: Publish
         shell: bash
         run: |

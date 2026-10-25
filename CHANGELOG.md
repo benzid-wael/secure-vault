@@ -134,6 +134,9 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Fixed
 
+- **The npm package's CLI starts again.** `0.2.0-rc.1` and `rc.2` left
+  out the agent's files, so every `vault` command crashed with
+  `ERR_MODULE_NOT_FOUND`. The standalone binaries weren't affected.
 - **A mounted file deleted twice in quick succession comes back.** If a
   build step deleted it again right after the agent restored it, the agent
   stopped watching it and the file stayed gone until the next mount.
