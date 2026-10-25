@@ -44,29 +44,31 @@ function expectEqual(actual, expected) {
 }
 
 try {
-  const packed = JSON.parse(
+  const out = JSON.parse(
     run(npm, ['pack', '--json', '--pack-destination', tmp], REPO)
   );
-  const tarball = path.join(tmp, packed[0].filename);
+  // npm 11 prints an array, npm 12 an object keyed by package name.
+  const packed = Array.isArray(out) ? out[0] : Object.values(out)[0];
+  const tarball = path.join(tmp, packed.filename);
 
   const app = path.join(tmp, 'app');
   fs.mkdirSync(app);
   run(npm, ['install', '--omit=dev', '--no-audit', '--no-fund', tarball], app);
 
-  const cli = path.join(app, 'node_modules', packed[0].name, 'bin', 'cli.js');
+  const cli = path.join(app, 'node_modules', packed.name, 'bin', 'cli.js');
   const vault = (...args) => run(process.execPath, [cli, ...args], tmp);
   const file = path.join(tmp, 'check.env.vault');
   const env = (...args) =>
     vault('env', ...args, '-v', file, '--password', PASSWORD);
 
-  expectEqual(vault('--version'), packed[0].version);
+  expectEqual(vault('--version'), packed.version);
   env('init');
   env('set', 'FROM', 'package', '-e', 'dev');
   expectEqual(env('get', 'FROM', '-e', 'dev'), 'package');
 
   console.log(
-    `${packed[0].name}@${packed[0].version}: the installed CLI works ` +
-      `(${packed[0].files.length} files).`
+    `${packed.name}@${packed.version}: the installed CLI works ` +
+      `(${packed.files.length} files).`
   );
 } catch (err) {
   console.error(err.message);

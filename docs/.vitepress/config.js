@@ -44,6 +44,7 @@ export default defineConfig({
   srcExclude: [
     'screenshots/README.md',
     'environments/**',
+    'RFCs/**',
     '**/node_modules/**',
   ],
 
