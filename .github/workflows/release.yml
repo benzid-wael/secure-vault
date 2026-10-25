@@ -218,7 +218,8 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - name: Use an npm that supports trusted publishing (11.5.1+)
-        run: npm install -g npm@latest
+        # Pinned to a major: npm 12 changed `npm pack --json` mid-release.
+        run: npm install -g npm@11
 
       - name: Install dependencies
         run: npm ci
