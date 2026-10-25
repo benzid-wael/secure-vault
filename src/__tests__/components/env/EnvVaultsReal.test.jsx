@@ -11,6 +11,7 @@ import {
   cleanup,
   act,
   within,
+  configure,
 } from '@testing-library/react';
 import fs from 'fs-extra';
 import os from 'os';
@@ -32,6 +33,11 @@ vi.mock('path', async () => {
   const real = await import('node:path');
   return { ...real, default: real };
 });
+
+// Every step runs the real handlers: file writes, key derivation, the
+// keychain store. The default 1 s for findBy/waitFor is too tight on a
+// loaded CI runner with coverage on.
+configure({ asyncUtilTimeout: 5000 });
 
 /** The preload API isn't typed; tests mock it on `window`. */
 const win = /** @type {any} */ (window);
