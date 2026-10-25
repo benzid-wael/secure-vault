@@ -75,12 +75,6 @@ export default defineConfig({
           ) {
             return 'ui-vendor';
           }
-          if (
-            id.includes('node_modules/crypto-js') ||
-            id.includes('node_modules/bcryptjs')
-          ) {
-            return 'crypto-vendor';
-          }
         },
       },
     },

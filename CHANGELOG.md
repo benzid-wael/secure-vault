@@ -76,6 +76,12 @@ Design detail for the environment-vault (`vault env`) features lives in
 
 ### Changed
 
+- **The npm package installs only what the CLI uses.** React, MUI and the
+  other desktop-only packages were runtime dependencies, so
+  `npm install -g @benzid.wael/secure-vault` pulled in about 210 MB; it's
+  now about 23 MB. Four packages nothing used (`crypto-js`, `node-forge`,
+  `uuid`, `electron-is-dev`) are gone, and the desktop app's `app.asar`
+  shrinks from about 79 MB to 25 MB.
 - **Copied secrets are cleared from the clipboard after 30 seconds** in
   the desktop app: passwords, PINs, card numbers, CVVs, private keys, note
   content, grid-card codes (including the automatic copy on lookup) and the
